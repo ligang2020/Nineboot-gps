@@ -37,6 +37,15 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             build
 
+      - name: Verify compiled app icon
+        env:
+          DERIVED_DATA: ${{ runner.temp }}/NinePlusDerivedData
+        run: |
+          set -euo pipefail
+          APP_INFO="$DERIVED_DATA/Build/Products/Release-iphoneos/mini-ninebot.app/Info.plist"
+          test -f "$APP_INFO"
+          plutil -extract CFBundleIcons xml1 -o /dev/null "$APP_INFO"
+
       - name: Package IPA
         id: package
         env:
