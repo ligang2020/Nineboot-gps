@@ -1,0 +1,10 @@
+# macOS and Xcode
+.DS_Store
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+
+# Locally generated artifacts
+*.ipa
+*.ipa.sha256

@@ -1,0 +1,69 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    name: Build iOS IPA
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build device app without signing
+        env:
+          DERIVED_DATA: ${{ runner.temp }}/NinePlusDerivedData
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project mini-ninebot.xcodeproj \
+            -scheme mini-ninebot \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package IPA
+        id: package
+        env:
+          DERIVED_DATA: ${{ runner.temp }}/NinePlusDerivedData
+          ARTIFACT_DIR: ${{ runner.temp }}/NinePlusIPA
+        run: |
+          set -euo pipefail
+          APP_PATH="$DERIVED_DATA/Build/Products/Release-iphoneos/mini-ninebot.app"
+          IPA_PATH="$ARTIFACT_DIR/NinePlus-LiveRide-unsigned.ipa"
+
+          test -d "$APP_PATH"
+          mkdir -p "$ARTIFACT_DIR/Payload"
+          ditto "$APP_PATH" "$ARTIFACT_DIR/Payload/mini-ninebot.app"
+          (
+            cd "$ARTIFACT_DIR"
+            /usr/bin/zip -qry "$(basename "$IPA_PATH")" Payload
+            rm -rf Payload
+          )
+          shasum -a 256 "$IPA_PATH" > "$IPA_PATH.sha256"
+          echo "artifact_dir=$ARTIFACT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NinePlus-LiveRide-unsigned-ipa
+          path: |
+            ${{ steps.package.outputs.artifact_dir }}/NinePlus-LiveRide-unsigned.ipa
+            ${{ steps.package.outputs.artifact_dir }}/NinePlus-LiveRide-unsigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 30
