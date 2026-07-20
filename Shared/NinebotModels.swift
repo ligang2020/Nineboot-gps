@@ -248,6 +248,53 @@ struct NinebotRideRecord: Codable, Equatable, Identifiable {
     var raw: [String: JSONValue]?
 }
 
+/// Normalises the several energy units returned by different Ninebot endpoints.
+/// Some firmwares return Wh, while others return a decimal kWh-like value.  The
+/// distance-aware selection keeps the displayed consumption in a realistic
+/// electric-scooter range without changing the raw values kept for diagnostics.
+enum NinebotEnergy {
+    static func wattHours(_ rawValue: Double?, distanceKm: Double?) -> Double? {
+        guard let rawValue, rawValue.isFinite, rawValue >= 0 else { return nil }
+        guard rawValue > 0 else { return 0 }
+
+        if let distanceKm, distanceKm > 0 {
+            let candidates = [1.0, 10.0, 100.0, 1_000.0].map { rawValue * $0 }
+            let plausible = candidates.filter {
+                let consumption = $0 / distanceKm
+                return consumption >= 5 && consumption <= 300
+            }
+            if let best = plausible.min(by: { candidate, other in
+                abs(log(candidate / distanceKm) - log(38)) < abs(log(other / distanceKm) - log(38))
+            }) {
+                return best
+            }
+        }
+
+        // A value below 10 with no distance context is normally represented in
+        // kWh by the platform.  Keep larger values as Wh.
+        return rawValue < 10 ? rawValue * 1_000 : rawValue
+    }
+}
+
+extension NinebotRideRecord {
+    /// Total electricity consumed during this ride, consistently displayed in Wh.
+    var consumedEnergyWh: Double? {
+        NinebotEnergy.wattHours(energy ?? usedElectricity, distanceKm: mileage)
+    }
+
+    var energyPerKmWh: Double? {
+        guard let mileage, mileage > 0, let consumedEnergyWh else { return nil }
+        return consumedEnergyWh / mileage
+    }
+
+    var resolvedDurationMinutes: Double? {
+        if let durationMinutes, durationMinutes >= 0 { return durationMinutes }
+        guard let startedAt, let endedAt else { return nil }
+        let minutes = endedAt.timeIntervalSince(startedAt) / 60
+        return minutes >= 0 && minutes <= 48 * 60 ? minutes : nil
+    }
+}
+
 struct NinebotTravelPage: Equatable {
     var month: String
     var page: Int
@@ -1242,10 +1289,20 @@ struct NinebotVehicleState: Codable, Equatable {
         return "刷新更多行程后生成估算。"
     }
 
+    /// Monthly electricity consumption in Wh.  The server field differs by
+    /// firmware, so the normalisation uses the matching monthly distance.
+    var monthEnergyWh: Double? {
+        NinebotEnergy.wattHours(monthEnergy ?? monthUsedElectricity, distanceKm: monthMileage)
+    }
+
+    var monthUsedElectricityText: String {
+        guard let monthEnergyWh else { return "-- Wh" }
+        return "\(Self.numberText(monthEnergyWh, maximumFractionDigits: 0)) Wh"
+    }
+
     var monthEnergyPerKm: Double? {
-        guard let monthMileage, monthMileage > 0 else { return nil }
-        guard let energy = monthUsedElectricity ?? monthEnergy else { return nil }
-        return energy / monthMileage
+        guard let monthMileage, monthMileage > 0, let monthEnergyWh else { return nil }
+        return monthEnergyWh / monthMileage
     }
 
     var monthEnergyPerKmText: String {
@@ -1253,10 +1310,20 @@ struct NinebotVehicleState: Codable, Equatable {
         return "\(Self.numberText(monthEnergyPerKm, maximumFractionDigits: 1)) Wh/km"
     }
 
+    /// The latest completed ride's consumption, favouring the endpoint's energy
+    /// value and falling back to its used-electricity field when needed.
+    var lastRideEnergyWh: Double? {
+        NinebotEnergy.wattHours(lastEnergy ?? lastUsedElectricity, distanceKm: lastMileage)
+    }
+
+    var lastUsedElectricityText: String {
+        guard let lastRideEnergyWh else { return "-- Wh" }
+        return "\(Self.numberText(lastRideEnergyWh, maximumFractionDigits: 0)) Wh"
+    }
+
     var lastEnergyPerKm: Double? {
-        guard let lastMileage, lastMileage > 0 else { return nil }
-        guard let lastEnergy else { return nil }
-        return lastEnergy / lastMileage
+        guard let lastMileage, lastMileage > 0, let lastRideEnergyWh else { return nil }
+        return lastRideEnergyWh / lastMileage
     }
 
     var lastEnergyPerKmText: String {
@@ -1289,13 +1356,13 @@ struct NinebotVehicleState: Codable, Equatable {
     }
 
     var monthEstimatedCostText: String {
-        guard let electricityWh = monthUsedElectricity ?? monthEnergy else { return "--" }
+        guard let electricityWh = monthEnergyWh else { return "--" }
         return "¥\(Self.numberText(electricityWh / 1000 * Self.electricityPricePerKWh, maximumFractionDigits: 1, minimumFractionDigits: 1))"
     }
 
     var lastRideSummaryText: String {
         let mileage = lastMileage.map { "\(Self.numberText($0, maximumFractionDigits: 1)) km" } ?? "-- km"
-        let energy = lastEnergy.map { "\(Self.numberText($0, maximumFractionDigits: 0)) Wh" } ?? "-- Wh"
+        let energy = lastRideEnergyWh.map { "\(Self.numberText($0, maximumFractionDigits: 0)) Wh" } ?? "-- Wh"
         return "\(mileage) · \(energy)"
     }
 

@@ -558,8 +558,14 @@ private extension NinebotProxyClient {
             totalMileage: firstDouble(["total_mileage", "totalMileage", "total_mileages"], in: statusObject)
                 ?? firstDouble(["total_mileage", "totalMileage"], in: travelObject),
             monthMileage: firstDouble(["total_mileages", "monthMileage"], in: travelObject),
-            monthEnergy: firstDouble(["ec", "monthEnergy"], in: travelObject),
-            monthUsedElectricity: firstDouble(["used_electricity", "usedElectricity"], in: travelObject),
+            monthEnergy: firstDouble([
+                "ec", "monthEnergy", "month_energy", "monthElectricity",
+                "electricity", "energy", "consume_electricity", "consumeElectricity"
+            ], in: travelObject),
+            monthUsedElectricity: firstDouble([
+                "used_electricity", "usedElectricity", "used_electric", "usedElectric",
+                "electricity_used", "electricityUsed", "power_consumption", "powerConsumption"
+            ], in: travelObject),
             lastMileage: lastRide?.mileage,
             lastEnergy: lastRide?.energy,
             lastUsedElectricity: lastRide?.usedElectricity,
@@ -597,8 +603,14 @@ private extension NinebotProxyClient {
             in: object
         )
         let mileage = firstDouble(["mileages", "mileage", "distance", "rideMileage"], in: object)
-        let energy = firstDouble(["ec", "energy", "electricity", "consume"], in: object)
-        let usedElectricity = firstDouble(["used_electricity", "usedElectricity", "usedElectric", "useElectricity"], in: object)
+        let energy = firstDouble([
+            "ec", "energy", "electricity", "consume", "consumption",
+            "consume_electricity", "consumeElectricity", "power_consumption", "powerConsumption"
+        ], in: object)
+        let usedElectricity = firstDouble([
+            "used_electricity", "usedElectricity", "used_electric", "usedElectric",
+            "useElectricity", "electricity_used", "electricityUsed", "power_used", "powerUsed"
+        ], in: object)
         let durationMinutes = firstDurationMinutes(in: object, startedAt: startedAt, endedAt: endedAt)
         let speed = firstDouble(["speed", "avg_speed", "avgSpeed", "average_speed", "averageSpeed"], in: object)
 

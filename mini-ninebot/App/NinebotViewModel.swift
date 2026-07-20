@@ -292,7 +292,6 @@ final class NinebotViewModel: ObservableObject {
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
             self.errorMessage = nil
             self.statusMessage = "已更新 \(Self.timeFormatter.string(from: archivedDashboard.updatedAt))"
-            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 
@@ -305,7 +304,7 @@ final class NinebotViewModel: ObservableObject {
         do {
             let client = try makeClient()
             let dashboard = try await client.fetchLiveDashboard(from: self.dashboard)
-            let archivedDashboard = self.saveDashboard(dashboard)
+            let archivedDashboard = self.saveDashboard(dashboard, reloadWidgets: false)
             lastAutomaticRefreshAt = Date()
 
             // WidgetKit coalesces timeline reloads. Asking no more than once per
@@ -350,7 +349,6 @@ final class NinebotViewModel: ObservableObject {
                 self.statusMessage = "已获取 \(Self.displayMonth(month)) \(page.total) 条行程"
             }
             self.errorMessage = nil
-            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 
@@ -423,7 +421,6 @@ final class NinebotViewModel: ObservableObject {
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
             self.errorMessage = nil
             self.statusMessage = "登录成功"
-            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 
@@ -461,14 +458,12 @@ final class NinebotViewModel: ObservableObject {
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
             self.errorMessage = nil
             self.statusMessage = "登录成功"
-            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 
     func selectVehicle(sn: String) {
         dashboard.selectedSN = sn
         saveDashboard(dashboard)
-        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// Saves a friendly local display name without changing the vehicle's server
@@ -509,7 +504,6 @@ final class NinebotViewModel: ObservableObject {
             let archivedDashboard = self.saveDashboard(dashboard)
             await self.cacheVehicleImages(for: archivedDashboard)
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
-            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 
@@ -648,11 +642,18 @@ final class NinebotViewModel: ObservableObject {
     }
 
     @discardableResult
-    private func saveDashboard(_ dashboard: NinebotDashboard) -> NinebotDashboard {
+    private func saveDashboard(_ dashboard: NinebotDashboard, reloadWidgets: Bool = true) -> NinebotDashboard {
         let archivedDashboard = store.saveDashboard(dashboard)
         self.dashboard = archivedDashboard
         history = Self.historyMap(for: archivedDashboard, store: store)
         NinebotRideLiveActivityManager.sync(with: archivedDashboard)
+
+        // The App is the single writer for the App Group snapshot. Explicit
+        // refreshes reload WidgetKit after saving; the five-second foreground
+        // pulse opts out and uses its rate-limited request below instead.
+        if reloadWidgets {
+            WidgetCenter.shared.reloadAllTimelines()
+        }
         return archivedDashboard
     }
 

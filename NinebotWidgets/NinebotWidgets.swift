@@ -100,6 +100,11 @@ private struct RideLiveActivityCard: View {
     var attributes: NinebotRideActivityAttributes
     var state: NinebotRideActivityAttributes.ContentState
 
+    private let metricColumns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
+    ]
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -119,7 +124,7 @@ private struct RideLiveActivityCard: View {
                 .offset(x: 130, y: -66)
 
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center) {
+                HStack(alignment: .center, spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
                         Label(rideStatusText(state), systemImage: state.isPoweredOn == true ? "bolt.car.fill" : "lock.open.fill")
                             .font(.subheadline.weight(.bold))
@@ -128,43 +133,51 @@ private struct RideLiveActivityCard: View {
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.white.opacity(0.62))
                             .lineLimit(1)
+                            .truncationMode(.tail)
                     }
-                    Spacer(minLength: 8)
+                    Spacer(minLength: 4)
                     RideBatteryBadge(battery: state.battery)
                 }
 
-                HStack(alignment: .lastTextBaseline, spacing: 8) {
-                    Text(rideSpeedValue(state))
-                        .font(.system(size: 40, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                    Text("km/h")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.54))
+                HStack(alignment: .center, spacing: 12) {
+                    HStack(alignment: .lastTextBaseline, spacing: 5) {
+                        Text(rideSpeedValue(state))
+                            .font(.system(size: 38, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+                        Text("km/h")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.54))
+                    }
                     Spacer(minLength: 4)
-                    Text(rideRangeText(state))
-                        .font(.caption.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(WidgetTheme.green)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(state.rideStartedAt, style: .timer)
+                            .font(.title3.monospacedDigit().weight(.bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Text("骑行时长")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(WidgetTheme.green)
+                    }
                 }
 
-                RideDistanceProgress(
-                    distance: state.rideDistanceKm,
-                    target: state.rideProgressTargetKm
-                )
-                .frame(height: 30)
+                RideDistanceProgress(distance: state.rideDistanceKm, target: state.rideProgressTargetKm)
 
-                HStack(spacing: 0) {
-                    RideActivityMetric(value: rideTemperatureText(state), title: "电池温度", icon: "thermometer.medium")
+                LazyVGrid(columns: metricColumns, spacing: 8) {
+                    RideActivityMetric(value: rideDurationText(state), title: "骑行时间", icon: "clock.fill")
                     RideActivityMetric(value: rideUsedElectricityText(state), title: "本次用电", icon: "bolt.fill")
-                    RideActivityMetric(value: rideConsumptionText(state), title: "能耗", icon: "leaf.fill")
+                    RideActivityMetric(value: rideConsumptionText(state), title: "平均能耗", icon: "leaf.fill")
+                    RideActivityMetric(value: rideTemperatureText(state), title: "电池温度", icon: "thermometer.medium")
                 }
 
                 Label(rideLocationText(state), systemImage: "location.fill")
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.white.opacity(0.58))
                     .lineLimit(1)
+                    .truncationMode(.tail)
             }
             .padding(16)
         }
@@ -182,6 +195,7 @@ private struct RideIslandVehicleHeader: View {
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
+                .truncationMode(.tail)
             Label(rideStatusText(state), systemImage: state.isPoweredOn == true ? "bolt.fill" : "lock.open.fill")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(WidgetTheme.green)
@@ -199,7 +213,7 @@ private struct RideIslandBattery: View {
             Text(rideBatteryText(state))
                 .font(.title3.monospacedDigit().weight(.bold))
                 .foregroundStyle(WidgetTheme.green)
-            Text(rideTemperatureText(state))
+            Text(rideRangeText(state))
                 .font(.caption2.monospacedDigit().weight(.medium))
                 .foregroundStyle(.white.opacity(0.58))
         }
@@ -211,18 +225,13 @@ private struct RideIslandMetrics: View {
     var state: NinebotRideActivityAttributes.ContentState
 
     var body: some View {
-        VStack(spacing: 7) {
+        VStack(spacing: 8) {
             HStack(spacing: 0) {
-                RideIslandMetric(value: "\(rideSpeedValue(state)) km/h", title: "速度")
+                RideIslandMetric(value: rideSpeedValue(state), title: "km/h")
+                RideIslandMetric(value: rideDurationText(state), title: "骑行")
                 RideIslandMetric(value: rideDistanceText(state), title: "里程")
-                RideIslandMetric(value: rideConsumptionText(state), title: "能耗")
             }
             RideDistanceProgress(distance: state.rideDistanceKm, target: state.rideProgressTargetKm)
-                .frame(height: 25)
-            Label(rideLocationText(state), systemImage: "location.fill")
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.white.opacity(0.56))
-                .lineLimit(1)
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 7)
@@ -258,14 +267,18 @@ private struct RideActivityMetric: View {
         VStack(alignment: .leading, spacing: 4) {
             Label(title, systemImage: icon)
                 .font(.caption2.weight(.medium))
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(.white.opacity(0.48))
+                .lineLimit(1)
             Text(value)
                 .font(.caption.monospacedDigit().weight(.bold))
-                .foregroundStyle(.white.opacity(0.92))
+                .foregroundStyle(.white.opacity(0.94))
                 .lineLimit(1)
-                .minimumScaleFactor(0.65)
+                .minimumScaleFactor(0.72)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -278,61 +291,57 @@ private struct RideIslandMetric: View {
         VStack(spacing: 2) {
             Text(value)
                 .font(.caption.monospacedDigit().weight(.bold))
-                .foregroundStyle(.white.opacity(0.90))
+                .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(1)
-                .minimumScaleFactor(0.56)
+                .minimumScaleFactor(0.65)
             Text(title)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.white.opacity(0.48))
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
     }
 }
 
-/// A segmented riding ruler. The electric-scooter icon advances through
-/// 1/3/5/10/20/50 km milestones with the actual riding distance.
+/// A single, adaptive distance progress bar. It deliberately has no fixed
+/// milestone ruler, so the visual scale always matches the active ride target.
 @available(iOS 16.1, *)
 private struct RideDistanceProgress: View {
     var distance: Double?
     var target: Double
-    private let marks: [Double] = [1, 3, 5, 10, 20, 50]
 
     var body: some View {
-        VStack(spacing: 3) {
+        let resolvedDistance = max(distance ?? 0, 0)
+        let resolvedTarget = max(target, 1)
+        let progress = min(resolvedDistance / resolvedTarget, 1)
+
+        VStack(spacing: 5) {
+            HStack(spacing: 6) {
+                Text("已骑 \(formatWidgetNumber(resolvedDistance, maximumFractionDigits: 2)) km")
+                    .foregroundStyle(.white.opacity(0.82))
+                Spacer(minLength: 6)
+                Text("目标 \(formatWidgetNumber(resolvedTarget, maximumFractionDigits: 0)) km")
+                    .foregroundStyle(WidgetTheme.green)
+            }
+            .font(.caption2.monospacedDigit().weight(.medium))
+            .lineLimit(1)
+
             GeometryReader { proxy in
-                let progress = min(max((distance ?? 0) / max(target, 1), 0), 1)
-                let travelWidth = max(10, proxy.size.width * progress)
+                let width = max(proxy.size.width, 0)
+                let indicatorX = min(max(width * progress - 5, 0), max(width - 10, 0))
                 ZStack(alignment: .leading) {
                     Capsule().fill(.white.opacity(0.12))
                     Capsule()
                         .fill(LinearGradient(colors: [WidgetTheme.green, Color.cyan], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: travelWidth)
-                    HStack(spacing: 0) {
-                        ForEach(marks.indices, id: \.self) { index in
-                            Circle()
-                                .fill(marks[index] <= target ? .white.opacity(0.62) : .white.opacity(0.18))
-                                .frame(width: 3, height: 3)
-                            if index != marks.indices.last { Spacer(minLength: 0) }
-                        }
-                    }
-                    .padding(.horizontal, 5)
-                    Image(systemName: "scooter")
-                        .font(.caption2.weight(.black))
-                        .foregroundStyle(.white)
+                        .frame(width: max(width * progress, progress > 0 ? 8 : 0))
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 10, height: 10)
                         .shadow(color: WidgetTheme.green.opacity(0.8), radius: 4)
-                        .frame(width: 18, height: 18)
-                        .background(WidgetTheme.green, in: Circle())
-                        .offset(x: min(max(travelWidth - 9, 0), max(proxy.size.width - 18, 0)))
+                        .offset(x: indicatorX)
                 }
             }
-            HStack(spacing: 0) {
-                ForEach(marks, id: \.self) { mark in
-                    Text(mark == 1 ? "1" : "\(Int(mark))")
-                        .font(.system(size: 7, weight: mark == target ? .bold : .medium, design: .rounded))
-                        .foregroundStyle(mark <= target ? WidgetTheme.green : .white.opacity(0.40))
-                        .frame(maxWidth: .infinity, alignment: mark == marks.first ? .leading : (mark == marks.last ? .trailing : .center))
-                }
-            }
+            .frame(height: 6)
         }
     }
 }
@@ -396,6 +405,19 @@ private func rideUsedElectricityText(_ state: NinebotRideActivityAttributes.Cont
 private func rideConsumptionText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
     guard let energy = state.energyPerKmWh else { return "-- Wh/km" }
     return "\(formatWidgetNumber(energy, maximumFractionDigits: 1)) Wh/km"
+}
+
+@available(iOS 16.1, *)
+private func rideDurationText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
+    let elapsed = max(state.rideDurationSeconds, Date().timeIntervalSince(state.rideStartedAt), 0)
+    let totalSeconds = Int(elapsed.rounded(.down))
+    let hours = totalSeconds / 3_600
+    let minutes = (totalSeconds % 3_600) / 60
+    let seconds = totalSeconds % 60
+    if hours > 0 {
+        return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+    }
+    return String(format: "%02d:%02d", minutes, seconds)
 }
 
 @available(iOS 16.1, *)

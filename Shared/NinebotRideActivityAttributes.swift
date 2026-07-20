@@ -13,6 +13,8 @@ struct NinebotRideActivityAttributes: ActivityAttributes {
     var vehicleModel: String
     /// Total odometer reading when this ride activity was started.
     var startedTotalMileage: Double?
+    /// Stable start point for the live timer.  It survives content updates.
+    var startedAt: Date
 
     struct ContentState: Codable, Hashable {
         var battery: Int?
@@ -22,6 +24,8 @@ struct NinebotRideActivityAttributes: ActivityAttributes {
         var usedElectricityWh: Double?
         var energyPerKmWh: Double?
         var rideDistanceKm: Double?
+        var rideStartedAt: Date
+        var rideDurationSeconds: Double
         var rideProgressTargetKm: Double
         var latitude: Double?
         var longitude: Double?

@@ -28,7 +28,8 @@ This project is intended for personal builds. The bundled GitHub Action produces
 - Battery percentage, estimated range, and **battery temperature**
 - Ride electricity used and energy consumption per kilometre
 - GPS address or coordinates when returned by the vehicle API
-- A premium segmented ride-progress display with milestones: **1 / 3 / 5 / 10 / 20 / 50 km**, including a moving scooter icon
+- Continuous ride timer, distance, electricity used, average energy consumption, and battery temperature
+- A calm adaptive distance-progress bar: its target grows with the ride rather than showing fixed, confusing segments
 - Compact and expanded Dynamic Island layouts, plus an expanded Lock Screen Live Activity card
 
 ### Refresh behaviour and iOS limitations
@@ -65,9 +66,11 @@ The workflow at `.github/workflows/build-ipa.yml` runs for pushes to `main` / `m
 
 1. Builds the device app in `Release` with code signing disabled.
 2. Packages `NinePlus-LiveRide-unsigned.ipa`.
-3. Uploads the IPA and a SHA-256 checksum as a 30-day workflow artifact.
+3. Verifies the compiled App Icon, main app bundle, and Widget extension before packaging.
+4. Uploads the IPA and a SHA-256 checksum as a 30-day workflow artifact.
+5. When a tag beginning with `v` is pushed (for example `v1.2.1`), creates or updates the matching GitHub Release and attaches both files.
 
-Download the artifact from the GitHub Actions run. Because it is unsigned, it still needs to be signed using your own permitted installation method before an iPhone can install it.
+Download the artifact from the GitHub Actions run, or open the GitHub Release for a version tag. Because it is unsigned, it still needs to be signed using your own permitted installation method before an iPhone can install it.
 
 ## Privacy
 

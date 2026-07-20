@@ -37,11 +37,13 @@ private enum NinebotRideActivityController {
         let activities = Activity<NinebotRideActivityAttributes>.activities
         let matchingActivity = activities.first { $0.attributes.vehicleSN == snapshot.vehicle.sn }
         let startedTotalMileage = matchingActivity?.attributes.startedTotalMileage ?? state.totalMileage
+        let startedAt = matchingActivity?.attributes.startedAt ?? Date()
         let attributes = NinebotRideActivityAttributes(
             vehicleSN: snapshot.vehicle.sn,
             vehicleName: snapshot.vehicle.displayName,
             vehicleModel: snapshot.vehicle.model,
-            startedTotalMileage: startedTotalMileage
+            startedTotalMileage: startedTotalMileage,
+            startedAt: startedAt
         )
         let contentState = NinebotRideActivityAttributes.ContentState(
             battery: state.battery,
@@ -51,6 +53,8 @@ private enum NinebotRideActivityController {
             usedElectricityWh: latestUsedElectricity(from: state),
             energyPerKmWh: latestEnergyPerKm(from: state),
             rideDistanceKm: rideDistance(from: state, startedTotalMileage: startedTotalMileage),
+            rideStartedAt: startedAt,
+            rideDurationSeconds: max(Date().timeIntervalSince(startedAt), 0),
             rideProgressTargetKm: progressTarget(for: rideDistance(from: state, startedTotalMileage: startedTotalMileage)),
             latitude: state.latitude,
             longitude: state.longitude,
@@ -60,7 +64,7 @@ private enum NinebotRideActivityController {
         )
         let content = ActivityContent(
             state: contentState,
-            staleDate: Date().addingTimeInterval(18)
+            staleDate: Date().addingTimeInterval(35)
         )
 
         // One vehicle owns the Island at a time. Switching the selected vehicle
@@ -105,24 +109,19 @@ private enum NinebotRideActivityController {
     }
 
     private static func latestUsedElectricity(from state: NinebotVehicleState) -> Double? {
-        if let value = state.lastUsedElectricity ?? state.lastEnergy, value >= 0 { return value }
+        if let value = state.lastRideEnergyWh { return value }
         return state.rideRecords?
             .sorted { ($0.endedAt ?? $0.startedAt ?? .distantPast) > ($1.endedAt ?? $1.startedAt ?? .distantPast) }
-            .compactMap { $0.usedElectricity ?? $0.energy }
+            .compactMap(\.consumedEnergyWh)
             .first
     }
 
     private static func latestEnergyPerKm(from state: NinebotVehicleState) -> Double? {
         if let value = state.lastEnergyPerKm ?? state.monthEnergyPerKm, value >= 0 { return value }
-        guard let ride = state.rideRecords?
+        return state.rideRecords?
             .sorted(by: { ($0.endedAt ?? $0.startedAt ?? .distantPast) > ($1.endedAt ?? $1.startedAt ?? .distantPast) })
-            .first,
-            let energy = ride.usedElectricity ?? ride.energy,
-            let mileage = ride.mileage,
-            mileage > 0 else {
-            return nil
-        }
-        return energy / mileage
+            .compactMap(\.energyPerKmWh)
+            .first
     }
 
     private static func rideDistance(from state: NinebotVehicleState, startedTotalMileage: Double?) -> Double? {
@@ -137,9 +136,14 @@ private enum NinebotRideActivityController {
     }
 
     private static func progressTarget(for distance: Double?) -> Double {
-        let segments: [Double] = [1, 3, 5, 10, 20, 50]
+        let milestones: [Double] = [1, 3, 5, 10, 20, 50]
         let value = max(distance ?? 0, 0)
-        return segments.first(where: { value <= $0 }) ?? 50
+        if let milestone = milestones.first(where: { value <= $0 }) {
+            return milestone
+        }
+        // Long rides keep a meaningful visual scale instead of staying pinned
+        // to a completed 50 km bar.
+        return max(75, ceil(value / 25) * 25)
     }
 }
 #endif

@@ -2610,7 +2610,7 @@ private struct TripRecentRideBars: View {
                 id: ride.id,
                 label: "\(index + 1)",
                 value: ride.mileage ?? 0,
-                tint: ride.usedElectricity.map { $0 > 15 ? Color.orange : Color.teslaGreen } ?? Color.teslaGreen
+                tint: ride.energyPerKmWh.map { $0 > 45 ? Color.orange : Color.teslaGreen } ?? Color.teslaGreen
             )
         })
     }
@@ -2679,7 +2679,7 @@ private struct TripTrendAnalysis {
     }
 
     var averageUsedElectricity: Double? {
-        let samples = rides.compactMap(\.usedElectricity).filter { $0 > 0 }
+        let samples = rides.compactMap(\.consumedEnergyWh).filter { $0 > 0 }
         guard !samples.isEmpty else { return nil }
         return samples.reduce(0, +) / Double(samples.count)
     }
@@ -2689,16 +2689,11 @@ private struct TripTrendAnalysis {
     }
 
     var energyPerKm: Double? {
-        if let monthMileage, monthMileage > 0,
-           let energy = snapshot.state.monthUsedElectricity ?? snapshot.state.monthEnergy {
-            return energy / monthMileage
+        if let value = snapshot.state.monthEnergyPerKm {
+            return value
         }
 
-        let samples = rides.compactMap { ride -> Double? in
-            guard let mileage = ride.mileage, mileage > 0,
-                  let energy = ride.energy, energy > 0 else { return nil }
-            return energy / mileage
-        }
+        let samples = rides.compactMap(\.energyPerKmWh)
         guard !samples.isEmpty else { return nil }
         return samples.reduce(0, +) / Double(samples.count)
     }
@@ -3586,7 +3581,13 @@ private struct RideRecordRow: View {
             }
 
             if !metrics.isEmpty {
-                HStack(spacing: 10) {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 10),
+                        GridItem(.flexible(), spacing: 10)
+                    ],
+                    spacing: 8
+                ) {
                     ForEach(metrics) { metric in
                         RideMetric(title: metric.title, value: metric.value, systemImage: metric.systemImage)
                     }
@@ -3605,9 +3606,10 @@ private struct RideRecordRow: View {
 
     private var metrics: [RideDisplayMetric] {
         [
-            record.energy.map { RideDisplayMetric(title: "能耗", value: formatEnergyWh($0), systemImage: "bolt.horizontal.fill") },
-            record.usedElectricity.map { RideDisplayMetric(title: "用电", value: formatPercent($0), systemImage: "powerplug.fill") },
-            record.speed.map { RideDisplayMetric(title: "速度", value: formatSpeed($0), systemImage: "speedometer") }
+            record.consumedEnergyWh.map { RideDisplayMetric(title: "本次用电", value: formatEnergyWh($0), systemImage: "bolt.fill") },
+            record.energyPerKmWh.map { RideDisplayMetric(title: "能耗", value: formatEnergyPerKm($0), systemImage: "leaf.fill") },
+            record.speed.map { RideDisplayMetric(title: "平均速度", value: formatSpeed($0), systemImage: "speedometer") },
+            record.resolvedDurationMinutes.map { RideDisplayMetric(title: "骑行时间", value: formatDuration($0), systemImage: "timer") }
         ].compactMap { $0 }
     }
 }
@@ -3643,10 +3645,10 @@ private struct NinebotRideDetailView: View {
                     DetailRow(title: "开始时间", value: effectiveRecord.startedAt.map(formatDate) ?? "--", systemImage: "play.fill")
                     DetailRow(title: "结束时间", value: effectiveRecord.endedAt.map(formatDate) ?? "--", systemImage: "stop.fill")
                     DetailRow(title: "里程", value: formatDistance(effectiveRecord.mileage), systemImage: "road.lanes")
-                    DetailRow(title: "时长", value: formatDuration(effectiveRecord.durationMinutes), systemImage: "timer")
-                    DetailRow(title: "速度", value: formatSpeed(effectiveRecord.speed), systemImage: "speedometer")
-                    DetailRow(title: "能耗", value: formatEnergyWh(effectiveRecord.energy), systemImage: "bolt.horizontal.fill")
-                    DetailRow(title: "用电", value: formatPercent(effectiveRecord.usedElectricity), systemImage: "powerplug.fill")
+                    DetailRow(title: "骑行时间", value: formatDuration(effectiveRecord.resolvedDurationMinutes), systemImage: "timer")
+                    DetailRow(title: "平均速度", value: formatSpeed(effectiveRecord.speed), systemImage: "speedometer")
+                    DetailRow(title: "本次用电", value: formatEnergyWh(effectiveRecord.consumedEnergyWh), systemImage: "bolt.fill")
+                    DetailRow(title: "能耗", value: formatEnergyPerKm(effectiveRecord.energyPerKmWh), systemImage: "leaf.fill")
                     DetailRow(title: "行程 ID", value: record.id, systemImage: "number")
                 }
 
@@ -3756,9 +3758,9 @@ private struct RideDetailHero: View {
     private var metrics: [RideDisplayMetric] {
         var result: [RideDisplayMetric] = [
             record.speed.map { RideDisplayMetric(title: "接口速度", value: formatSpeed($0), systemImage: "speedometer") },
-            record.energy.map { RideDisplayMetric(title: "能耗", value: formatEnergyWh($0), systemImage: "bolt.horizontal.fill") },
-            record.usedElectricity.map { RideDisplayMetric(title: "用电", value: formatPercent($0), systemImage: "powerplug.fill") },
-            record.durationMinutes.map { RideDisplayMetric(title: "时长", value: formatDuration($0), systemImage: "timer") }
+            record.consumedEnergyWh.map { RideDisplayMetric(title: "本次用电", value: formatEnergyWh($0), systemImage: "bolt.fill") },
+            record.energyPerKmWh.map { RideDisplayMetric(title: "能耗", value: formatEnergyPerKm($0), systemImage: "leaf.fill") },
+            record.resolvedDurationMinutes.map { RideDisplayMetric(title: "骑行时间", value: formatDuration($0), systemImage: "timer") }
         ].compactMap { $0 }
 
         if let localRecord {
@@ -4484,6 +4486,10 @@ private func formatDistanceNumber(_ value: Double?) -> String {
 
 private func formatEnergyWh(_ value: Double?) -> String {
     formatNumber(value, unit: " Wh", maximumFractionDigits: 0)
+}
+
+private func formatEnergyPerKm(_ value: Double?) -> String {
+    formatNumber(value, unit: " Wh/km", maximumFractionDigits: 1)
 }
 
 private func formatPercent(_ value: Double?) -> String {

@@ -10,7 +10,13 @@ struct NinebotWidgetEntry: TimelineEntry {
     var vehicleImages: [String: Data] = [:]
 }
 
+/// The App is the primary data owner.  The widget renders its App Group cache
+/// immediately after every App refresh, then performs a conservative fallback
+/// refresh only when that cache is old.  This prevents the widget and App from
+/// showing conflicting vehicle states or repeatedly competing for the API.
 struct NinebotTimelineProvider: AppIntentTimelineProvider {
+    private let cacheFreshness: TimeInterval = 12 * 60
+
     func placeholder(in context: Context) -> NinebotWidgetEntry {
         NinebotWidgetEntry(
             date: Date(),
@@ -21,15 +27,7 @@ struct NinebotTimelineProvider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: NinebotWidgetConfigurationIntent, in context: Context) async -> NinebotWidgetEntry {
-        let store = NinebotSharedStore()
-        let dashboard = dashboardForWidget(store.loadDashboard() ?? .preview, configuration: configuration)
-        return NinebotWidgetEntry(
-            date: Date(),
-            configuration: configuration,
-            dashboard: dashboard,
-            errorMessage: store.loadLastError(),
-            vehicleImages: cachedVehicleImages(for: dashboard, store: store)
-        )
+        entry(from: NinebotSharedStore().loadDashboard() ?? .preview, configuration: configuration, errorMessage: nil)
     }
 
     func timeline(for configuration: NinebotWidgetConfigurationIntent, in context: Context) async -> Timeline<NinebotWidgetEntry> {
@@ -43,78 +41,95 @@ struct NinebotTimelineProvider: AppIntentTimelineProvider {
     private func refreshIntervalMinutes(for state: NinebotVehicleState?) -> Int {
         guard let state else { return 30 }
         if state.isLocked == false || state.isPoweredOn == true { return 5 }
-        if state.isCharging == true, !state.isFullyCharged { return 5 }
-        if let battery = state.battery, battery < 20 { return 10 }
-        return 20
+        if state.isCharging == true, !state.isFullyCharged { return 10 }
+        if let battery = state.battery, battery < 20 { return 15 }
+        return 30
     }
 
     private func loadEntry(configuration: NinebotWidgetConfigurationIntent) async -> NinebotWidgetEntry {
         let startedAt = Date()
         let store = NinebotSharedStore()
         let cached = store.loadDashboard()
-        let proxyConfiguration = store.loadConfiguration() ?? NinebotProxyConfiguration(baseURLString: "", bearerToken: "")
 
+        // Keep the widget visually in lockstep with the App while the shared
+        // snapshot is fresh.  The App calls WidgetCenter after every explicit
+        // refresh, vehicle switch and vehicle action.
+        if let cached, !cached.vehicles.isEmpty, Date().timeIntervalSince(cached.updatedAt) < cacheFreshness {
+            return entry(from: cached, configuration: configuration, errorMessage: nil, store: store)
+        }
+
+        let proxyConfiguration = store.loadConfiguration() ?? NinebotProxyConfiguration(baseURLString: "", bearerToken: "")
         guard proxyConfiguration.isUsable else {
+            let fallback = cached ?? .empty
             store.saveLastWidgetRefreshEvent(NinebotRefreshEvent(
                 source: "Widget",
-                operation: "刷新小组件",
+                operation: "读取 App 同步数据",
                 startedAt: startedAt,
                 endedAt: Date(),
-                success: false,
-                message: "未配置代理"
+                success: !fallback.vehicles.isEmpty,
+                message: fallback.vehicles.isEmpty ? "请先在 App 完成配置并刷新车辆" : "使用 App 最近同步的数据"
             ))
-            let dashboard = dashboardForWidget(cached ?? .empty, configuration: configuration)
-            return NinebotWidgetEntry(
-                date: Date(),
+            return entry(
+                from: fallback,
                 configuration: configuration,
-                dashboard: dashboard,
-                errorMessage: store.loadLastError(),
-                vehicleImages: cachedVehicleImages(for: dashboard, store: store)
+                errorMessage: fallback.vehicles.isEmpty ? "请先在 App 刷新车辆" : nil,
+                store: store
             )
         }
 
         do {
-            // Keep the App's selected vehicle intact in the shared archive.  The widget
-            // applies its own selection only to the entry it renders.
-            let dashboard = try await NinebotProxyClient(configuration: proxyConfiguration)
-                .fetchDashboard(selectedSN: cached?.selectedSN)
-            let archivedDashboard = store.saveDashboard(dashboard)
-            let widgetDashboard = dashboardForWidget(archivedDashboard, configuration: configuration)
+            let client = NinebotProxyClient(configuration: proxyConfiguration)
+            let refreshed: NinebotDashboard
+            if let cached, !cached.vehicles.isEmpty {
+                refreshed = try await client.fetchLiveDashboard(from: cached)
+            } else {
+                refreshed = try await client.fetchDashboard(selectedSN: cached?.selectedSN)
+            }
+            let archivedDashboard = store.saveDashboard(refreshed)
             store.saveLastWidgetRefreshEvent(NinebotRefreshEvent(
                 source: "Widget",
-                operation: "刷新小组件",
+                operation: "后台补充刷新",
                 startedAt: startedAt,
                 endedAt: Date(),
                 success: true,
-                message: widgetDashboard.primaryVehicle?.vehicle.displayName
+                message: archivedDashboard.primaryVehicle?.vehicle.displayName
             ))
-            return NinebotWidgetEntry(
-                date: Date(),
-                configuration: configuration,
-                dashboard: widgetDashboard,
-                errorMessage: nil,
-                vehicleImages: await vehicleImages(for: widgetDashboard, store: store)
-            )
+            return entry(from: archivedDashboard, configuration: configuration, errorMessage: nil, store: store)
         } catch {
-            let message = error.localizedDescription
-            store.saveLastError(message)
+            let fallback = cached ?? .empty
             store.saveLastWidgetRefreshEvent(NinebotRefreshEvent(
                 source: "Widget",
-                operation: "刷新小组件",
+                operation: "后台补充刷新",
                 startedAt: startedAt,
                 endedAt: Date(),
                 success: false,
-                message: message
+                message: error.localizedDescription
             ))
-            let dashboard = dashboardForWidget(cached ?? .empty, configuration: configuration)
-            return NinebotWidgetEntry(
-                date: Date(),
+            // Retain a valid App snapshot rather than replacing a working
+            // dashboard with a transient network error.
+            return entry(
+                from: fallback,
                 configuration: configuration,
-                dashboard: dashboard,
-                errorMessage: message,
-                vehicleImages: cachedVehicleImages(for: dashboard, store: store)
+                errorMessage: fallback.vehicles.isEmpty ? "暂时无法刷新，请稍后重试" : nil,
+                store: store
             )
         }
+    }
+
+    private func entry(
+        from dashboard: NinebotDashboard,
+        configuration: NinebotWidgetConfigurationIntent,
+        errorMessage: String?,
+        store: NinebotSharedStore = NinebotSharedStore()
+    ) -> NinebotWidgetEntry {
+        let selected = dashboardForWidget(dashboard, configuration: configuration)
+        return NinebotWidgetEntry(
+            date: Date(),
+            configuration: configuration,
+            dashboard: selected,
+            errorMessage: errorMessage,
+            vehicleImages: cachedVehicleImages(for: selected, store: store)
+        )
     }
 
     private func dashboardForWidget(
@@ -125,36 +140,7 @@ struct NinebotTimelineProvider: AppIntentTimelineProvider {
               let selectedSnapshot = dashboard.vehicles.first(where: { $0.vehicle.sn == selectedSN }) else {
             return dashboard
         }
-        // A configured widget is a dedicated instrument panel, not a vehicle carousel.
         return NinebotDashboard(vehicles: [selectedSnapshot], selectedSN: selectedSN, updatedAt: dashboard.updatedAt)
-    }
-
-    private func vehicleImages(for dashboard: NinebotDashboard, store: NinebotSharedStore) async -> [String: Data] {
-        var images = cachedVehicleImages(for: dashboard, store: store)
-
-        for snapshot in dashboard.vehicles {
-            guard let urlString = snapshot.vehicle.imageURLString,
-                  let url = URL(string: urlString) else {
-                continue
-            }
-
-            do {
-                let (data, response) = try await URLSession.shared.data(from: url)
-                guard let httpResponse = response as? HTTPURLResponse,
-                      (200..<300).contains(httpResponse.statusCode),
-                      !data.isEmpty,
-                      data.count <= 2_500_000 else {
-                    continue
-                }
-
-                store.saveVehicleImageData(data, sn: snapshot.vehicle.sn)
-                images[snapshot.vehicle.sn] = data
-            } catch {
-                continue
-            }
-        }
-
-        return images
     }
 
     private func cachedVehicleImages(for dashboard: NinebotDashboard, store: NinebotSharedStore) -> [String: Data] {
