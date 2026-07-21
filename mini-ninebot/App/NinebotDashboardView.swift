@@ -1365,20 +1365,37 @@ private struct VehicleMotionScene: View {
 
     @State private var isAnimating = false
 
+    /// A riding scene must never be inferred from power state or historical
+    /// trips: both are common while a parked vehicle is stationary. It is only
+    /// enabled if the live status payload explicitly reports both motion and a
+    /// plausible real-time speed.
     private var mode: VehicleMotionSceneMode {
-        snapshot.state.isCharging == true && !snapshot.state.isFullyCharged ? .charging : .riding
+        if snapshot.state.isCharging == true && !snapshot.state.isFullyCharged {
+            return .charging
+        }
+        return explicitLiveSpeedKmh == nil ? .parked : .riding
+    }
+
+    private var explicitLiveSpeedKmh: Double? {
+        guard let status = snapshot.state.rawStatus else { return nil }
+
+        let movementKeys = ["isRiding", "riding", "isMoving", "moving", "inMotion", "driving"]
+        guard movementKeys.contains(where: { status[$0]?.boolValue == true }) else {
+            return nil
+        }
+
+        let speedKeys = ["currentSpeed", "current_speed", "speedKmh", "speed_kmh", "realtimeSpeed", "realtime_speed"]
+        guard let speed = speedKeys.compactMap({ status[$0]?.doubleValue }).first,
+              speed.isFinite,
+              (2...120).contains(speed) else {
+            return nil
+        }
+        return speed
     }
 
     private var rideSpeedText: String {
-        let mostRecentSpeed = snapshot.state.rideRecords?
-            .sorted { ($0.endedAt ?? .distantPast) > ($1.endedAt ?? .distantPast) }
-            .first?
-            .maximumSpeed
-
-        if let mostRecentSpeed, mostRecentSpeed > 0 {
-            return "\(Int(mostRecentSpeed.rounded()))"
-        }
-        return snapshot.state.isPoweredOn == true ? "45" : "--"
+        guard let explicitLiveSpeedKmh else { return "--" }
+        return "\(Int(explicitLiveSpeedKmh.rounded()))"
     }
 
     var body: some View {
@@ -1387,6 +1404,8 @@ private struct VehicleMotionScene: View {
                 switch mode {
                 case .charging:
                     chargingScene(in: proxy.size)
+                case .parked:
+                    parkedScene(in: proxy.size)
                 case .riding:
                     ridingScene(in: proxy.size)
                 }
@@ -1394,7 +1413,7 @@ private struct VehicleMotionScene: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(mode == .charging ? "车辆正在进行三维充电动画" : "车辆正在进行三维骑行动画")
+            .accessibilityLabel(accessibilitySceneLabel)
         }
         .onAppear { isAnimating = true }
     }
@@ -1440,6 +1459,92 @@ private struct VehicleMotionScene: View {
                 .offset(x: isAnimating ? size.width * 0.38 : -size.width * 0.42, y: size.height * 0.39)
                 .blur(radius: 0.5)
                 .animation(.linear(duration: 1.7).repeatForever(autoreverses: false), value: isAnimating)
+        }
+    }
+
+    private var accessibilitySceneLabel: String {
+        switch mode {
+        case .charging:
+            return "车辆正在进行三维充电动画"
+        case .parked:
+            return "车辆静止停放"
+        case .riding:
+            return "车辆正在进行三维骑行动画"
+        }
+    }
+
+    @ViewBuilder
+    private func parkedScene(in size: CGSize) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.95), Color(red: 0.92, green: 0.95, blue: 0.96), Color.white.opacity(0.92)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            Ellipse()
+                .fill(Color.black.opacity(0.10))
+                .frame(width: size.width * 0.66, height: size.height * 0.11)
+                .blur(radius: 10)
+                .offset(y: size.height * 0.31)
+
+            Circle()
+                .fill(Color.teslaGreen.opacity(0.12))
+                .frame(width: size.width * 0.52, height: size.width * 0.52)
+                .blur(radius: 28)
+                .scaleEffect(isAnimating ? 1.05 : 0.96)
+                .offset(x: size.width * 0.18, y: -size.height * 0.10)
+                .animation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true), value: isAnimating)
+
+            parkedBackdrop(size: size)
+
+            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.83, 314), showsBackground: false)
+                .shadow(color: .black.opacity(0.18), radius: 18, x: 0, y: 14)
+                .scaleEffect(x: 1.04, y: 1)
+                .offset(y: size.height * 0.12)
+
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(snapshot.state.isPoweredOn == true ? Color.teslaGreen : Color.teslaSecondaryText.opacity(0.55))
+                    .frame(width: 7, height: 7)
+                Text(snapshot.state.isPoweredOn == true ? "车辆已停稳 · 已上电" : "车辆已停稳")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.teslaSecondaryText)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .background(.white.opacity(0.74), in: Capsule())
+            .overlay {
+                Capsule().stroke(Color.black.opacity(0.06), lineWidth: 1)
+            }
+            .offset(y: -size.height * 0.36)
+        }
+    }
+
+    private func parkedBackdrop(size: CGSize) -> some View {
+        ZStack {
+            ForEach(0..<3, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.white.opacity(0.44))
+                    .frame(width: size.width * (0.15 + CGFloat(index) * 0.04), height: size.height * (0.28 + CGFloat(index) * 0.08))
+                    .overlay {
+                        VStack(spacing: 6) {
+                            ForEach(0..<3, id: \.self) { _ in
+                                Capsule().fill(Color.teslaSecondaryText.opacity(0.10)).frame(height: 3)
+                            }
+                        }
+                        .padding(10)
+                    }
+                    .offset(x: size.width * (-0.37 + CGFloat(index) * 0.34), y: size.height * 0.10)
+            }
+
+            Rectangle()
+                .fill(Color.teslaSecondaryText.opacity(0.10))
+                .frame(height: 1)
+                .offset(y: size.height * 0.34)
         }
     }
 
@@ -1528,6 +1633,7 @@ private struct VehicleMotionScene: View {
 
 private enum VehicleMotionSceneMode {
     case charging
+    case parked
     case riding
 }
 
@@ -1738,42 +1844,46 @@ private struct RiderSilhouette: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(LinearGradient(colors: [Color(red: 0.17, green: 0.19, blue: 0.20), .black], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay(Circle().stroke(Color.teslaGreen.opacity(0.48), lineWidth: 1))
-                .frame(width: 26, height: 26)
-                .offset(x: 5, y: -52)
-
-            Capsule()
-                .fill(Color(red: 0.07, green: 0.08, blue: 0.09))
-                .frame(width: 31, height: 63)
-                .rotationEffect(.degrees(-13))
-                .offset(x: 0, y: -12)
+                .fill(LinearGradient(colors: [Color(red: 0.16, green: 0.18, blue: 0.19), .black], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay(Circle().stroke(Color.teslaGreen.opacity(0.42), lineWidth: 1))
+                .frame(width: 21, height: 21)
+                .offset(x: -13, y: -47)
 
             Capsule()
                 .fill(Color(red: 0.06, green: 0.07, blue: 0.08))
-                .frame(width: 12, height: 54)
-                .rotationEffect(.degrees(isAnimating ? 37 : 31))
-                .offset(x: 27, y: 5)
+                .frame(width: 24, height: 52)
+                .rotationEffect(.degrees(19))
+                .offset(x: -2, y: -12)
+
+            // Arms reach toward the left-side handlebar; legs follow the seat
+            // and footboard so the rider reads as a side profile, not seated
+            // vertically on top of the vehicle.
+            Capsule()
+                .fill(Color(red: 0.055, green: 0.065, blue: 0.075))
+                .frame(width: 9, height: 43)
+                .rotationEffect(.degrees(54))
+                .offset(x: -23, y: -22)
 
             Capsule()
-                .fill(Color(red: 0.06, green: 0.07, blue: 0.08))
-                .frame(width: 12, height: 55)
-                .rotationEffect(.degrees(isAnimating ? -39 : -32))
-                .offset(x: -12, y: 39)
+                .fill(Color(red: 0.055, green: 0.065, blue: 0.075))
+                .frame(width: 11, height: 47)
+                .rotationEffect(.degrees(-53))
+                .offset(x: 13, y: 22)
 
             Capsule()
-                .fill(Color(red: 0.06, green: 0.07, blue: 0.08))
-                .frame(width: 11, height: 51)
-                .rotationEffect(.degrees(isAnimating ? 59 : 52))
-                .offset(x: 22, y: 44)
+                .fill(Color(red: 0.055, green: 0.065, blue: 0.075))
+                .frame(width: 10, height: 40)
+                .rotationEffect(.degrees(60))
+                .offset(x: -1, y: 48)
 
             Capsule()
-                .fill(Color.teslaGreen.opacity(0.9))
-                .frame(width: 2, height: 43)
-                .rotationEffect(.degrees(-13))
-                .offset(x: 5, y: -12)
+                .fill(Color.teslaGreen.opacity(0.86))
+                .frame(width: 2, height: 36)
+                .rotationEffect(.degrees(19))
+                .offset(x: -2, y: -12)
         }
-        .shadow(color: .black.opacity(0.24), radius: 5, y: 5)
+        .scaleEffect(0.82)
+        .shadow(color: .black.opacity(0.20), radius: 4, y: 4)
         .animation(.easeInOut(duration: 0.58).repeatForever(autoreverses: true), value: isAnimating)
     }
 }
