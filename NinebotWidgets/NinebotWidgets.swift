@@ -13,11 +13,9 @@ struct NinebotWidgetBundle: WidgetBundle {
         NinebotStatusWidget()
         NinebotLockScreenWidget()
         #if canImport(ActivityKit)
+        NinebotChargeLiveActivity()
         if #available(iOS 18.0, *) {
             NinebotWatchChargeLiveActivity()
-        }
-        if #unavailable(iOS 18.0) {
-            NinebotChargeLiveActivity()
         }
         #endif
     }
@@ -54,71 +52,104 @@ struct NinebotLockScreenWidget: Widget {
 @available(iOS 16.1, *)
 struct NinebotChargeLiveActivity: Widget {
     var body: some WidgetConfiguration {
-        makeChargeActivityConfiguration()
+        ActivityConfiguration(for: NinebotChargeActivityAttributes.self) { context in
+            chargeActivityContent(attributes: context.attributes, state: context.state)
+                .activityBackgroundTint(Color(red: 0.025, green: 0.07, blue: 0.06))
+                .activitySystemActionForegroundColor(WidgetTheme.green)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    ChargeIslandVehicleHeader(attributes: context.attributes)
+                        .padding(.leading, 4)
+                        .padding(.top, 7)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    ChargeIslandBattery(state: context.state)
+                        .padding(.trailing, 8)
+                        .padding(.top, 3)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    ChargeIslandMetrics(state: context.state)
+                        .padding(.horizontal, 5)
+                        .padding(.top, 6)
+                }
+            } compactLeading: {
+                Image(systemName: "bolt.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(WidgetTheme.green)
+                    .frame(width: 18, height: 18)
+            } compactTrailing: {
+                Text(chargeBatteryText(context.state))
+                    .font(.caption2.monospacedDigit().weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.70)
+            } minimal: {
+                Image(systemName: "bolt.fill")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(WidgetTheme.green)
+            }
+            .keylineTint(WidgetTheme.green)
+        }
+        .configurationDisplayName("九号充电实况")
+        .description("车辆充电时自动上岛，实时显示电量进度、电压、温度和预计充满时间。")
     }
 }
 
-/// The iOS 18 configuration is registered in place of the iOS 16 fallback.
-/// Keeping the configurations in separate Widget types lets the bundle select
-/// it with an availability branch, without mixing distinct opaque
-/// `WidgetConfiguration` result types.
+/// A separate ActivityAttributes type is used on iOS 18 so the Apple Watch
+/// Smart Stack configuration does not replace iOS 17's Live Activity support.
 @available(iOS 18.0, *)
 struct NinebotWatchChargeLiveActivity: Widget {
     var body: some WidgetConfiguration {
-        makeChargeActivityConfiguration()
-            .supplementalActivityFamilies([.small])
-    }
-}
-
-@available(iOS 16.1, *)
-private func makeChargeActivityConfiguration() -> some WidgetConfiguration {
-    ActivityConfiguration(for: NinebotChargeActivityAttributes.self) { context in
-        chargeActivityContent(attributes: context.attributes, state: context.state)
-            .activityBackgroundTint(Color(red: 0.025, green: 0.07, blue: 0.06))
-            .activitySystemActionForegroundColor(WidgetTheme.green)
-    } dynamicIsland: { context in
-        DynamicIsland {
-            DynamicIslandExpandedRegion(.leading) {
-                ChargeIslandVehicleHeader(attributes: context.attributes)
-                    .padding(.leading, 4)
-                    .padding(.top, 7)
+        ActivityConfiguration(for: NinebotWatchChargeActivityAttributes.self) { context in
+            chargeActivityContent(attributes: context.attributes, state: context.state)
+                .activityBackgroundTint(Color(red: 0.025, green: 0.07, blue: 0.06))
+                .activitySystemActionForegroundColor(WidgetTheme.green)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    ChargeIslandVehicleHeader(attributes: context.attributes)
+                        .padding(.leading, 4)
+                        .padding(.top, 7)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    ChargeIslandBattery(state: context.state)
+                        .padding(.trailing, 8)
+                        .padding(.top, 3)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    ChargeIslandMetrics(state: context.state)
+                        .padding(.horizontal, 5)
+                        .padding(.top, 6)
+                }
+            } compactLeading: {
+                Image(systemName: "bolt.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(WidgetTheme.green)
+                    .frame(width: 18, height: 18)
+            } compactTrailing: {
+                Text(chargeBatteryText(context.state))
+                    .font(.caption2.monospacedDigit().weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.70)
+            } minimal: {
+                Image(systemName: "bolt.fill")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(WidgetTheme.green)
             }
-            DynamicIslandExpandedRegion(.trailing) {
-                ChargeIslandBattery(state: context.state)
-                    .padding(.trailing, 8)
-                    .padding(.top, 3)
-            }
-            DynamicIslandExpandedRegion(.bottom) {
-                ChargeIslandMetrics(state: context.state)
-                    .padding(.horizontal, 5)
-                    .padding(.top, 6)
-            }
-        } compactLeading: {
-            Image(systemName: "bolt.fill")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(WidgetTheme.green)
-                .frame(width: 18, height: 18)
-        } compactTrailing: {
-            Text(chargeBatteryText(context.state))
-                .font(.caption2.monospacedDigit().weight(.bold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.70)
-        } minimal: {
-            Image(systemName: "bolt.fill")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(WidgetTheme.green)
+            .keylineTint(WidgetTheme.green)
         }
-        .keylineTint(WidgetTheme.green)
+        .supplementalActivityFamilies([.small])
+        .configurationDisplayName("九号充电实况")
+        .description("车辆充电时自动上岛，并在 Apple Watch 智能叠放中显示充电进度。")
     }
-    .configurationDisplayName("九号充电实况")
-    .description("车辆充电时自动上岛，实时显示电量进度、电压、温度和预计充满时间。")
 }
 
 @ViewBuilder
-private func chargeActivityContent(
-    attributes: NinebotChargeActivityAttributes,
-    state: NinebotChargeActivityAttributes.ContentState
+private func chargeActivityContent<Attributes: NinebotChargeActivityVehicleAttributes>(
+    attributes: Attributes,
+    state: NinebotChargeActivityContentState
 ) -> some View {
     #if compiler(>=6.0)
     if #available(iOS 18.0, *) {
@@ -136,11 +167,11 @@ private func chargeActivityContent(
 /// Stack. Keep the glance compact: vehicle, percentage, and the live charge
 /// ring remain legible from the wrist.
 @available(iOS 18.0, *)
-private struct ChargeLiveActivityAdaptiveCard: View {
+private struct ChargeLiveActivityAdaptiveCard<Attributes: NinebotChargeActivityVehicleAttributes>: View {
     @Environment(\.activityFamily) private var activityFamily
 
-    var attributes: NinebotChargeActivityAttributes
-    var state: NinebotChargeActivityAttributes.ContentState
+    var attributes: Attributes
+    var state: NinebotChargeActivityContentState
 
     var body: some View {
         if activityFamily == .small {
@@ -152,9 +183,9 @@ private struct ChargeLiveActivityAdaptiveCard: View {
 }
 
 @available(iOS 18.0, *)
-private struct ChargeWatchLiveActivityCard: View {
-    var attributes: NinebotChargeActivityAttributes
-    var state: NinebotChargeActivityAttributes.ContentState
+private struct ChargeWatchLiveActivityCard<Attributes: NinebotChargeActivityVehicleAttributes>: View {
+    var attributes: Attributes
+    var state: NinebotChargeActivityContentState
 
     var body: some View {
         VStack(spacing: 5) {
@@ -199,9 +230,9 @@ private struct ChargeWatchLiveActivityCard: View {
 #endif
 
 @available(iOS 16.1, *)
-private struct ChargeLiveActivityCard: View {
-    var attributes: NinebotChargeActivityAttributes
-    var state: NinebotChargeActivityAttributes.ContentState
+private struct ChargeLiveActivityCard<Attributes: NinebotChargeActivityVehicleAttributes>: View {
+    var attributes: Attributes
+    var state: NinebotChargeActivityContentState
 
     var body: some View {
         ZStack {
@@ -286,8 +317,8 @@ private struct ChargeLiveActivityCard: View {
 }
 
 @available(iOS 16.1, *)
-private struct ChargeIslandVehicleHeader: View {
-    var attributes: NinebotChargeActivityAttributes
+private struct ChargeIslandVehicleHeader<Attributes: NinebotChargeActivityVehicleAttributes>: View {
+    var attributes: Attributes
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -306,7 +337,7 @@ private struct ChargeIslandVehicleHeader: View {
 
 @available(iOS 16.1, *)
 private struct ChargeIslandBattery: View {
-    var state: NinebotChargeActivityAttributes.ContentState
+    var state: NinebotChargeActivityContentState
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 2) {
@@ -322,7 +353,7 @@ private struct ChargeIslandBattery: View {
 
 @available(iOS 16.1, *)
 private struct ChargeIslandMetrics: View {
-    var state: NinebotChargeActivityAttributes.ContentState
+    var state: NinebotChargeActivityContentState
 
     var body: some View {
         VStack(spacing: 8) {
@@ -439,12 +470,12 @@ private struct ChargeBatteryProgress: View {
 }
 
 @available(iOS 16.1, *)
-private func chargeBatteryValue(_ state: NinebotChargeActivityAttributes.ContentState) -> String {
+private func chargeBatteryValue(_ state: NinebotChargeActivityContentState) -> String {
     state.battery.map(String.init) ?? "--"
 }
 
 @available(iOS 16.1, *)
-private func chargeBatteryText(_ state: NinebotChargeActivityAttributes.ContentState) -> String {
+private func chargeBatteryText(_ state: NinebotChargeActivityContentState) -> String {
     chargeBatteryText(state.battery)
 }
 
@@ -454,19 +485,19 @@ private func chargeBatteryText(_ battery: Int?) -> String {
 }
 
 @available(iOS 16.1, *)
-private func chargeVoltageText(_ state: NinebotChargeActivityAttributes.ContentState) -> String {
+private func chargeVoltageText(_ state: NinebotChargeActivityContentState) -> String {
     guard let voltage = state.batteryVoltage else { return "-- V" }
     return "\(formatWidgetNumber(voltage, maximumFractionDigits: 1)) V"
 }
 
 @available(iOS 16.1, *)
-private func chargeTemperatureText(_ state: NinebotChargeActivityAttributes.ContentState) -> String {
+private func chargeTemperatureText(_ state: NinebotChargeActivityContentState) -> String {
     guard let temperature = state.batteryTemperatureCelsius else { return "-- °C" }
     return "\(formatWidgetNumber(temperature, maximumFractionDigits: 1)) °C"
 }
 
 @available(iOS 16.1, *)
-private func chargeFullTimeText(_ state: NinebotChargeActivityAttributes.ContentState) -> String {
+private func chargeFullTimeText(_ state: NinebotChargeActivityContentState) -> String {
     guard let minutes = state.estimatedFullChargeMinutes else { return "计算中" }
     guard minutes > 0 else { return "已充满" }
 
