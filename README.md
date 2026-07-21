@@ -14,34 +14,31 @@ This project is intended for personal builds. The bundled GitHub Action produces
 - Shared local cache through App Groups for the app and widget extension.
 - Friendly vehicle names: the serial number `2PDAA2525A0414` is shown as **B2轰炸机**. Other vehicles can be renamed in **我的 → 车辆名称 → 编辑**.
 
-## Live Activity riding display
+## Live Activity charging display
 
 ### When it appears and ends
 
-- **Start condition:** the selected vehicle is reported as **unlocked**. Refreshing in the app, powering on, or running the related shortcut synchronizes the Live Activity.
-- **End condition:** the vehicle is reported as **locked**. The activity is ended as soon as the app receives and saves that state.
-- Only one selected vehicle has an active ride display at a time, so the Island stays clear and focused.
+- **Start condition:** the selected vehicle is reported as **charging** and is not yet full. Refreshing in the app or running a vehicle shortcut synchronizes the Live Activity.
+- **End condition:** the vehicle stops charging, reaches full charge, becomes unavailable, or another vehicle is selected. The activity is ended as soon as the updated state is saved.
+- Only one selected vehicle has an active charging display at a time, so the Dynamic Island stays clear and focused.
 
 ### Information shown
 
-- Speed in **km/h**
-- Battery percentage, estimated range, and **battery temperature**
-- Ride electricity used and energy consumption per kilometre
-- GPS address or coordinates when returned by the vehicle API
-- Continuous ride timer, distance, electricity used, average energy consumption, and battery temperature
-- A calm adaptive distance-progress bar: its target grows with the ride rather than showing fixed, confusing segments
-- Compact and expanded Dynamic Island layouts, plus an expanded Lock Screen Live Activity card
+- Battery percentage and a **0–100% charge progress bar**. Every increase in the returned battery percentage advances the bar.
+- Battery voltage and battery temperature.
+- Estimated remaining time until full charge, preferring the vehicle API's remaining-charge estimate when it is returned and otherwise using the app's charge-curve estimate.
+- Charging power (when returned), update time, and compact / expanded Dynamic Island layouts plus an expanded Lock Screen Live Activity card.
 
 ### Refresh behaviour and iOS limitations
 
 While the app is in the foreground it uses a lightweight vehicle-status refresh:
 
-- **Unlocked / riding:** every **5 seconds**
-- **Locked / idle:** every **8 seconds**
+- **Charging:** every **5 seconds**
+- **Not charging / idle:** every **8 seconds**
 
-This refresh updates the dashboard and synchronizes the Live Activity, including battery, speed, temperature, GPS, and ride progress. WidgetKit controls its own timeline budget, so widgets are intentionally reloaded no more often than roughly once per minute.
+This refresh updates the dashboard and synchronizes the Live Activity, including battery progress, voltage, temperature, and estimated full-charge time. WidgetKit controls its own timeline budget, so widgets are intentionally reloaded no more often than roughly once per minute.
 
-> **Important iOS limitation:** an ordinary iOS app cannot make a persistent 1–3 second network request while it is suspended or after it has been force-quit. It also cannot reliably learn that a vehicle was just unlocked while the app has never been launched. To automatically start a Live Activity from a vehicle unlock when the app is not open, a server must implement **APNs + ActivityKit push-to-start / Live Activity update pushes**. The current project has local ActivityKit synchronization and normal device push registration, but it does not include that server-side push service.
+> **Important iOS limitation:** an ordinary iOS app cannot make a persistent 1–3 second network request while it is suspended or after it has been force-quit. It also cannot reliably learn that a vehicle has just started charging while the app has never been launched. To automatically start a Live Activity from a charging event when the app is not open, a server must implement **APNs + ActivityKit push-to-start / Live Activity update pushes**. The current project has local ActivityKit synchronization and normal device push registration, but it does not include that server-side push service.
 
 ## Build on a Mac
 

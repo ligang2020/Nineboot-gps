@@ -40,8 +40,8 @@ struct NinebotTimelineProvider: AppIntentTimelineProvider {
 
     private func refreshIntervalMinutes(for state: NinebotVehicleState?) -> Int {
         guard let state else { return 30 }
-        if state.isLocked == false || state.isPoweredOn == true { return 5 }
-        if state.isCharging == true, !state.isFullyCharged { return 10 }
+        if state.isCharging == true, !state.isFullyCharged { return 5 }
+        if state.isLocked == false || state.isPoweredOn == true { return 10 }
         if let battery = state.battery, battery < 20 { return 15 }
         return 30
     }

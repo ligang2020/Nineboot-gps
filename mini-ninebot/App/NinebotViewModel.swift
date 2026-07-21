@@ -215,10 +215,10 @@ final class NinebotViewModel: ObservableObject {
         true
     }
 
-    /// Five seconds is responsive enough for speed/battery while avoiding an
-    /// aggressive request loop against the vehicle service.
+    /// Charge status is refreshed every five seconds while the selected vehicle
+    /// is charging so the Live Activity's battery progress remains responsive.
     var foregroundRefreshInterval: TimeInterval {
-        dashboard.primaryVehicle?.state.isLocked == false ? 5 : 8
+        dashboard.primaryVehicle?.state.isCharging == true ? 5 : 8
     }
 
     func refreshOnLaunchIfPossible() async {
@@ -471,7 +471,7 @@ final class NinebotViewModel: ObservableObject {
     func saveVehicleDisplayName(_ name: String, for sn: String) {
         NinebotVehicleNameResolver.saveAlias(name, for: sn)
         objectWillChange.send()
-        NinebotRideLiveActivityManager.sync(with: dashboard)
+        NinebotChargeLiveActivityManager.sync(with: dashboard)
         WidgetCenter.shared.reloadAllTimelines()
         statusMessage = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "已恢复车辆默认名称" : "车辆名称已更新"
     }
@@ -646,7 +646,7 @@ final class NinebotViewModel: ObservableObject {
         let archivedDashboard = store.saveDashboard(dashboard)
         self.dashboard = archivedDashboard
         history = Self.historyMap(for: archivedDashboard, store: store)
-        NinebotRideLiveActivityManager.sync(with: archivedDashboard)
+        NinebotChargeLiveActivityManager.sync(with: archivedDashboard)
 
         // The App is the single writer for the App Group snapshot. Explicit
         // refreshes reload WidgetKit after saving; the five-second foreground

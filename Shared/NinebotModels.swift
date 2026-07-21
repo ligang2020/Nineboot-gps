@@ -1128,7 +1128,10 @@ struct NinebotVehicleState: Codable, Equatable {
 
     var estimatedFullChargeMinutes: Double? {
         guard isCharging == true else { return nil }
-        guard let battery else { return remainingChargeTime }
+        if let remainingChargeTime, remainingChargeTime >= 0 {
+            return remainingChargeTime
+        }
+        guard let battery else { return nil }
 
         let level = min(max(Double(battery), 0), 100)
         guard level < 100 else { return 0 }

@@ -12,7 +12,7 @@
 		B20000000000000000000002 /* NinebotDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000106 /* NinebotDashboardView.swift */; };
 		B20000000000000000000003 /* NinebotPushManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000107 /* NinebotPushManager.swift */; };
 		B20000000000000000000004 /* NinebotRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000108 /* NinebotRecordingView.swift */; };
-		B20000000000000000000005 /* NinebotRideLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000109 /* NinebotRideLiveActivityManager.swift */; };
+		B20000000000000000000005 /* NinebotChargeLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000109 /* NinebotChargeLiveActivityManager.swift */; };
 		B20000000000000000000006 /* NinebotSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010A /* NinebotSettingsView.swift */; };
 		B20000000000000000000007 /* NinebotViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010B /* NinebotViewModel.swift */; };
 		B20000000000000000000008 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000101 /* ContentView.swift */; };
@@ -20,7 +20,7 @@
 		B2000000000000000000000A /* NinebotCoordinateTransform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000201 /* NinebotCoordinateTransform.swift */; };
 		B2000000000000000000000B /* NinebotModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000202 /* NinebotModels.swift */; };
 		B2000000000000000000000C /* NinebotProxyClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000203 /* NinebotProxyClient.swift */; };
-		B2000000000000000000000D /* NinebotRideActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000204 /* NinebotRideActivityAttributes.swift */; };
+		B2000000000000000000000D /* NinebotChargeActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000204 /* NinebotChargeActivityAttributes.swift */; };
 		B2000000000000000000000E /* NinebotSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000205 /* NinebotSharedStore.swift */; };
 		B30000000000000000000001 /* NinebotWidgetConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000301 /* NinebotWidgetConfiguration.swift */; };
 		B30000000000000000000002 /* NinebotWidgetProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000302 /* NinebotWidgetProvider.swift */; };
@@ -28,7 +28,7 @@
 		B30000000000000000000004 /* NinebotCoordinateTransform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000201 /* NinebotCoordinateTransform.swift */; };
 		B30000000000000000000005 /* NinebotModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000202 /* NinebotModels.swift */; };
 		B30000000000000000000006 /* NinebotProxyClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000203 /* NinebotProxyClient.swift */; };
-		B30000000000000000000007 /* NinebotRideActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000204 /* NinebotRideActivityAttributes.swift */; };
+		B30000000000000000000007 /* NinebotChargeActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000204 /* NinebotChargeActivityAttributes.swift */; };
 		B30000000000000000000008 /* NinebotSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000205 /* NinebotSharedStore.swift */; };
 		B40000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000103 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -68,13 +68,13 @@
 		B100000000000000000000106 /* NinebotDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotDashboardView.swift"; sourceTree = "<group>"; };
 		B100000000000000000000107 /* NinebotPushManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotPushManager.swift"; sourceTree = "<group>"; };
 		B100000000000000000000108 /* NinebotRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotRecordingView.swift"; sourceTree = "<group>"; };
-		B100000000000000000000109 /* NinebotRideLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotRideLiveActivityManager.swift"; sourceTree = "<group>"; };
+		B100000000000000000000109 /* NinebotChargeLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotChargeLiveActivityManager.swift"; sourceTree = "<group>"; };
 		B10000000000000000000010A /* NinebotSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotSettingsView.swift"; sourceTree = "<group>"; };
 		B10000000000000000000010B /* NinebotViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotViewModel.swift"; sourceTree = "<group>"; };
 		B100000000000000000000201 /* NinebotCoordinateTransform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotCoordinateTransform.swift"; sourceTree = "<group>"; };
 		B100000000000000000000202 /* NinebotModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotModels.swift"; sourceTree = "<group>"; };
 		B100000000000000000000203 /* NinebotProxyClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotProxyClient.swift"; sourceTree = "<group>"; };
-		B100000000000000000000204 /* NinebotRideActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotRideActivityAttributes.swift"; sourceTree = "<group>"; };
+		B100000000000000000000204 /* NinebotChargeActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotChargeActivityAttributes.swift"; sourceTree = "<group>"; };
 		B100000000000000000000205 /* NinebotSharedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotSharedStore.swift"; sourceTree = "<group>"; };
 		B100000000000000000000301 /* NinebotWidgetConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotWidgetConfiguration.swift"; sourceTree = "<group>"; };
 		B100000000000000000000302 /* NinebotWidgetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotWidgetProvider.swift"; sourceTree = "<group>"; };
@@ -134,7 +134,7 @@
 				B100000000000000000000106 /* NinebotDashboardView.swift */,
 				B100000000000000000000107 /* NinebotPushManager.swift */,
 				B100000000000000000000108 /* NinebotRecordingView.swift */,
-				B100000000000000000000109 /* NinebotRideLiveActivityManager.swift */,
+				B100000000000000000000109 /* NinebotChargeLiveActivityManager.swift */,
 				B10000000000000000000010A /* NinebotSettingsView.swift */,
 				B10000000000000000000010B /* NinebotViewModel.swift */,
 			);
@@ -147,7 +147,7 @@
 				B100000000000000000000201 /* NinebotCoordinateTransform.swift */,
 				B100000000000000000000202 /* NinebotModels.swift */,
 				B100000000000000000000203 /* NinebotProxyClient.swift */,
-				B100000000000000000000204 /* NinebotRideActivityAttributes.swift */,
+				B100000000000000000000204 /* NinebotChargeActivityAttributes.swift */,
 				B100000000000000000000205 /* NinebotSharedStore.swift */,
 			);
 			path = Shared;
@@ -288,7 +288,7 @@
 				B20000000000000000000002 /* NinebotDashboardView.swift in Sources */,
 				B20000000000000000000003 /* NinebotPushManager.swift in Sources */,
 				B20000000000000000000004 /* NinebotRecordingView.swift in Sources */,
-				B20000000000000000000005 /* NinebotRideLiveActivityManager.swift in Sources */,
+				B20000000000000000000005 /* NinebotChargeLiveActivityManager.swift in Sources */,
 				B20000000000000000000006 /* NinebotSettingsView.swift in Sources */,
 				B20000000000000000000007 /* NinebotViewModel.swift in Sources */,
 				B20000000000000000000008 /* ContentView.swift in Sources */,
@@ -296,7 +296,7 @@
 				B2000000000000000000000A /* NinebotCoordinateTransform.swift in Sources */,
 				B2000000000000000000000B /* NinebotModels.swift in Sources */,
 				B2000000000000000000000C /* NinebotProxyClient.swift in Sources */,
-				B2000000000000000000000D /* NinebotRideActivityAttributes.swift in Sources */,
+				B2000000000000000000000D /* NinebotChargeActivityAttributes.swift in Sources */,
 				B2000000000000000000000E /* NinebotSharedStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -311,7 +311,7 @@
 				B30000000000000000000004 /* NinebotCoordinateTransform.swift in Sources */,
 				B30000000000000000000005 /* NinebotModels.swift in Sources */,
 				B30000000000000000000006 /* NinebotProxyClient.swift in Sources */,
-				B30000000000000000000007 /* NinebotRideActivityAttributes.swift in Sources */,
+				B30000000000000000000007 /* NinebotChargeActivityAttributes.swift in Sources */,
 				B30000000000000000000008 /* NinebotSharedStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

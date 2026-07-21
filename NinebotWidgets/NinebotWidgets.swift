@@ -14,7 +14,7 @@ struct NinebotWidgetBundle: WidgetBundle {
         NinebotLockScreenWidget()
         #if canImport(ActivityKit)
         if #available(iOS 16.1, *) {
-            NinebotRideLiveActivity()
+            NinebotChargeLiveActivity()
         }
         #endif
     }
@@ -49,79 +49,79 @@ struct NinebotLockScreenWidget: Widget {
 
 #if canImport(ActivityKit)
 @available(iOS 16.1, *)
-struct NinebotRideLiveActivity: Widget {
+struct NinebotChargeLiveActivity: Widget {
     var body: some WidgetConfiguration {
-        ActivityConfiguration(for: NinebotRideActivityAttributes.self) { context in
-            RideLiveActivityCard(attributes: context.attributes, state: context.state)
-                .activityBackgroundTint(Color(red: 0.035, green: 0.05, blue: 0.07))
+        ActivityConfiguration(for: NinebotChargeActivityAttributes.self) { context in
+            ChargeLiveActivityCard(attributes: context.attributes, state: context.state)
+                .activityBackgroundTint(Color(red: 0.025, green: 0.07, blue: 0.06))
                 .activitySystemActionForegroundColor(WidgetTheme.green)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    RideIslandVehicleHeader(attributes: context.attributes, state: context.state)
+                    ChargeIslandVehicleHeader(attributes: context.attributes)
                         .padding(.leading, 4)
                         .padding(.top, 3)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    RideIslandBattery(state: context.state)
+                    ChargeIslandBattery(state: context.state)
                         .padding(.trailing, 8)
                         .padding(.top, 3)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    RideIslandMetrics(state: context.state)
+                    ChargeIslandMetrics(state: context.state)
                         .padding(.horizontal, 5)
                         .padding(.top, 6)
                 }
             } compactLeading: {
-                Image(systemName: context.state.isPoweredOn == true ? "speedometer" : "lock.open.fill")
+                Image(systemName: "bolt.fill")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(WidgetTheme.green)
                     .frame(width: 18, height: 18)
             } compactTrailing: {
-                Text(rideCompactText(context.state))
+                Text(chargeBatteryText(context.state))
                     .font(.caption2.monospacedDigit().weight(.bold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.70)
             } minimal: {
-                Image(systemName: "lock.open.fill")
+                Image(systemName: "bolt.fill")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(WidgetTheme.green)
             }
             .keylineTint(WidgetTheme.green)
         }
-        .configurationDisplayName("九号骑行实况")
-        .description("车辆解锁后自动上岛，展示电量、速度、骑行进度与本次用电；上锁立即结束。")
+        .configurationDisplayName("九号充电实况")
+        .description("车辆充电时自动上岛，实时显示电量进度、电压、温度和预计充满时间。")
     }
 }
 
 @available(iOS 16.1, *)
-private struct RideLiveActivityCard: View {
-    var attributes: NinebotRideActivityAttributes
-    var state: NinebotRideActivityAttributes.ContentState
+private struct ChargeLiveActivityCard: View {
+    var attributes: NinebotChargeActivityAttributes
+    var state: NinebotChargeActivityAttributes.ContentState
 
     var body: some View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(red: 0.025, green: 0.035, blue: 0.055),
-                    Color(red: 0.035, green: 0.12, blue: 0.115),
-                    Color(red: 0.02, green: 0.075, blue: 0.10)
+                    Color(red: 0.02, green: 0.055, blue: 0.045),
+                    Color(red: 0.025, green: 0.14, blue: 0.105),
+                    Color(red: 0.015, green: 0.08, blue: 0.09)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
 
             Circle()
-                .fill(WidgetTheme.green.opacity(0.12))
+                .fill(WidgetTheme.green.opacity(0.14))
                 .frame(width: 180, height: 180)
                 .blur(radius: 22)
-                .offset(x: 130, y: -66)
+                .offset(x: 132, y: -72)
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center, spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Label(rideStatusText(state), systemImage: state.isPoweredOn == true ? "bolt.car.fill" : "lock.open.fill")
+                        Label("充电实况", systemImage: "bolt.fill")
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(WidgetTheme.green)
                         Text(attributes.vehicleName)
@@ -131,52 +131,50 @@ private struct RideLiveActivityCard: View {
                             .truncationMode(.tail)
                     }
                     Spacer(minLength: 8)
-                    RideBatteryBadge(battery: state.battery)
+                    ChargeBatteryBadge(battery: state.battery)
                 }
 
-                HStack(alignment: .bottom, spacing: 16) {
-                    HStack(alignment: .lastTextBaseline, spacing: 5) {
-                        Text(rideSpeedValue(state))
-                            .font(.system(size: 38, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.65)
-                        Text("km/h")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.54))
-                    }
-
-                    Spacer(minLength: 12)
-
+                HStack(alignment: .lastTextBaseline, spacing: 6) {
+                    Text(chargeBatteryValue(state))
+                        .font(.system(size: 38, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                    Text("%")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.62))
+                    Spacer(minLength: 8)
                     VStack(alignment: .trailing, spacing: 3) {
-                        Text(state.rideStartedAt, style: .timer)
+                        Text(chargeFullTimeText(state))
                             .font(.title3.monospacedDigit().weight(.bold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        Text("骑行时长")
+                        Text("预计充满")
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(WidgetTheme.green)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    .frame(width: 84, alignment: .trailing)
                 }
                 .frame(maxWidth: .infinity)
 
-                RideDistanceProgress(distance: state.rideDistanceKm, target: state.rideProgressTargetKm)
+                ChargeBatteryProgress(battery: state.battery)
 
                 HStack(spacing: 8) {
-                    RideActivityMetric(value: rideDurationText(state), title: "骑行时间", icon: "clock.fill")
-                    RideActivityMetric(value: rideUsedElectricityText(state), title: "本次用电", icon: "bolt.fill")
+                    ChargeActivityMetric(value: chargeVoltageText(state), title: "电池电压", icon: "bolt.circle.fill")
+                    ChargeActivityMetric(value: chargeTemperatureText(state), title: "电池温度", icon: "thermometer.medium")
+                    ChargeActivityMetric(value: chargeFullTimeText(state), title: "预估充满", icon: "clock.fill")
                 }
 
-                Label(rideLocationText(state), systemImage: "location.fill")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.58))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("更新 \(chargeUpdatedText(state.updatedAt))")
+                    if let power = state.chargingPowerWatts, power > 0 {
+                        Text("· \(formatWidgetNumber(power, maximumFractionDigits: 0)) W")
+                    }
+                }
+                .font(.caption2.monospacedDigit().weight(.medium))
+                .foregroundStyle(.white.opacity(0.58))
             }
             .padding(16)
         }
@@ -184,9 +182,8 @@ private struct RideLiveActivityCard: View {
 }
 
 @available(iOS 16.1, *)
-private struct RideIslandVehicleHeader: View {
-    var attributes: NinebotRideActivityAttributes
-    var state: NinebotRideActivityAttributes.ContentState
+private struct ChargeIslandVehicleHeader: View {
+    var attributes: NinebotChargeActivityAttributes
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -195,7 +192,7 @@ private struct RideIslandVehicleHeader: View {
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Label(rideStatusText(state), systemImage: state.isPoweredOn == true ? "bolt.fill" : "lock.open.fill")
+            Label("充电中", systemImage: "bolt.fill")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(WidgetTheme.green)
                 .lineLimit(1)
@@ -204,15 +201,15 @@ private struct RideIslandVehicleHeader: View {
 }
 
 @available(iOS 16.1, *)
-private struct RideIslandBattery: View {
-    var state: NinebotRideActivityAttributes.ContentState
+private struct ChargeIslandBattery: View {
+    var state: NinebotChargeActivityAttributes.ContentState
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 2) {
-            Text(rideBatteryText(state))
+            Text(chargeBatteryText(state))
                 .font(.title3.monospacedDigit().weight(.bold))
                 .foregroundStyle(WidgetTheme.green)
-            Text(rideRangeText(state))
+            Text(chargeFullTimeText(state))
                 .font(.caption2.monospacedDigit().weight(.medium))
                 .foregroundStyle(.white.opacity(0.58))
         }
@@ -220,17 +217,17 @@ private struct RideIslandBattery: View {
 }
 
 @available(iOS 16.1, *)
-private struct RideIslandMetrics: View {
-    var state: NinebotRideActivityAttributes.ContentState
+private struct ChargeIslandMetrics: View {
+    var state: NinebotChargeActivityAttributes.ContentState
 
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 0) {
-                RideIslandMetric(value: rideSpeedValue(state), title: "km/h")
-                RideIslandMetric(value: rideDurationText(state), title: "骑行")
-                RideIslandMetric(value: rideDistanceText(state), title: "里程")
+                ChargeIslandMetric(value: chargeVoltageText(state), title: "电压")
+                ChargeIslandMetric(value: chargeTemperatureText(state), title: "温度")
+                ChargeIslandMetric(value: chargeFullTimeText(state), title: "充满")
             }
-            RideDistanceProgress(distance: state.rideDistanceKm, target: state.rideProgressTargetKm)
+            ChargeBatteryProgress(battery: state.battery, compact: true)
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 7)
@@ -239,13 +236,13 @@ private struct RideIslandMetrics: View {
 }
 
 @available(iOS 16.1, *)
-private struct RideBatteryBadge: View {
+private struct ChargeBatteryBadge: View {
     var battery: Int?
 
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: "battery.75percent")
-            Text(battery.map { "\($0)%" } ?? "--%")
+            Text(chargeBatteryText(battery))
                 .monospacedDigit()
         }
         .font(.caption.weight(.bold))
@@ -257,7 +254,7 @@ private struct RideBatteryBadge: View {
 }
 
 @available(iOS 16.1, *)
-private struct RideActivityMetric: View {
+private struct ChargeActivityMetric: View {
     var value: String
     var title: String
     var icon: String
@@ -272,17 +269,17 @@ private struct RideActivityMetric: View {
                 .font(.caption.monospacedDigit().weight(.bold))
                 .foregroundStyle(.white.opacity(0.94))
                 .lineLimit(1)
-                .minimumScaleFactor(0.72)
+                .minimumScaleFactor(0.62)
         }
         .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-        .padding(.horizontal, 9)
+        .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
 @available(iOS 16.1, *)
-private struct RideIslandMetric: View {
+private struct ChargeIslandMetric: View {
     var value: String
     var title: String
 
@@ -292,7 +289,7 @@ private struct RideIslandMetric: View {
                 .font(.caption.monospacedDigit().weight(.bold))
                 .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(1)
-                .minimumScaleFactor(0.65)
+                .minimumScaleFactor(0.60)
             Text(title)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.white.opacity(0.48))
@@ -302,24 +299,22 @@ private struct RideIslandMetric: View {
     }
 }
 
-/// A single, adaptive distance progress bar. It deliberately has no fixed
-/// milestone ruler, so the visual scale always matches the active ride target.
+/// A 0–100% charge bar. Its fill is tied directly to battery percentage, so
+/// every reported battery increase advances the Live Activity progress bar.
 @available(iOS 16.1, *)
-private struct RideDistanceProgress: View {
-    var distance: Double?
-    var target: Double
+private struct ChargeBatteryProgress: View {
+    var battery: Int?
+    var compact = false
 
     var body: some View {
-        let resolvedDistance = max(distance ?? 0, 0)
-        let resolvedTarget = max(target, 1)
-        let progress = min(resolvedDistance / resolvedTarget, 1)
+        let progress = min(max(Double(battery ?? 0), 0), 100) / 100
 
-        VStack(spacing: 5) {
+        VStack(spacing: compact ? 4 : 5) {
             HStack(spacing: 6) {
-                Text("已骑 \(formatWidgetNumber(resolvedDistance, maximumFractionDigits: 2)) km")
+                Text("当前 \(chargeBatteryText(battery))")
                     .foregroundStyle(.white.opacity(0.82))
                 Spacer(minLength: 6)
-                Text("目标 \(formatWidgetNumber(resolvedTarget, maximumFractionDigits: 0)) km")
+                Text("满电 100%")
                     .foregroundStyle(WidgetTheme.green)
             }
             .font(.caption2.monospacedDigit().weight(.medium))
@@ -327,88 +322,58 @@ private struct RideDistanceProgress: View {
 
             GeometryReader { proxy in
                 let width = max(proxy.size.width, 0)
-                let indicatorX = min(max(width * progress - 5, 0), max(width - 10, 0))
                 ZStack(alignment: .leading) {
                     Capsule().fill(.white.opacity(0.12))
                     Capsule()
                         .fill(LinearGradient(colors: [WidgetTheme.green, Color.cyan], startPoint: .leading, endPoint: .trailing))
                         .frame(width: max(width * progress, progress > 0 ? 8 : 0))
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 10, height: 10)
-                        .shadow(color: WidgetTheme.green.opacity(0.8), radius: 4)
-                        .offset(x: indicatorX)
                 }
             }
-            .frame(height: 6)
+            .frame(height: compact ? 5 : 7)
         }
     }
 }
 
 @available(iOS 16.1, *)
-private func rideStatusText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
-    state.isPoweredOn == true ? "骑行实况" : "车辆已解锁"
+private func chargeBatteryValue(_ state: NinebotChargeActivityAttributes.ContentState) -> String {
+    state.battery.map(String.init) ?? "--"
 }
 
 @available(iOS 16.1, *)
-private func rideBatteryText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
-    state.battery.map { "\($0)%" } ?? "--%"
+private func chargeBatteryText(_ state: NinebotChargeActivityAttributes.ContentState) -> String {
+    chargeBatteryText(state.battery)
 }
 
 @available(iOS 16.1, *)
-private func rideSpeedValue(_ state: NinebotRideActivityAttributes.ContentState) -> String {
-    guard let speed = state.speedKmh else { return "--" }
-    return formatWidgetNumber(speed, maximumFractionDigits: 0)
+private func chargeBatteryText(_ battery: Int?) -> String {
+    battery.map { "\($0)%" } ?? "--%"
 }
 
 @available(iOS 16.1, *)
-private func rideCompactText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
-    if let speed = state.speedKmh { return "\(formatWidgetNumber(speed, maximumFractionDigits: 0))" }
-    return rideBatteryText(state)
+private func chargeVoltageText(_ state: NinebotChargeActivityAttributes.ContentState) -> String {
+    guard let voltage = state.batteryVoltage else { return "-- V" }
+    return "\(formatWidgetNumber(voltage, maximumFractionDigits: 1)) V"
 }
 
 @available(iOS 16.1, *)
-private func rideDistanceText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
-    guard let distance = state.rideDistanceKm else { return "-- km" }
-    return "\(formatWidgetNumber(distance, maximumFractionDigits: 2)) km"
+private func chargeTemperatureText(_ state: NinebotChargeActivityAttributes.ContentState) -> String {
+    guard let temperature = state.batteryTemperatureCelsius else { return "-- °C" }
+    return "\(formatWidgetNumber(temperature, maximumFractionDigits: 1)) °C"
 }
 
 @available(iOS 16.1, *)
-private func rideLocationText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
-    if let locationName = state.locationName?.trimmingCharacters(in: .whitespacesAndNewlines), !locationName.isEmpty {
-        return locationName
-    }
-    guard let latitude = state.latitude, let longitude = state.longitude else { return "GPS 定位中" }
-    return "GPS \(formatWidgetNumber(latitude, maximumFractionDigits: 4)), \(formatWidgetNumber(longitude, maximumFractionDigits: 4))"
+private func chargeFullTimeText(_ state: NinebotChargeActivityAttributes.ContentState) -> String {
+    guard let minutes = state.estimatedFullChargeMinutes else { return "计算中" }
+    guard minutes > 0 else { return "已充满" }
+
+    let totalMinutes = Int(minutes.rounded(.up))
+    let hours = totalMinutes / 60
+    let remainder = totalMinutes % 60
+    return hours > 0 ? "\(hours)小时\(remainder)分" : "\(remainder)分"
 }
 
 @available(iOS 16.1, *)
-private func rideRangeText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
-    guard let range = state.estimatedRange else { return "-- km" }
-    return "\(formatWidgetNumber(range, maximumFractionDigits: 0)) km"
-}
-
-@available(iOS 16.1, *)
-private func rideUsedElectricityText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
-    guard let electricity = state.usedElectricityWh else { return "-- Wh" }
-    return "\(formatWidgetNumber(electricity, maximumFractionDigits: 0)) Wh"
-}
-
-@available(iOS 16.1, *)
-private func rideDurationText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
-    let elapsed = max(state.rideDurationSeconds, Date().timeIntervalSince(state.rideStartedAt), 0)
-    let totalSeconds = Int(elapsed.rounded(.down))
-    let hours = totalSeconds / 3_600
-    let minutes = (totalSeconds % 3_600) / 60
-    let seconds = totalSeconds % 60
-    if hours > 0 {
-        return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-    }
-    return String(format: "%02d:%02d", minutes, seconds)
-}
-
-@available(iOS 16.1, *)
-private func rideUpdatedText(_ date: Date) -> String {
+private func chargeUpdatedText(_ date: Date) -> String {
     formatWidgetTime(date)
 }
 #endif
