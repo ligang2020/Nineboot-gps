@@ -3087,7 +3087,7 @@ private struct VehicleChargingHologram: View {
             HStack(spacing: 7) {
                 VehicleChargingHologramMetric(title: "电池电压", value: snapshot.state.batteryVoltageText, systemImage: "bolt.batteryblock.fill")
                 VehicleChargingHologramMetric(title: "电池温度", value: snapshot.state.batteryTemperatureText, systemImage: "thermometer.medium")
-                VehicleChargingHologramMetric(title: "预计充满", value: snapshot.state.estimatedFullChargeTimeText, systemImage: "clock.fill")
+                VehicleChargingHologramMetric(title: "充电功率", value: snapshot.state.chargingPowerText, systemImage: "bolt.fill")
             }
         }
         .padding(14)

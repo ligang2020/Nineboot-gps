@@ -299,9 +299,7 @@ private struct ChargeLiveActivityCard<Attributes: NinebotChargeActivityVehicleAt
                 HStack(spacing: 6) {
                     ChargeActivityMetric(value: chargeVoltageText(state), title: "电池电压", icon: "bolt.circle.fill")
                     ChargeActivityMetric(value: chargeTemperatureText(state), title: "电池温度", icon: "thermometer.medium")
-                    // Keep the third metric as the estimated full-charge time;
-                    // it must not be replaced by charging power.
-                    ChargeActivityMetric(value: chargeFullTimeText(state), title: "预计充满", icon: "clock.fill")
+                    ChargeActivityMetric(value: chargePowerText(state), title: "充电功率", icon: "bolt.fill")
                 }
             }
             .padding(.horizontal, 16)
@@ -355,7 +353,7 @@ private struct ChargeIslandMetrics: View {
             HStack(spacing: 0) {
                 ChargeIslandMetric(value: chargeVoltageText(state), title: "电压")
                 ChargeIslandMetric(value: chargeTemperatureText(state), title: "温度")
-                ChargeIslandMetric(value: chargeFullTimeText(state), title: "充满")
+                ChargeIslandMetric(value: chargePowerText(state), title: "功率")
             }
             ChargeBatteryProgress(battery: state.battery, compact: true)
         }
@@ -489,6 +487,12 @@ private func chargeVoltageText(_ state: NinebotChargeActivityContentState) -> St
 private func chargeTemperatureText(_ state: NinebotChargeActivityContentState) -> String {
     guard let temperature = state.batteryTemperatureCelsius else { return "-- °C" }
     return "\(formatWidgetNumber(temperature, maximumFractionDigits: 1)) °C"
+}
+
+@available(iOS 16.1, *)
+private func chargePowerText(_ state: NinebotChargeActivityContentState) -> String {
+    guard let power = state.chargingPowerWatts, power > 0 else { return "-- W" }
+    return "\(formatWidgetNumber(power, maximumFractionDigits: 0)) W"
 }
 
 @available(iOS 16.1, *)
