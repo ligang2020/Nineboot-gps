@@ -1444,10 +1444,10 @@ private struct VehicleMotionScene: View {
                 .frame(width: min(size.width * 0.18, 72), height: size.height * 0.67)
                 .offset(x: size.width * 0.37, y: size.height * 0.10)
 
-            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.78, 292), showsBackground: false)
-                .shadow(color: .black.opacity(0.18), radius: 19, x: 0, y: 15)
-                .scaleEffect(x: 1.04, y: 1)
-                .offset(x: -size.width * 0.08, y: size.height * 0.15)
+            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.74, 276), showsBackground: false)
+                .shadow(color: .black.opacity(0.18), radius: 17, x: 0, y: 12)
+                .scaleEffect(x: 1.0, y: 1)
+                .offset(x: -size.width * 0.08, y: size.height * 0.04)
 
             ChargeHudCard(state: snapshot.state, isAnimating: isAnimating)
                 .frame(width: min(size.width * 0.46, 180))
@@ -1501,10 +1501,10 @@ private struct VehicleMotionScene: View {
 
             parkedBackdrop(size: size)
 
-            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.83, 314), showsBackground: false)
-                .shadow(color: .black.opacity(0.18), radius: 18, x: 0, y: 14)
-                .scaleEffect(x: 1.04, y: 1)
-                .offset(y: size.height * 0.12)
+            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.79, 292), showsBackground: false)
+                .shadow(color: .black.opacity(0.18), radius: 16, x: 0, y: 11)
+                .scaleEffect(x: 1.0, y: 1)
+                .offset(y: size.height * 0.04)
 
             HStack(spacing: 6) {
                 Circle()
@@ -1570,10 +1570,10 @@ private struct VehicleMotionScene: View {
                 .frame(width: min(size.width * 0.31, 128))
                 .offset(x: -size.width * 0.30, y: -size.height * 0.12)
 
-            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.79, 300), showsBackground: false)
-                .shadow(color: .black.opacity(0.24), radius: 18, x: 0, y: 15)
-                .scaleEffect(x: 1.05, y: 1)
-                .offset(x: size.width * 0.06 + (isAnimating ? 4 : -4), y: size.height * 0.16)
+            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.76, 286), showsBackground: false)
+                .shadow(color: .black.opacity(0.24), radius: 16, x: 0, y: 12)
+                .scaleEffect(x: 1.0, y: 1)
+                .offset(x: size.width * 0.06 + (isAnimating ? 4 : -4), y: size.height * 0.06)
                 .animation(.easeInOut(duration: 0.62).repeatForever(autoreverses: true), value: isAnimating)
 
             RiderSilhouette(isAnimating: isAnimating)
