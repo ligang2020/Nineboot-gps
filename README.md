@@ -63,6 +63,16 @@ This refresh updates the dashboard and synchronizes the Live Activity, including
 4. Connect an iPhone, choose it as the run destination, then build and run.
 5. In the app, configure the proxy endpoint and optional Bearer token, bind the account, and refresh once.
 
+### Create a local unsigned IPA
+
+From the repository root, run:
+
+```bash
+scripts/package-unsigned-ipa.sh
+```
+
+The command builds the device `Release` app, verifies the App Icon and widget extension, then writes a versioned IPA and its SHA-256 checksum to `build/ipa/`. The exact IPA path is printed after a successful build.
+
 ## Set up widgets
 
 1. Long-press the Home Screen or Lock Screen and add a NineBot+ widget.

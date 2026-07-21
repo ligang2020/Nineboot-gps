@@ -1319,18 +1319,9 @@ private struct VehicleControlHero: View {
                     .foregroundStyle(Color.teslaSecondaryText)
             }
 
-            ZStack(alignment: .bottom) {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.black.opacity(0.035))
-                    .frame(height: 24)
-                    .blur(radius: 16)
-                    .offset(y: 60)
-
-                VehicleImage(urlString: snapshot.vehicle.imageURLString, size: 246, showsBackground: false)
-                    .shadow(color: Color.black.opacity(0.12), radius: 24, x: 0, y: 18)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 196)
+            VehicleMotionScene(snapshot: snapshot)
+                .frame(maxWidth: .infinity)
+                .frame(height: 218)
 
             VStack(spacing: 12) {
                 BatteryProgressBar(value: snapshot.state.batteryFraction)
@@ -1361,6 +1352,448 @@ private struct VehicleControlHero: View {
             return nil
         }
         return value
+    }
+}
+
+
+/// A lightweight, code-drawn 3D scene for the main vehicle card. It uses the
+/// selected vehicle image so the animation stays accurate to the user's model,
+/// while all environmental layers remain native SwiftUI and do not need a
+/// network-loaded video or a large image asset.
+private struct VehicleMotionScene: View {
+    var snapshot: NinebotVehicleSnapshot
+
+    @State private var isAnimating = false
+
+    private var mode: VehicleMotionSceneMode {
+        snapshot.state.isCharging == true && !snapshot.state.isFullyCharged ? .charging : .riding
+    }
+
+    private var rideSpeedText: String {
+        let mostRecentSpeed = snapshot.state.rideRecords?
+            .sorted { ($0.endedAt ?? .distantPast) > ($1.endedAt ?? .distantPast) }
+            .first?
+            .maximumSpeed
+
+        if let mostRecentSpeed, mostRecentSpeed > 0 {
+            return "\(Int(mostRecentSpeed.rounded()))"
+        }
+        return snapshot.state.isPoweredOn == true ? "45" : "--"
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                switch mode {
+                case .charging:
+                    chargingScene(in: proxy.size)
+                case .riding:
+                    ridingScene(in: proxy.size)
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(mode == .charging ? "车辆正在进行三维充电动画" : "车辆正在进行三维骑行动画")
+        }
+        .onAppear { isAnimating = true }
+    }
+
+    @ViewBuilder
+    private func chargingScene(in size: CGSize) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.92), Color.teslaGreen.opacity(0.045), Color.black.opacity(0.025)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            Ellipse()
+                .fill(Color.teslaGreen.opacity(isAnimating ? 0.15 : 0.06))
+                .frame(width: size.width * 0.60, height: size.height * 0.25)
+                .blur(radius: 20)
+                .scaleEffect(isAnimating ? 1.08 : 0.88)
+                .offset(y: size.height * 0.25)
+
+            chargingGrid(size: size)
+            chargingCable(size: size)
+
+            ChargePillar(isAnimating: isAnimating)
+                .frame(width: min(size.width * 0.18, 72), height: size.height * 0.67)
+                .offset(x: size.width * 0.37, y: size.height * 0.10)
+
+            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.78, 292), showsBackground: false)
+                .shadow(color: .black.opacity(0.18), radius: 19, x: 0, y: 15)
+                .scaleEffect(x: 1.04, y: 1)
+                .offset(x: -size.width * 0.08, y: size.height * 0.15)
+
+            ChargeHudCard(state: snapshot.state, isAnimating: isAnimating)
+                .frame(width: min(size.width * 0.46, 180))
+                .offset(x: -size.width * 0.01, y: -size.height * 0.22)
+
+            Rectangle()
+                .fill(LinearGradient(colors: [.clear, Color.teslaGreen.opacity(0.72), .clear], startPoint: .leading, endPoint: .trailing))
+                .frame(width: size.width * 0.28, height: 1.6)
+                .offset(x: isAnimating ? size.width * 0.38 : -size.width * 0.42, y: size.height * 0.39)
+                .blur(radius: 0.5)
+                .animation(.linear(duration: 1.7).repeatForever(autoreverses: false), value: isAnimating)
+        }
+    }
+
+    @ViewBuilder
+    private func ridingScene(in size: CGSize) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 0.86, green: 0.91, blue: 0.94), Color.white, Color(red: 0.75, green: 0.81, blue: 0.84)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+            RideCityBackdrop(isAnimating: isAnimating)
+                .opacity(0.75)
+
+            RideRoad(isAnimating: isAnimating)
+                .offset(y: size.height * 0.22)
+
+            RideSpeedHud(speedText: rideSpeedText, isAnimating: isAnimating)
+                .frame(width: min(size.width * 0.31, 128))
+                .offset(x: -size.width * 0.30, y: -size.height * 0.12)
+
+            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.79, 300), showsBackground: false)
+                .shadow(color: .black.opacity(0.24), radius: 18, x: 0, y: 15)
+                .scaleEffect(x: 1.05, y: 1)
+                .offset(x: size.width * 0.06 + (isAnimating ? 4 : -4), y: size.height * 0.16)
+                .animation(.easeInOut(duration: 0.62).repeatForever(autoreverses: true), value: isAnimating)
+
+            RiderSilhouette(isAnimating: isAnimating)
+                .frame(width: min(size.width * 0.29, 106), height: size.height * 0.67)
+                .offset(x: size.width * 0.08, y: -size.height * 0.02)
+
+            RideMotionStreaks(isAnimating: isAnimating)
+        }
+    }
+
+    private func chargingGrid(size: CGSize) -> some View {
+        ZStack {
+            ForEach(0..<4, id: \.self) { row in
+                Rectangle()
+                    .fill(Color.black.opacity(0.045))
+                    .frame(height: 0.7)
+                    .offset(y: CGFloat(row - 1) * 26 + size.height * 0.28)
+                    .rotation3DEffect(.degrees(61), axis: (x: 1, y: 0, z: 0), perspective: 0.65)
+            }
+            ForEach(0..<6, id: \.self) { column in
+                Rectangle()
+                    .fill(Color.teslaGreen.opacity(0.07))
+                    .frame(width: 0.7, height: size.height * 0.66)
+                    .rotationEffect(.degrees(35))
+                    .offset(x: CGFloat(column - 2) * 42, y: size.height * 0.22)
+            }
+        }
+        .mask(RoundedRectangle(cornerRadius: 28, style: .continuous))
+    }
+
+    private func chargingCable(size: CGSize) -> some View {
+        ZStack {
+            Path { path in
+                path.move(to: CGPoint(x: size.width * 0.87, y: size.height * 0.58))
+                path.addCurve(
+                    to: CGPoint(x: size.width * 0.47, y: size.height * 0.74),
+                    control1: CGPoint(x: size.width * 0.79, y: size.height * 0.85),
+                    control2: CGPoint(x: size.width * 0.57, y: size.height * 0.56)
+                )
+            }
+            .stroke(Color.black.opacity(0.62), style: StrokeStyle(lineWidth: 3.2, lineCap: .round))
+
+            Path { path in
+                path.move(to: CGPoint(x: size.width * 0.87, y: size.height * 0.58))
+                path.addCurve(
+                    to: CGPoint(x: size.width * 0.47, y: size.height * 0.74),
+                    control1: CGPoint(x: size.width * 0.79, y: size.height * 0.85),
+                    control2: CGPoint(x: size.width * 0.57, y: size.height * 0.56)
+                )
+            }
+            .stroke(Color.teslaGreen.opacity(0.9), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [3, 10], dashPhase: isAnimating ? 52 : 0))
+            .shadow(color: Color.teslaGreen.opacity(0.8), radius: 3)
+            .animation(.linear(duration: 1.2).repeatForever(autoreverses: false), value: isAnimating)
+        }
+    }
+}
+
+private enum VehicleMotionSceneMode {
+    case charging
+    case riding
+}
+
+private struct ChargePillar: View {
+    var isAnimating: Bool
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 0.10, green: 0.12, blue: 0.13), Color(red: 0.025, green: 0.04, blue: 0.05)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.26))
+                        .frame(width: 1.1)
+                        .padding(.vertical, 8)
+                        .padding(.leading, 4)
+                }
+                .shadow(color: .black.opacity(0.20), radius: 8, x: -3, y: 7)
+
+            VStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.black)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.teslaGreen.opacity(0.8), lineWidth: 1.4)
+                        }
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 21, weight: .black))
+                        .foregroundStyle(Color.teslaGreen)
+                        .shadow(color: Color.teslaGreen.opacity(0.9), radius: isAnimating ? 8 : 3)
+                        .scaleEffect(isAnimating ? 1.08 : 0.92)
+                }
+                .frame(height: 54)
+
+                Capsule()
+                    .fill(LinearGradient(colors: [Color.teslaGreen, Color.cyan.opacity(0.25)], startPoint: .top, endPoint: .bottom))
+                    .frame(width: 3, height: 32)
+                    .shadow(color: Color.teslaGreen.opacity(0.9), radius: 4)
+
+                Spacer(minLength: 0)
+            }
+            .padding(7)
+        }
+    }
+}
+
+private struct ChargeHudCard: View {
+    var state: NinebotVehicleState
+    var isAnimating: Bool
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Text("正在充电")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.teslaGreen)
+            HStack(alignment: .lastTextBaseline, spacing: 2) {
+                Text(state.battery.map(String.init) ?? "--")
+                    .font(.system(size: 34, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text("%")
+                    .font(.subheadline.weight(.bold))
+            }
+            .foregroundStyle(.white)
+            Text("预计充满 \(state.estimatedFullChargeTimeText)")
+                .font(.caption2.monospacedDigit().weight(.medium))
+                .foregroundStyle(.white.opacity(0.72))
+                .lineLimit(1)
+
+            HStack(spacing: 4) {
+                ForEach(0..<3, id: \.self) { index in
+                    Circle()
+                        .fill(Color.teslaGreen)
+                        .frame(width: 5, height: 5)
+                        .scaleEffect(isAnimating && index == 1 ? 1.35 : 0.75)
+                }
+            }
+            .padding(.top, 2)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 13)
+        .background(
+            LinearGradient(
+                colors: [Color(red: 0.13, green: 0.17, blue: 0.18).opacity(0.96), Color.black.opacity(0.88)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.teslaGreen.opacity(0.70), lineWidth: 1.2)
+        }
+        .shadow(color: Color.teslaGreen.opacity(isAnimating ? 0.32 : 0.12), radius: 16)
+    }
+}
+
+private struct RideCityBackdrop: View {
+    var isAnimating: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                HStack(alignment: .bottom, spacing: proxy.size.width * 0.035) {
+                    cityBuilding(width: proxy.size.width * 0.13, height: proxy.size.height * 0.34)
+                    cityBuilding(width: proxy.size.width * 0.17, height: proxy.size.height * 0.52)
+                    cityBuilding(width: proxy.size.width * 0.12, height: proxy.size.height * 0.40)
+                    cityBuilding(width: proxy.size.width * 0.19, height: proxy.size.height * 0.62)
+                    cityBuilding(width: proxy.size.width * 0.14, height: proxy.size.height * 0.45)
+                }
+                .offset(x: isAnimating ? -proxy.size.width * 0.055 : proxy.size.width * 0.055, y: proxy.size.height * 0.03)
+                .animation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true), value: isAnimating)
+
+                Path { path in
+                    path.move(to: CGPoint(x: proxy.size.width * 0.66, y: proxy.size.height * 0.12))
+                    path.addLine(to: CGPoint(x: proxy.size.width * 0.66, y: proxy.size.height * 0.67))
+                    path.addLine(to: CGPoint(x: proxy.size.width * 0.99, y: proxy.size.height * 0.67))
+                }
+                .stroke(Color.white.opacity(0.63), style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+                .shadow(color: .black.opacity(0.10), radius: 2)
+            }
+        }
+    }
+
+    private func cityBuilding(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(LinearGradient(colors: [Color.white.opacity(0.64), Color.gray.opacity(0.30)], startPoint: .leading, endPoint: .trailing))
+            .frame(width: width, height: height)
+            .overlay(alignment: .topLeading) {
+                VStack(spacing: 5) {
+                    ForEach(0..<4, id: \.self) { _ in
+                        Rectangle()
+                            .fill(Color.white.opacity(0.36))
+                            .frame(height: 2)
+                    }
+                }
+                .padding(5)
+            }
+    }
+}
+
+private struct RideRoad: View {
+    var isAnimating: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                Rectangle()
+                    .fill(Color(red: 0.20, green: 0.25, blue: 0.28).opacity(0.86))
+                    .rotation3DEffect(.degrees(64), axis: (x: 1, y: 0, z: 0), perspective: 0.55)
+                    .offset(y: proxy.size.height * 0.36)
+
+                HStack(spacing: proxy.size.width * 0.21) {
+                    ForEach(0..<5, id: \.self) { _ in
+                        Capsule()
+                            .fill(Color.white.opacity(0.84))
+                            .frame(width: proxy.size.width * 0.13, height: 3)
+                    }
+                }
+                .offset(x: isAnimating ? proxy.size.width * 0.26 : -proxy.size.width * 0.26, y: proxy.size.height * 0.31)
+                .animation(.linear(duration: 0.82).repeatForever(autoreverses: false), value: isAnimating)
+            }
+        }
+    }
+}
+
+private struct RideSpeedHud: View {
+    var speedText: String
+    var isAnimating: Bool
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text("当前速度")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.70))
+            HStack(alignment: .lastTextBaseline, spacing: 3) {
+                Text(speedText)
+                    .font(.system(size: 36, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text("km/h")
+                    .font(.caption.weight(.bold))
+            }
+            .foregroundStyle(.white)
+            Capsule()
+                .fill(AngularGradient(colors: [Color.teslaGreen, Color.cyan, Color.teslaGreen], center: .center))
+                .frame(height: 3)
+                .scaleEffect(x: isAnimating ? 1 : 0.55, y: 1, anchor: .leading)
+        }
+        .padding(10)
+        .background(.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(.white.opacity(0.24), lineWidth: 1)
+        }
+        .shadow(color: Color.teslaGreen.opacity(isAnimating ? 0.32 : 0.10), radius: 13)
+    }
+}
+
+private struct RiderSilhouette: View {
+    var isAnimating: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(LinearGradient(colors: [Color(red: 0.17, green: 0.19, blue: 0.20), .black], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay(Circle().stroke(Color.teslaGreen.opacity(0.48), lineWidth: 1))
+                .frame(width: 26, height: 26)
+                .offset(x: 5, y: -52)
+
+            Capsule()
+                .fill(Color(red: 0.07, green: 0.08, blue: 0.09))
+                .frame(width: 31, height: 63)
+                .rotationEffect(.degrees(-13))
+                .offset(x: 0, y: -12)
+
+            Capsule()
+                .fill(Color(red: 0.06, green: 0.07, blue: 0.08))
+                .frame(width: 12, height: 54)
+                .rotationEffect(.degrees(isAnimating ? 37 : 31))
+                .offset(x: 27, y: 5)
+
+            Capsule()
+                .fill(Color(red: 0.06, green: 0.07, blue: 0.08))
+                .frame(width: 12, height: 55)
+                .rotationEffect(.degrees(isAnimating ? -39 : -32))
+                .offset(x: -12, y: 39)
+
+            Capsule()
+                .fill(Color(red: 0.06, green: 0.07, blue: 0.08))
+                .frame(width: 11, height: 51)
+                .rotationEffect(.degrees(isAnimating ? 59 : 52))
+                .offset(x: 22, y: 44)
+
+            Capsule()
+                .fill(Color.teslaGreen.opacity(0.9))
+                .frame(width: 2, height: 43)
+                .rotationEffect(.degrees(-13))
+                .offset(x: 5, y: -12)
+        }
+        .shadow(color: .black.opacity(0.24), radius: 5, y: 5)
+        .animation(.easeInOut(duration: 0.58).repeatForever(autoreverses: true), value: isAnimating)
+    }
+}
+
+private struct RideMotionStreaks: View {
+    var isAnimating: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            VStack(alignment: .leading, spacing: 15) {
+                ForEach(0..<4, id: \.self) { index in
+                    Capsule()
+                        .fill(Color.white.opacity(0.58 - Double(index) * 0.08))
+                        .frame(width: proxy.size.width * (0.13 + CGFloat(index) * 0.035), height: 1.4)
+                        .offset(x: isAnimating ? proxy.size.width * 0.46 : -proxy.size.width * 0.38)
+                        .animation(.linear(duration: 0.7 + Double(index) * 0.12).repeatForever(autoreverses: false).delay(Double(index) * 0.12), value: isAnimating)
+                }
+            }
+            .offset(y: proxy.size.height * 0.53)
+        }
     }
 }
 

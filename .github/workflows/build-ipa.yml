@@ -6,8 +6,8 @@ on:
     branches: [main, master]
     tags: ['v*']
 
-# A tag build creates/updates the matching GitHub Release. Branch builds only
-# upload the short-lived workflow artifact below.
+# A tag build creates/updates the matching GitHub Release. Branch builds upload
+# an Actions artifact, which keeps unsigned development packages short-lived.
 permissions:
   contents: write
 
@@ -24,67 +24,26 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Build device app without signing
-        env:
-          DERIVED_DATA: ${{ runner.temp }}/NinePlusDerivedData
-        run: |
-          set -euo pipefail
-          xcodebuild \
-            -project mini-ninebot.xcodeproj \
-            -scheme mini-ninebot \
-            -sdk iphoneos \
-            -configuration Release \
-            -derivedDataPath "$DERIVED_DATA" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            build
-
-      - name: Verify app, icon, and widget bundle
-        env:
-          DERIVED_DATA: ${{ runner.temp }}/NinePlusDerivedData
-        run: |
-          set -euo pipefail
-          APP_PATH="$DERIVED_DATA/Build/Products/Release-iphoneos/mini-ninebot.app"
-          INFO_PLIST="$APP_PATH/Info.plist"
-
-          test -d "$APP_PATH"
-          test -d "$APP_PATH/PlugIns/NinebotWidgets.appex"
-          test -f "$APP_PATH/Assets.car"
-          plutil -lint "$INFO_PLIST"
-
-          # The compiled app must expose an AppIcon entry in its generated
-          # Info.plist. This catches a missing/invalid AppIcon asset catalog.
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName' "$INFO_PLIST" | grep -qx 'AppIcon'
-          ICON_INFO="$(xcrun --sdk iphoneos assetutil --info "$APP_PATH/Assets.car")"
-          grep -q 'AppIcon' <<< "$ICON_INFO"
-
-      - name: Package IPA
+      - name: Build and package unsigned IPA
         id: package
         env:
-          DERIVED_DATA: ${{ runner.temp }}/NinePlusDerivedData
           ARTIFACT_DIR: ${{ runner.temp }}/NinePlusIPA
+          DERIVED_DATA: ${{ runner.temp }}/NinePlusDerivedData
         run: |
           set -euo pipefail
-          APP_PATH="$DERIVED_DATA/Build/Products/Release-iphoneos/mini-ninebot.app"
-          IPA_PATH="$ARTIFACT_DIR/NinePlus-LiveRide-unsigned.ipa"
-
-          mkdir -p "$ARTIFACT_DIR/Payload"
-          ditto "$APP_PATH" "$ARTIFACT_DIR/Payload/mini-ninebot.app"
-          (
-            cd "$ARTIFACT_DIR"
-            /usr/bin/zip -qry "$(basename "$IPA_PATH")" Payload
-            rm -rf Payload
-          )
-          shasum -a 256 "$IPA_PATH" > "$IPA_PATH.sha256"
-          echo "artifact_dir=$ARTIFACT_DIR" >> "$GITHUB_OUTPUT"
+          IPA_PATH="$(scripts/package-unsigned-ipa.sh \
+            --output "$ARTIFACT_DIR" \
+            --derived-data "$DERIVED_DATA")"
+          echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
+          echo "checksum_path=$IPA_PATH.sha256" >> "$GITHUB_OUTPUT"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: NinePlus-LiveRide-unsigned-ipa
           path: |
-            ${{ steps.package.outputs.artifact_dir }}/NinePlus-LiveRide-unsigned.ipa
-            ${{ steps.package.outputs.artifact_dir }}/NinePlus-LiveRide-unsigned.ipa.sha256
+            ${{ steps.package.outputs.ipa_path }}
+            ${{ steps.package.outputs.checksum_path }}
           if-no-files-found: error
           retention-days: 30
 
@@ -92,14 +51,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-          ARTIFACT_DIR: ${{ steps.package.outputs.artifact_dir }}
+          IPA_PATH: ${{ steps.package.outputs.ipa_path }}
+          CHECKSUM_PATH: ${{ steps.package.outputs.checksum_path }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          files=(
-            "$ARTIFACT_DIR/NinePlus-LiveRide-unsigned.ipa"
-            "$ARTIFACT_DIR/NinePlus-LiveRide-unsigned.ipa.sha256"
-          )
+          files=("$IPA_PATH" "$CHECKSUM_PATH")
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
             gh release upload "$TAG_NAME" "${files[@]}" --clobber
           else
