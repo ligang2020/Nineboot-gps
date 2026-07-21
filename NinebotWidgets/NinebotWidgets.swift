@@ -15,7 +15,8 @@ struct NinebotWidgetBundle: WidgetBundle {
         #if canImport(ActivityKit)
         if #available(iOS 18.0, *) {
             NinebotWatchChargeLiveActivity()
-        } else if #available(iOS 16.1, *) {
+        }
+        if #unavailable(iOS 18.0) {
             NinebotChargeLiveActivity()
         }
         #endif
