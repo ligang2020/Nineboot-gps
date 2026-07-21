@@ -360,8 +360,8 @@ final class NinebotViewModel: ObservableObject {
         }
     }
 
-    func enableChargingNotifications() async {
-        await runLoadingOperation(message: "正在开启充电通知") {
+    func enableVehicleNotifications() async {
+        await runLoadingOperation(message: "正在开启车辆通知") {
             guard self.dataSourceMode == .platform else {
                 throw NinebotPushError.missingServer
             }
@@ -369,7 +369,7 @@ final class NinebotViewModel: ObservableObject {
             self.pushDeviceToken = self.store.loadPushDeviceToken()
             if self.pushDeviceToken != nil {
                 try await NinebotPushManager.shared.registerStoredTokenWithServer()
-                self.statusMessage = "充电通知已开启"
+                self.statusMessage = "充电与车辆报警通知已开启"
             } else {
                 self.statusMessage = "已允许通知，系统返回设备 Token 后会自动上报"
             }
@@ -647,6 +647,7 @@ final class NinebotViewModel: ObservableObject {
         self.dashboard = archivedDashboard
         history = Self.historyMap(for: archivedDashboard, store: store)
         NinebotChargeLiveActivityManager.sync(with: archivedDashboard)
+        NinebotPushManager.shared.syncVehicleAlarmNotifications(with: archivedDashboard)
 
         // The App is the single writer for the App Group snapshot. Explicit
         // refreshes reload WidgetKit after saving; the five-second foreground

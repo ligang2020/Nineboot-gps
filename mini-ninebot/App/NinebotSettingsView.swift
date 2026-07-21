@@ -108,7 +108,7 @@ struct NinebotSettingsView: View {
                         }
                         .font(.subheadline.weight(.semibold))
 
-                        Text(model.dataSourceMode == .platform ? "多账号、APNs 和轮询策略在 NinePlus Platform 后台管理；后台未设置 App Bearer Token 时可留空。" : "代理模式是单账号直连，适合调试；ninecli 未设置 Token 时可留空。")
+                        Text(model.dataSourceMode == .platform ? "开启后会登记 APNs，用于充电完成、车辆报警和安全异常提醒；多账号、APNs 和轮询策略在 NinePlus Platform 后台管理。" : "代理模式是单账号直连，适合调试；车辆报警的远程推送需使用 NinePlus Platform 模式。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -118,9 +118,9 @@ struct NinebotSettingsView: View {
                         PushDeviceTokenRow(token: model.pushDeviceToken, hasConfiguration: model.hasConfiguration)
 
                         Button {
-                            Task { await model.enableChargingNotifications() }
+                            Task { await model.enableVehicleNotifications() }
                         } label: {
-                            SettingsButtonLabel(title: "检查权限并上报", systemImage: "bell.badge.fill")
+                            SettingsButtonLabel(title: "开启充电与报警通知", systemImage: "bell.badge.fill")
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(model.dataSourceMode != .platform || !model.hasConfiguration)

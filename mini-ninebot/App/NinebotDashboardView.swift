@@ -1427,6 +1427,60 @@ private struct StatusChip: View {
     }
 }
 
+/// A layered, perspective-like energy orb. The rotating rings, highlights and
+/// pulse make the charging state read as a compact 3D animation rather than a
+/// static charging badge.
+private struct ChargingEnergyOrb: View {
+    var isAnimating: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [Color.white.opacity(0.98), Color.teslaGreen.opacity(0.90), Color.teslaGreen.opacity(0.28)],
+                        center: .topLeading,
+                        startRadius: 2,
+                        endRadius: 34
+                    )
+                )
+                .shadow(color: Color.teslaGreen.opacity(isAnimating ? 0.60 : 0.28), radius: isAnimating ? 14 : 7)
+                .scaleEffect(isAnimating ? 1.02 : 0.94)
+
+            Circle()
+                .stroke(
+                    AngularGradient(
+                        colors: [.white.opacity(0.95), .clear, Color.cyan.opacity(0.74), .clear, .white.opacity(0.78)],
+                        center: .center
+                    ),
+                    lineWidth: 2.6
+                )
+                .rotation3DEffect(.degrees(64), axis: (x: 1, y: 0, z: 0))
+                .rotationEffect(.degrees(isAnimating ? 360 : 0))
+
+            Ellipse()
+                .stroke(Color.white.opacity(0.54), lineWidth: 1.1)
+                .frame(width: 41, height: 14)
+                .rotation3DEffect(.degrees(65), axis: (x: 1, y: 0, z: 0))
+                .rotationEffect(.degrees(isAnimating ? -360 : 0))
+
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(Color(red: 0.01, green: 0.26, blue: 0.17))
+                .shadow(color: .white.opacity(0.68), radius: 1, y: -1)
+                .offset(y: isAnimating ? -2 : 2)
+
+            Circle()
+                .fill(Color.white.opacity(0.88))
+                .frame(width: 7, height: 7)
+                .blur(radius: 0.3)
+                .offset(x: -12, y: -13)
+        }
+        .drawingGroup()
+        .animation(.easeInOut(duration: 1.15).repeatForever(autoreverses: true), value: isAnimating)
+    }
+}
+
 private struct ChargingStatusView: View {
     var state: NinebotVehicleState
     @State private var isAnimating = false
@@ -1434,21 +1488,8 @@ private struct ChargingStatusView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(Color.teslaGreen.opacity(0.16))
-                    ZStack {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Color.teslaGreen)
-                            .offset(y: isAnimating ? -1 : 1)
-                            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isAnimating)
-                    }
-                    .frame(width: 22, height: 22)
-                    .clipped()
-                }
-                .frame(width: 34, height: 34)
-                .clipShape(Circle())
+                ChargingEnergyOrb(isAnimating: isAnimating)
+                    .frame(width: 54, height: 54)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("正在充电")

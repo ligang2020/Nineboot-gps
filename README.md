@@ -8,7 +8,8 @@ This project is intended for personal builds. The bundled GitHub Action produces
 
 - Vehicle dashboard: battery, estimated range, locking / power status, location, trip history, mileage trends, and local ride recording.
 - Home Screen and Lock Screen widgets; each widget can be configured for a particular vehicle.
-- Dynamic Island / Live Activity for the active selected vehicle.
+- Dynamic Island / Live Activity for the active selected vehicle, including the Apple Watch Smart Stack charging view on supported systems.
+- 3D charging energy animation in the app and vehicle-alarm notifications with an actionable “查看车辆” button.
 - Siri Shortcuts and App Intents for vehicle actions.
 - MapKit location and reverse-geocoded address display.
 - Shared local cache through App Groups for the app and widget extension.
@@ -28,6 +29,20 @@ This project is intended for personal builds. The bundled GitHub Action produces
 - Battery voltage and battery temperature.
 - Estimated remaining time until full charge, preferring the vehicle API's remaining-charge estimate when it is returned and otherwise using the app's charge-curve estimate.
 - Charging power (when returned), update time, and compact / expanded Dynamic Island layouts plus an expanded Lock Screen Live Activity card.
+
+### Apple Watch and in-app charging animation
+
+- On **iOS 18 / watchOS 11 or later**, the charging activity opts into the Apple Watch Smart Stack supplemental activity family. Its wrist layout focuses on vehicle name, live battery ring, percentage, and remaining charge time.
+- The in-app charging status card now uses a layered 3D energy orb: animated orbit rings, highlights, glow, and a floating charge bolt make an active charge session immediately recognizable.
+- The Dynamic Island expanded header and Lock Screen title have extra top inset so the vehicle name (for example **B2轰炸机**) sits slightly lower and has more breathing room.
+
+### Vehicle alarm notifications
+
+1. In **我的 → 连接与通知**, tap **开启充电与报警通知** and allow notifications. The app registers the APNs token with NinePlus Platform.
+2. Server-delivered vehicle alarms are handled with the `NINEBOT_VEHICLE_ALARM` category and include a **查看车辆** action. A silent alarm push is converted into a visible local notification; an APNs alert push is displayed by iOS directly to avoid duplicate banners.
+3. During dashboard refreshes, the app also watches the raw status, battery, and trip payloads for active `alarm`, `alert`, `warn`, `fault`, `theft`, `security`, `vibration`, or `exception` fields. It notifies only when a signal first becomes active and re-arms it after the field clears.
+
+> **Server integration:** for remote alarms while the app is not running, NinePlus Platform must send an APNs push with `category: "NINEBOT_VEHICLE_ALARM"` or an alarm-style `event` / `type` value (for example `vehicle_alarm`), plus either a normal `aps.alert` or `content-available: 1`. The app-side APNs registration and notification handling are included here; the platform server remains responsible for detecting and sending remote events.
 
 ### Refresh behaviour and iOS limitations
 

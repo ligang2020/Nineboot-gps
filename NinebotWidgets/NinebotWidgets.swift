@@ -51,8 +51,38 @@ struct NinebotLockScreenWidget: Widget {
 @available(iOS 16.1, *)
 struct NinebotChargeLiveActivity: Widget {
     var body: some WidgetConfiguration {
+        #if compiler(>=6.0)
+        if #available(iOS 18.0, *) {
+            chargeActivityConfiguration
+                // watchOS 11+ uses this supplemental family for the Smart Stack.
+                .supplementalActivityFamilies([.small])
+        } else {
+            chargeActivityConfiguration
+        }
+        #else
+        chargeActivityConfiguration
+        #endif
+    }
+
+    @ViewBuilder
+    private func chargeActivityContent(
+        attributes: NinebotChargeActivityAttributes,
+        state: NinebotChargeActivityAttributes.ContentState
+    ) -> some View {
+        #if compiler(>=6.0)
+        if #available(iOS 18.0, *) {
+            ChargeLiveActivityAdaptiveCard(attributes: attributes, state: state)
+        } else {
+            ChargeLiveActivityCard(attributes: attributes, state: state)
+        }
+        #else
+        ChargeLiveActivityCard(attributes: attributes, state: state)
+        #endif
+    }
+
+    private var chargeActivityConfiguration: some WidgetConfiguration {
         ActivityConfiguration(for: NinebotChargeActivityAttributes.self) { context in
-            ChargeLiveActivityCard(attributes: context.attributes, state: context.state)
+            chargeActivityContent(attributes: context.attributes, state: context.state)
                 .activityBackgroundTint(Color(red: 0.025, green: 0.07, blue: 0.06))
                 .activitySystemActionForegroundColor(WidgetTheme.green)
         } dynamicIsland: { context in
@@ -60,7 +90,7 @@ struct NinebotChargeLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     ChargeIslandVehicleHeader(attributes: context.attributes)
                         .padding(.leading, 4)
-                        .padding(.top, 3)
+                        .padding(.top, 7)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     ChargeIslandBattery(state: context.state)
@@ -94,6 +124,73 @@ struct NinebotChargeLiveActivity: Widget {
         .description("车辆充电时自动上岛，实时显示电量进度、电压、温度和预计充满时间。")
     }
 }
+
+#if compiler(>=6.0)
+/// watchOS 11 presents the `.small` supplemental Activity family in Smart
+/// Stack. Keep the glance compact: vehicle, percentage, and the live charge
+/// ring remain legible from the wrist.
+@available(iOS 18.0, *)
+private struct ChargeLiveActivityAdaptiveCard: View {
+    @Environment(\.activityFamily) private var activityFamily
+
+    var attributes: NinebotChargeActivityAttributes
+    var state: NinebotChargeActivityAttributes.ContentState
+
+    var body: some View {
+        if activityFamily == .small {
+            ChargeWatchLiveActivityCard(attributes: attributes, state: state)
+        } else {
+            ChargeLiveActivityCard(attributes: attributes, state: state)
+        }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct ChargeWatchLiveActivityCard: View {
+    var attributes: NinebotChargeActivityAttributes
+    var state: NinebotChargeActivityAttributes.ContentState
+
+    var body: some View {
+        VStack(spacing: 5) {
+            HStack(spacing: 4) {
+                Image(systemName: "bolt.fill")
+                    .foregroundStyle(WidgetTheme.green)
+                Text(attributes.vehicleName)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.white)
+
+            ZStack {
+                Circle()
+                    .stroke(.white.opacity(0.16), lineWidth: 5)
+                Circle()
+                    .trim(from: 0, to: min(max(Double(state.battery ?? 0) / 100, 0), 1))
+                    .stroke(WidgetTheme.green, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text(chargeBatteryText(state))
+                    .font(.title3.monospacedDigit().weight(.bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 48, height: 48)
+
+            Text(chargeFullTimeText(state))
+                .font(.caption2.monospacedDigit().weight(.medium))
+                .foregroundStyle(.white.opacity(0.68))
+                .lineLimit(1)
+        }
+        .padding(8)
+        .background(
+            LinearGradient(
+                colors: [Color(red: 0.025, green: 0.14, blue: 0.105), Color(red: 0.015, green: 0.06, blue: 0.07)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+    }
+}
+#endif
 
 @available(iOS 16.1, *)
 private struct ChargeLiveActivityCard: View {
@@ -130,6 +227,7 @@ private struct ChargeLiveActivityCard: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
+                    .padding(.top, 4)
                     Spacer(minLength: 8)
                     ChargeBatteryBadge(battery: state.battery)
                 }

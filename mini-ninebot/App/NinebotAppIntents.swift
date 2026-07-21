@@ -304,6 +304,7 @@ private enum NinebotShortcutRunner {
     private static func archiveDashboard(_ dashboard: NinebotDashboard, in store: NinebotSharedStore) -> NinebotDashboard {
         let archivedDashboard = store.saveDashboard(dashboard)
         NinebotChargeLiveActivityManager.sync(with: archivedDashboard)
+        NinebotPushManager.shared.syncVehicleAlarmNotifications(with: archivedDashboard)
         return archivedDashboard
     }
 
