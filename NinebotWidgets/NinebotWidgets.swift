@@ -13,7 +13,9 @@ struct NinebotWidgetBundle: WidgetBundle {
         NinebotStatusWidget()
         NinebotLockScreenWidget()
         #if canImport(ActivityKit)
-        if #available(iOS 16.1, *) {
+        if #available(iOS 18.0, *) {
+            NinebotWatchChargeLiveActivity()
+        } else if #available(iOS 16.1, *) {
             NinebotChargeLiveActivity()
         }
         #endif
@@ -50,81 +52,82 @@ struct NinebotLockScreenWidget: Widget {
 #if canImport(ActivityKit)
 @available(iOS 16.1, *)
 struct NinebotChargeLiveActivity: Widget {
-    @WidgetConfigurationBuilder
     var body: some WidgetConfiguration {
-        #if compiler(>=6.0)
-        if #available(iOS 18.0, *) {
-            // The `small` supplemental family opts this Live Activity into the
-            // Apple Watch Smart Stack (and provides the compact CarPlay layout).
-            chargeActivityConfiguration
-                .supplementalActivityFamilies([.small])
-        } else {
-            chargeActivityConfiguration
-        }
-        #else
-        chargeActivityConfiguration
-        #endif
+        makeChargeActivityConfiguration()
     }
+}
 
-    @ViewBuilder
-    private func chargeActivityContent(
-        attributes: NinebotChargeActivityAttributes,
-        state: NinebotChargeActivityAttributes.ContentState
-    ) -> some View {
-        #if compiler(>=6.0)
-        if #available(iOS 18.0, *) {
-            ChargeLiveActivityAdaptiveCard(attributes: attributes, state: state)
-        } else {
-            ChargeLiveActivityCard(attributes: attributes, state: state)
-        }
-        #else
-        ChargeLiveActivityCard(attributes: attributes, state: state)
-        #endif
+/// The iOS 18 configuration is registered in place of the iOS 16 fallback.
+/// Keeping the configurations in separate Widget types lets the bundle select
+/// it with an availability branch, without mixing distinct opaque
+/// `WidgetConfiguration` result types.
+@available(iOS 18.0, *)
+struct NinebotWatchChargeLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        makeChargeActivityConfiguration()
+            .supplementalActivityFamilies([.small])
     }
+}
 
-    private var chargeActivityConfiguration: some WidgetConfiguration {
-        ActivityConfiguration(for: NinebotChargeActivityAttributes.self) { context in
-            chargeActivityContent(attributes: context.attributes, state: context.state)
-                .activityBackgroundTint(Color(red: 0.025, green: 0.07, blue: 0.06))
-                .activitySystemActionForegroundColor(WidgetTheme.green)
-        } dynamicIsland: { context in
-            DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) {
-                    ChargeIslandVehicleHeader(attributes: context.attributes)
-                        .padding(.leading, 4)
-                        .padding(.top, 7)
-                }
-                DynamicIslandExpandedRegion(.trailing) {
-                    ChargeIslandBattery(state: context.state)
-                        .padding(.trailing, 8)
-                        .padding(.top, 3)
-                }
-                DynamicIslandExpandedRegion(.bottom) {
-                    ChargeIslandMetrics(state: context.state)
-                        .padding(.horizontal, 5)
-                        .padding(.top, 6)
-                }
-            } compactLeading: {
-                Image(systemName: "bolt.fill")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(WidgetTheme.green)
-                    .frame(width: 18, height: 18)
-            } compactTrailing: {
-                Text(chargeBatteryText(context.state))
-                    .font(.caption2.monospacedDigit().weight(.bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.70)
-            } minimal: {
-                Image(systemName: "bolt.fill")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(WidgetTheme.green)
+@available(iOS 16.1, *)
+private func makeChargeActivityConfiguration() -> some WidgetConfiguration {
+    ActivityConfiguration(for: NinebotChargeActivityAttributes.self) { context in
+        chargeActivityContent(attributes: context.attributes, state: context.state)
+            .activityBackgroundTint(Color(red: 0.025, green: 0.07, blue: 0.06))
+            .activitySystemActionForegroundColor(WidgetTheme.green)
+    } dynamicIsland: { context in
+        DynamicIsland {
+            DynamicIslandExpandedRegion(.leading) {
+                ChargeIslandVehicleHeader(attributes: context.attributes)
+                    .padding(.leading, 4)
+                    .padding(.top, 7)
             }
-            .keylineTint(WidgetTheme.green)
+            DynamicIslandExpandedRegion(.trailing) {
+                ChargeIslandBattery(state: context.state)
+                    .padding(.trailing, 8)
+                    .padding(.top, 3)
+            }
+            DynamicIslandExpandedRegion(.bottom) {
+                ChargeIslandMetrics(state: context.state)
+                    .padding(.horizontal, 5)
+                    .padding(.top, 6)
+            }
+        } compactLeading: {
+            Image(systemName: "bolt.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(WidgetTheme.green)
+                .frame(width: 18, height: 18)
+        } compactTrailing: {
+            Text(chargeBatteryText(context.state))
+                .font(.caption2.monospacedDigit().weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.70)
+        } minimal: {
+            Image(systemName: "bolt.fill")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(WidgetTheme.green)
         }
-        .configurationDisplayName("九号充电实况")
-        .description("车辆充电时自动上岛，实时显示电量进度、电压、温度和预计充满时间。")
+        .keylineTint(WidgetTheme.green)
     }
+    .configurationDisplayName("九号充电实况")
+    .description("车辆充电时自动上岛，实时显示电量进度、电压、温度和预计充满时间。")
+}
+
+@ViewBuilder
+private func chargeActivityContent(
+    attributes: NinebotChargeActivityAttributes,
+    state: NinebotChargeActivityAttributes.ContentState
+) -> some View {
+    #if compiler(>=6.0)
+    if #available(iOS 18.0, *) {
+        ChargeLiveActivityAdaptiveCard(attributes: attributes, state: state)
+    } else {
+        ChargeLiveActivityCard(attributes: attributes, state: state)
+    }
+    #else
+    ChargeLiveActivityCard(attributes: attributes, state: state)
+    #endif
 }
 
 #if compiler(>=6.0)
