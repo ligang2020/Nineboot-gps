@@ -2980,6 +2980,10 @@ private struct VehicleHeroCard: View {
                 MetricView(title: "电源", value: snapshot.state.powerText, systemImage: "power")
             }
 
+            if snapshot.state.isCharging == true && !snapshot.state.isFullyCharged {
+                VehicleChargingHologram(snapshot: snapshot)
+            }
+
             Divider()
 
             Label("更新 \(formatDate(snapshot.state.updatedAt))", systemImage: "clock")
@@ -2990,6 +2994,154 @@ private struct VehicleHeroCard: View {
         .background(Color.teslaCardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 14, x: 0, y: 8)
+    }
+}
+
+
+/// Premium in-vehicle charging scene used on the vehicle details screen. It
+/// combines the actual vehicle image with the animated energy orb so charging
+/// feels tied to the selected vehicle, not merely shown as a dashboard badge.
+private struct VehicleChargingHologram: View {
+    var snapshot: NinebotVehicleSnapshot
+    @State private var isAnimating = false
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.teslaGreen.opacity(0.16))
+                        .frame(width: 102, height: 102)
+                        .blur(radius: isAnimating ? 10 : 5)
+
+                    Circle()
+                        .stroke(
+                            AngularGradient(
+                                colors: [.clear, Color.cyan.opacity(0.72), Color.teslaGreen, .clear],
+                                center: .center
+                            ),
+                            lineWidth: 1.2
+                        )
+                        .frame(width: 92, height: 92)
+                        .rotationEffect(.degrees(isAnimating ? 360 : 0))
+
+                    VehicleImage(urlString: snapshot.vehicle.imageURLString, size: 100, showsBackground: false)
+                        .shadow(color: .black.opacity(0.28), radius: 12, x: 0, y: 8)
+
+                    ChargingEnergyOrb(isAnimating: isAnimating)
+                        .frame(width: 54, height: 54)
+                        .offset(x: 34, y: -27)
+                }
+                .frame(width: 108, height: 96)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Label("3D 充电舱", systemImage: "bolt.horizontal.circle.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.teslaGreen)
+                    Text("能量正在注入车辆")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.60))
+
+                    HStack(alignment: .lastTextBaseline, spacing: 4) {
+                        Text(snapshot.state.battery.map(String.init) ?? "--")
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                        Text("%")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.white.opacity(0.62))
+                    }
+
+                    Text("预计 \(snapshot.state.estimatedFullChargeTimeText) 充满")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(Color.teslaGreen)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            VStack(spacing: 5) {
+                HStack {
+                    Text("当前 \(snapshot.state.batteryText)")
+                    Spacer()
+                    Text("满电 100%")
+                }
+                .font(.caption2.monospacedDigit().weight(.medium))
+                .foregroundStyle(.white.opacity(0.70))
+
+                GeometryReader { proxy in
+                    let width = max(proxy.size.width, 0)
+                    let progress = min(max(snapshot.state.batteryFraction, 0), 1)
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.white.opacity(0.12))
+                        Capsule()
+                            .fill(LinearGradient(colors: [Color.teslaGreen, Color.cyan], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(width * progress, progress > 0 ? 8 : 0))
+                            .shadow(color: Color.teslaGreen.opacity(isAnimating ? 0.75 : 0.30), radius: 7)
+                    }
+                }
+                .frame(height: 6)
+            }
+
+            HStack(spacing: 7) {
+                VehicleChargingHologramMetric(title: "电池电压", value: snapshot.state.batteryVoltageText, systemImage: "bolt.batteryblock.fill")
+                VehicleChargingHologramMetric(title: "电池温度", value: snapshot.state.batteryTemperatureText, systemImage: "thermometer.medium")
+                VehicleChargingHologramMetric(title: "预计充满", value: snapshot.state.estimatedFullChargeTimeText, systemImage: "clock.fill")
+            }
+        }
+        .padding(14)
+        .background(
+            LinearGradient(
+                colors: [Color(red: 0.015, green: 0.10, blue: 0.075), Color(red: 0.015, green: 0.045, blue: 0.075)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(
+                    LinearGradient(colors: [Color.teslaGreen.opacity(0.52), Color.cyan.opacity(0.18), .white.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1
+                )
+        }
+        .overlay(alignment: .bottomLeading) {
+            GeometryReader { proxy in
+                Capsule()
+                    .fill(LinearGradient(colors: [.clear, Color.teslaGreen, .clear], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: proxy.size.width * 0.34, height: 2)
+                    .offset(x: isAnimating ? proxy.size.width : -proxy.size.width * 0.34)
+                    .animation(.linear(duration: 1.5).repeatForever(autoreverses: false), value: isAnimating)
+            }
+            .frame(height: 2)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .onAppear { isAnimating = true }
+    }
+}
+
+private struct VehicleChargingHologramMetric: View {
+    var title: String
+    var value: String
+    var systemImage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label(title, systemImage: systemImage)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.white.opacity(0.50))
+                .lineLimit(1)
+            Text(value)
+                .font(.caption.monospacedDigit().weight(.bold))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 7)
+        .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 }
 

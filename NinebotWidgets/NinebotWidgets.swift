@@ -188,36 +188,37 @@ private struct ChargeWatchLiveActivityCard<Attributes: NinebotChargeActivityVehi
     var state: NinebotChargeActivityContentState
 
     var body: some View {
-        VStack(spacing: 5) {
-            HStack(spacing: 4) {
-                Image(systemName: "bolt.fill")
-                    .foregroundStyle(WidgetTheme.green)
-                Text(attributes.vehicleName)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(.white)
+        VStack(spacing: 3) {
+            Text(attributes.vehicleName)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.60)
+                .frame(maxWidth: .infinity)
 
             ZStack {
                 Circle()
-                    .stroke(.white.opacity(0.16), lineWidth: 5)
+                    .stroke(.white.opacity(0.16), lineWidth: 4)
                 Circle()
                     .trim(from: 0, to: min(max(Double(state.battery ?? 0) / 100, 0), 1))
-                    .stroke(WidgetTheme.green, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .stroke(WidgetTheme.green, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text(chargeBatteryText(state))
-                    .font(.title3.monospacedDigit().weight(.bold))
+                    .font(.subheadline.monospacedDigit().weight(.bold))
                     .foregroundStyle(.white)
+                    .minimumScaleFactor(0.65)
             }
-            .frame(width: 48, height: 48)
+            .frame(width: 42, height: 42)
 
-            Text(chargeFullTimeText(state))
+            Text("充电中 · \(chargeFullTimeText(state))")
                 .font(.caption2.monospacedDigit().weight(.medium))
-                .foregroundStyle(.white.opacity(0.68))
+                .foregroundStyle(.white.opacity(0.72))
                 .lineLimit(1)
+                .minimumScaleFactor(0.56)
+                .frame(maxWidth: .infinity)
         }
-        .padding(8)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
         .background(
             LinearGradient(
                 colors: [Color(red: 0.025, green: 0.14, blue: 0.105), Color(red: 0.015, green: 0.06, blue: 0.07)],
@@ -248,44 +249,44 @@ private struct ChargeLiveActivityCard<Attributes: NinebotChargeActivityVehicleAt
 
             Circle()
                 .fill(WidgetTheme.green.opacity(0.14))
-                .frame(width: 180, height: 180)
-                .blur(radius: 22)
-                .offset(x: 132, y: -72)
+                .frame(width: 150, height: 150)
+                .blur(radius: 20)
+                .offset(x: 130, y: -66)
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .center, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Label("充电实况", systemImage: "bolt.fill")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(WidgetTheme.green)
-                        Text(attributes.vehicleName)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.white.opacity(0.62))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                    .padding(.top, 4)
-                    Spacer(minLength: 8)
-                    ChargeBatteryBadge(battery: state.battery)
+            // Keep the vehicle name in an explicit top safe inset. The
+            // lock-screen activity has a fixed height and previously clipped
+            // this first line when the card's content became too tall.
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .center, spacing: 8) {
+                    Text(attributes.vehicleName)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .minimumScaleFactor(0.72)
+                    Spacer(minLength: 6)
+                    Label("充电中", systemImage: "bolt.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(WidgetTheme.green)
+                        .lineLimit(1)
                 }
 
-                HStack(alignment: .lastTextBaseline, spacing: 6) {
+                HStack(alignment: .lastTextBaseline, spacing: 5) {
                     Text(chargeBatteryValue(state))
-                        .font(.system(size: 38, weight: .bold, design: .rounded))
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.65)
                     Text("%")
                         .font(.title3.weight(.bold))
                         .foregroundStyle(.white.opacity(0.62))
                     Spacer(minLength: 8)
-                    VStack(alignment: .trailing, spacing: 3) {
+                    VStack(alignment: .trailing, spacing: 1) {
                         Text(chargeFullTimeText(state))
-                            .font(.title3.monospacedDigit().weight(.bold))
+                            .font(.headline.monospacedDigit().weight(.bold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+                            .minimumScaleFactor(0.70)
                         Text("预计充满")
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(WidgetTheme.green)
@@ -293,29 +294,23 @@ private struct ChargeLiveActivityCard<Attributes: NinebotChargeActivityVehicleAt
                 }
                 .frame(maxWidth: .infinity)
 
-                ChargeBatteryProgress(battery: state.battery)
+                ChargeBatteryProgress(battery: state.battery, compact: true)
 
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     ChargeActivityMetric(value: chargeVoltageText(state), title: "电池电压", icon: "bolt.circle.fill")
                     ChargeActivityMetric(value: chargeTemperatureText(state), title: "电池温度", icon: "thermometer.medium")
-                    ChargeActivityMetric(value: chargeFullTimeText(state), title: "预估充满", icon: "clock.fill")
+                    // Keep the third metric as the estimated full-charge time;
+                    // it must not be replaced by charging power.
+                    ChargeActivityMetric(value: chargeFullTimeText(state), title: "预计充满", icon: "clock.fill")
                 }
-
-                HStack(spacing: 5) {
-                    Image(systemName: "arrow.clockwise")
-                    Text("更新 \(chargeUpdatedText(state.updatedAt))")
-                    if let power = state.chargingPowerWatts, power > 0 {
-                        Text("· \(formatWidgetNumber(power, maximumFractionDigits: 0)) W")
-                    }
-                }
-                .font(.caption2.monospacedDigit().weight(.medium))
-                .foregroundStyle(.white.opacity(0.58))
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 11)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 }
-
 @available(iOS 16.1, *)
 private struct ChargeIslandVehicleHeader<Attributes: NinebotChargeActivityVehicleAttributes>: View {
     var attributes: Attributes
@@ -406,9 +401,9 @@ private struct ChargeActivityMetric: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.62)
         }
-        .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
         .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
