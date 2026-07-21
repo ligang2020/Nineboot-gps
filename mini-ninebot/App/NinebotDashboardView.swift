@@ -1342,7 +1342,7 @@ private struct VehicleControlHero: View {
                     TeslaHeroMetric(title: "接口续航", value: snapshot.state.enduranceText, systemImage: "road.lanes")
                     Divider()
                         .frame(height: 34)
-                    TeslaHeroMetric(title: "均速", value: snapshot.state.averageSpeedText, systemImage: "speedometer")
+                    TeslaHeroMetric(title: "最高速度", value: snapshot.state.maximumSpeedText, systemImage: "gauge.with.dots.needle.67percent")
                 }
             }
 
@@ -1947,7 +1947,7 @@ private struct VehicleRangeEstimatePanel: View {
 
             HStack(spacing: 10) {
                 BasicInfoTile(title: "本地模型", value: snapshot.state.localEstimatedMileageText, systemImage: "function")
-                BasicInfoTile(title: "行程均速", value: snapshot.state.averageSpeedText, systemImage: "speedometer")
+                BasicInfoTile(title: "最高速度", value: snapshot.state.maximumSpeedText, systemImage: "gauge.with.dots.needle.67percent")
                 BasicInfoTile(title: "接口续航", value: snapshot.state.enduranceText, systemImage: "road.lanes")
             }
         }
@@ -2073,7 +2073,7 @@ private struct VehicleUsagePanel: View {
             ) {
                 BasicInfoTile(title: "本月日均", value: snapshot.state.dailyAverageMileageText, systemImage: "calendar")
                 BasicInfoTile(title: "最近骑行", value: snapshot.state.lastRideSummaryText, systemImage: "clock.arrow.circlepath")
-                BasicInfoTile(title: "行程均速", value: snapshot.state.averageSpeedText, systemImage: "speedometer")
+                BasicInfoTile(title: "最高速度", value: snapshot.state.maximumSpeedText, systemImage: "gauge.with.dots.needle.67percent")
                 BasicInfoTile(title: "本月能耗", value: snapshot.state.monthEnergyPerKmText, systemImage: "bolt.horizontal.fill")
             }
         }
@@ -2133,7 +2133,7 @@ private struct TripHeroPanel: View {
                 spacing: 10
             ) {
                 BasicInfoTile(title: "今日里程", value: snapshot.state.todayMileageText, systemImage: "sun.max.fill")
-                BasicInfoTile(title: "平均速度", value: snapshot.state.averageSpeedText, systemImage: "speedometer")
+                BasicInfoTile(title: "最高速度", value: snapshot.state.maximumSpeedText, systemImage: "gauge.with.dots.needle.67percent")
                 BasicInfoTile(title: "有效样本", value: "\(snapshot.state.observedRangeSampleCount) 次", systemImage: "scope")
                 BasicInfoTile(title: "本月日均", value: snapshot.state.dailyAverageMileageText, systemImage: "calendar")
             }
@@ -2440,7 +2440,7 @@ private struct TripTrendRideCard: View {
 
                 Spacer()
 
-                Text(formatSpeed(analysis.averageSpeed))
+                Text(formatSpeed(analysis.highestSpeed))
                     .font(.headline.monospacedDigit().weight(.semibold))
                     .foregroundStyle(Color.teslaGreen)
             }
@@ -2452,7 +2452,7 @@ private struct TripTrendRideCard: View {
                     .frame(height: 168)
 
                 HStack(spacing: 10) {
-                    ControlMetricPill(title: "平均速度", value: formatSpeed(analysis.averageSpeed), systemImage: "speedometer")
+                    ControlMetricPill(title: "最高速度", value: formatSpeed(analysis.highestSpeed), systemImage: "gauge.with.dots.needle.67percent")
                     ControlMetricPill(title: "平均用电", value: formatPercent(analysis.averageUsedElectricity), systemImage: "powerplug.fill")
                     ControlMetricPill(title: "最高里程", value: formatDistance(analysis.peakRideMileage), systemImage: "arrow.up.right")
                 }
@@ -2672,10 +2672,8 @@ private struct TripTrendAnalysis {
         return monthMileage / Double(dailyRecords.count)
     }
 
-    var averageSpeed: Double? {
-        let samples = rides.compactMap(\.speed).filter { $0 > 0 }
-        guard !samples.isEmpty else { return nil }
-        return samples.reduce(0, +) / Double(samples.count)
+    var highestSpeed: Double? {
+        rides.compactMap(\.maximumSpeed).max()
     }
 
     var averageUsedElectricity: Double? {
@@ -3608,7 +3606,7 @@ private struct RideRecordRow: View {
         [
             record.consumedEnergyWh.map { RideDisplayMetric(title: "本次用电", value: formatEnergyWh($0), systemImage: "bolt.fill") },
             record.energyPerKmWh.map { RideDisplayMetric(title: "能耗", value: formatEnergyPerKm($0), systemImage: "leaf.fill") },
-            record.speed.map { RideDisplayMetric(title: "平均速度", value: formatSpeed($0), systemImage: "speedometer") },
+            record.maximumSpeed.map { RideDisplayMetric(title: "最高速度", value: formatSpeed($0), systemImage: "gauge.with.dots.needle.67percent") },
             record.resolvedDurationMinutes.map { RideDisplayMetric(title: "骑行时间", value: formatDuration($0), systemImage: "timer") }
         ].compactMap { $0 }
     }
@@ -3646,7 +3644,7 @@ private struct NinebotRideDetailView: View {
                     DetailRow(title: "结束时间", value: effectiveRecord.endedAt.map(formatDate) ?? "--", systemImage: "stop.fill")
                     DetailRow(title: "里程", value: formatDistance(effectiveRecord.mileage), systemImage: "road.lanes")
                     DetailRow(title: "骑行时间", value: formatDuration(effectiveRecord.resolvedDurationMinutes), systemImage: "timer")
-                    DetailRow(title: "平均速度", value: formatSpeed(effectiveRecord.speed), systemImage: "speedometer")
+                    DetailRow(title: "最高速度", value: formatSpeed(effectiveRecord.maximumSpeed), systemImage: "gauge.with.dots.needle.67percent")
                     DetailRow(title: "本次用电", value: formatEnergyWh(effectiveRecord.consumedEnergyWh), systemImage: "bolt.fill")
                     DetailRow(title: "能耗", value: formatEnergyPerKm(effectiveRecord.energyPerKmWh), systemImage: "leaf.fill")
                     DetailRow(title: "行程 ID", value: record.id, systemImage: "number")
@@ -3757,7 +3755,7 @@ private struct RideDetailHero: View {
 
     private var metrics: [RideDisplayMetric] {
         var result: [RideDisplayMetric] = [
-            record.speed.map { RideDisplayMetric(title: "接口速度", value: formatSpeed($0), systemImage: "speedometer") },
+            record.maximumSpeed.map { RideDisplayMetric(title: "接口最高速度", value: formatSpeed($0), systemImage: "gauge.with.dots.needle.67percent") },
             record.consumedEnergyWh.map { RideDisplayMetric(title: "本次用电", value: formatEnergyWh($0), systemImage: "bolt.fill") },
             record.energyPerKmWh.map { RideDisplayMetric(title: "能耗", value: formatEnergyPerKm($0), systemImage: "leaf.fill") },
             record.resolvedDurationMinutes.map { RideDisplayMetric(title: "骑行时间", value: formatDuration($0), systemImage: "timer") }

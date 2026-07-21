@@ -244,8 +244,22 @@ struct NinebotRideRecord: Codable, Equatable, Identifiable {
     var energy: Double?
     var usedElectricity: Double?
     var durationMinutes: Double?
+    /// The highest speed reported by the service for this trip, when available.
+    var maxSpeed: Double?
+    /// A legacy/general speed field returned by some services. It is used only as
+    /// a fallback when the service does not expose a dedicated maximum-speed field.
     var speed: Double?
     var raw: [String: JSONValue]?
+
+    var maximumSpeed: Double? {
+        if let maxSpeed, maxSpeed.isFinite, maxSpeed > 0 {
+            return maxSpeed
+        }
+        if let speed, speed.isFinite, speed > 0 {
+            return speed
+        }
+        return nil
+    }
 }
 
 /// Normalises the several energy units returned by different Ninebot endpoints.
@@ -1386,6 +1400,15 @@ struct NinebotVehicleState: Codable, Equatable {
         return "\(Self.numberText(averageSpeed, maximumFractionDigits: 1)) km/h"
     }
 
+    var maximumSpeed: Double? {
+        rides.compactMap(\.maximumSpeed).max()
+    }
+
+    var maximumSpeedText: String {
+        guard let maximumSpeed else { return "-- km/h" }
+        return "\(Self.numberText(maximumSpeed, maximumFractionDigits: 1)) km/h"
+    }
+
     var rides: [NinebotRideRecord] {
         Self.deduplicatedRideRecords(rideRecords ?? [])
     }
@@ -1794,6 +1817,7 @@ struct NinebotDashboard: Codable, Equatable {
                             energy: 200,
                             usedElectricity: 4,
                             durationMinutes: 10,
+                            maxSpeed: 32,
                             speed: 27.6,
                             raw: nil
                         )

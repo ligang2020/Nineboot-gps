@@ -91,7 +91,7 @@ struct NinebotRideLiveActivity: Widget {
             .keylineTint(WidgetTheme.green)
         }
         .configurationDisplayName("九号骑行实况")
-        .description("车辆解锁后自动上岛，展示电量、速度、用电量与能耗；上锁立即结束。")
+        .description("车辆解锁后自动上岛，展示电量、速度、骑行进度与本次用电；上锁立即结束。")
     }
 }
 
@@ -99,11 +99,6 @@ struct NinebotRideLiveActivity: Widget {
 private struct RideLiveActivityCard: View {
     var attributes: NinebotRideActivityAttributes
     var state: NinebotRideActivityAttributes.ContentState
-
-    private let metricColumns = [
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8)
-    ]
 
     var body: some View {
         ZStack {
@@ -123,7 +118,7 @@ private struct RideLiveActivityCard: View {
                 .blur(radius: 22)
                 .offset(x: 130, y: -66)
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center, spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
                         Label(rideStatusText(state), systemImage: state.isPoweredOn == true ? "bolt.car.fill" : "lock.open.fill")
@@ -135,11 +130,11 @@ private struct RideLiveActivityCard: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
-                    Spacer(minLength: 4)
+                    Spacer(minLength: 8)
                     RideBatteryBadge(battery: state.battery)
                 }
 
-                HStack(alignment: .center, spacing: 12) {
+                HStack(alignment: .bottom, spacing: 16) {
                     HStack(alignment: .lastTextBaseline, spacing: 5) {
                         Text(rideSpeedValue(state))
                             .font(.system(size: 38, weight: .bold, design: .rounded))
@@ -151,26 +146,30 @@ private struct RideLiveActivityCard: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.white.opacity(0.54))
                     }
-                    Spacer(minLength: 4)
-                    VStack(alignment: .trailing, spacing: 2) {
+
+                    Spacer(minLength: 12)
+
+                    VStack(alignment: .trailing, spacing: 3) {
                         Text(state.rideStartedAt, style: .timer)
                             .font(.title3.monospacedDigit().weight(.bold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         Text("骑行时长")
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(WidgetTheme.green)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
+                    .frame(width: 84, alignment: .trailing)
                 }
+                .frame(maxWidth: .infinity)
 
                 RideDistanceProgress(distance: state.rideDistanceKm, target: state.rideProgressTargetKm)
 
-                LazyVGrid(columns: metricColumns, spacing: 8) {
+                HStack(spacing: 8) {
                     RideActivityMetric(value: rideDurationText(state), title: "骑行时间", icon: "clock.fill")
                     RideActivityMetric(value: rideUsedElectricityText(state), title: "本次用电", icon: "bolt.fill")
-                    RideActivityMetric(value: rideConsumptionText(state), title: "平均能耗", icon: "leaf.fill")
-                    RideActivityMetric(value: rideTemperatureText(state), title: "电池温度", icon: "thermometer.medium")
                 }
 
                 Label(rideLocationText(state), systemImage: "location.fill")
@@ -369,12 +368,6 @@ private func rideCompactText(_ state: NinebotRideActivityAttributes.ContentState
 }
 
 @available(iOS 16.1, *)
-private func rideTemperatureText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
-    guard let temperature = state.batteryTemperatureCelsius else { return "-- °C" }
-    return "\(formatWidgetNumber(temperature, maximumFractionDigits: 1)) °C"
-}
-
-@available(iOS 16.1, *)
 private func rideDistanceText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
     guard let distance = state.rideDistanceKm else { return "-- km" }
     return "\(formatWidgetNumber(distance, maximumFractionDigits: 2)) km"
@@ -399,12 +392,6 @@ private func rideRangeText(_ state: NinebotRideActivityAttributes.ContentState) 
 private func rideUsedElectricityText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
     guard let electricity = state.usedElectricityWh else { return "-- Wh" }
     return "\(formatWidgetNumber(electricity, maximumFractionDigits: 0)) Wh"
-}
-
-@available(iOS 16.1, *)
-private func rideConsumptionText(_ state: NinebotRideActivityAttributes.ContentState) -> String {
-    guard let energy = state.energyPerKmWh else { return "-- Wh/km" }
-    return "\(formatWidgetNumber(energy, maximumFractionDigits: 1)) Wh/km"
 }
 
 @available(iOS 16.1, *)
@@ -763,7 +750,7 @@ private struct LargeStatusWidget: View {
 
                 HStack(spacing: 8) {
                     WidgetInfoTile(title: "本月日均", value: primary.state.dailyAverageMileageText, systemImage: "calendar")
-                    WidgetInfoTile(title: "行程均速", value: primary.state.averageSpeedText, systemImage: "speedometer")
+                    WidgetInfoTile(title: "最高速度", value: primary.state.maximumSpeedText, systemImage: "gauge.with.dots.needle.67percent")
                     WidgetInfoTile(title: "最近骑行", value: primary.state.lastRideSummaryText, systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                 }
                 .frame(height: 60)

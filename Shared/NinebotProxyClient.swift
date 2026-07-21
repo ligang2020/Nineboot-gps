@@ -612,6 +612,10 @@ private extension NinebotProxyClient {
             "useElectricity", "electricity_used", "electricityUsed", "power_used", "powerUsed"
         ], in: object)
         let durationMinutes = firstDurationMinutes(in: object, startedAt: startedAt, endedAt: endedAt)
+        let maxSpeed = firstDouble([
+            "max_speed", "maxSpeed", "maximum_speed", "maximumSpeed",
+            "top_speed", "topSpeed", "peak_speed", "peakSpeed"
+        ], in: object)
         let speed = firstDouble(["speed", "avg_speed", "avgSpeed", "average_speed", "averageSpeed"], in: object)
 
         let id = firstString(["travel_id", "travelId", "ride_id", "rideId", "record_id", "recordId", "id"], in: object)
@@ -626,6 +630,7 @@ private extension NinebotProxyClient {
             energy: energy,
             usedElectricity: usedElectricity,
             durationMinutes: durationMinutes,
+            maxSpeed: maxSpeed,
             speed: speed,
             raw: object
         )
