@@ -52,13 +52,12 @@ struct NinebotLockScreenWidget: Widget {
 struct NinebotChargeLiveActivity: Widget {
     var body: some WidgetConfiguration {
         #if compiler(>=6.0)
-        if #available(iOS 18.0, *) {
-            chargeActivityConfiguration
-                // watchOS 11+ uses this supplemental family for the Smart Stack.
-                .supplementalActivityFamilies([.small])
-        } else {
-            chargeActivityConfiguration
-        }
+        // The `small` supplemental family opts this Live Activity into the
+        // Apple Watch Smart Stack (and provides the compact CarPlay layout).
+        // Keep the modifier directly on the configuration: opaque
+        // `WidgetConfiguration` results can't be conditionally returned.
+        chargeActivityConfiguration
+            .supplementalActivityFamilies([.small])
         #else
         chargeActivityConfiguration
         #endif
