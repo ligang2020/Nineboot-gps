@@ -2288,21 +2288,33 @@ private struct LiveRideEnvironment: View {
     }
 
     private func snow(size: CGSize, drift: CGFloat, phase: TimeInterval) -> some View {
-        let flakeCount = weather.isBlizzard ? 112 : 58
-        let wind = CGFloat(sin(phase * 2.6)) * (weather.isBlizzard ? size.width * 0.13 : size.width * 0.035)
+        let isBlizzard = weather.isBlizzard
+        let flakeCount = isBlizzard ? 112 : 58
+        let windAmplitude = isBlizzard ? size.width * 0.13 : size.width * 0.035
+        let wind = CGFloat(sin(phase * 2.6)) * windAmplitude
+        let flakeOpacity = weather.isNight ? 0.82 : 0.76
+        let verticalCycle = size.height * 1.25
+        let verticalOffset = size.height * 0.30
+
         return ZStack {
             ForEach(0..<flakeCount, id: \.self) { index in
-                let x = (CGFloat((index * 47) % 100) / 100 - 0.5) * size.width
-                let y = (CGFloat((index * 29) % 100) / 100 - 0.5) * size.height + drift * size.height * 1.28
-                let flakeSize = weather.isBlizzard ? CGFloat(1.7 + (index % 4)) * 0.58 : CGFloat(1.1 + (index % 3)) * 0.56
+                let xSeed = (index * 47) % 100
+                let ySeed = (index * 29) % 100
+                let normalizedX = CGFloat(xSeed) / 100.0 - 0.5
+                let normalizedY = CGFloat(ySeed) / 100.0 - 0.5
+                let x = normalizedX * size.width
+                let y = normalizedY * size.height + drift * size.height * 1.28
+                let flakeSize: CGFloat = isBlizzard
+                    ? (1.7 + CGFloat(index % 4)) * 0.58
+                    : (1.1 + CGFloat(index % 3)) * 0.56
+                let windMultiplier = 0.35 + CGFloat(index % 4) * 0.18
+                let animatedY = y.truncatingRemainder(dividingBy: verticalCycle) - verticalOffset
+
                 Circle()
-                    .fill(Color.white.opacity(weather.isNight ? 0.82 : 0.76))
+                    .fill(Color.white.opacity(flakeOpacity))
                     .frame(width: flakeSize, height: flakeSize)
-                    .blur(radius: weather.isBlizzard && index.isMultiple(of: 5) ? 0.6 : 0)
-                    .offset(
-                        x: x + wind * (0.35 + CGFloat(index % 4) * 0.18),
-                        y: y.truncatingRemainder(dividingBy: size.height * 1.25) - size.height * 0.30
-                    )
+                    .blur(radius: isBlizzard && index.isMultiple(of: 5) ? 0.6 : 0)
+                    .offset(x: x + wind * windMultiplier, y: animatedY)
             }
         }
     }
