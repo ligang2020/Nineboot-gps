@@ -1356,10 +1356,9 @@ private struct VehicleControlHero: View {
 }
 
 
-/// A lightweight, code-drawn 3D scene for the main vehicle card. It uses the
-/// selected vehicle image so the animation stays accurate to the user's model,
-/// while all environmental layers remain native SwiftUI and do not need a
-/// network-loaded video or a large image asset.
+/// The main vehicle scene uses the approved high-fidelity rider reference
+/// instead of a hand-drawn skeletal figure. Lightweight native overlays keep
+/// the wheels and roadway visibly moving without altering rider proportions.
 private struct VehicleMotionScene: View {
     var snapshot: NinebotVehicleSnapshot
 
@@ -1563,53 +1562,27 @@ private struct VehicleMotionScene: View {
 
     @ViewBuilder
     private func ridingScene(in size: CGSize, phase: TimeInterval) -> some View {
-        let vehicleBob = CGFloat(sin(phase * 6.4)) * 1.6
-        let vehiclePitch = Double(sin(phase * 3.2)) * 0.35
+        let vehicleBob = CGFloat(sin(phase * 6.4)) * 0.75
+        let vehicleDrift = CGFloat(sin(phase * 1.8)) * 0.65
 
         ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.78, green: 0.86, blue: 0.90),
-                            Color(red: 0.93, green: 0.97, blue: 0.98),
-                            Color(red: 0.63, green: 0.72, blue: 0.76)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+            // This approved rider artwork matches the supplied reference: an
+            // all-black full-face helmet, integrated riding suit, natural
+            // seated posture, hands placed on the handlebar, and both feet
+            // resting on the scooter. It intentionally replaces the previous
+            // custom robot/line-joint drawing.
+            Image("RidingHeroReference")
+                .resizable()
+                .scaledToFill()
+                .scaleEffect(1.025)
+                .offset(x: vehicleDrift, y: vehicleBob)
+                .clipped()
 
-            RideCityBackdrop(phase: phase)
-                .opacity(0.78)
-
-            RideRoad(phase: phase)
-                .offset(y: size.height * 0.22)
-
-            RideSpeedHud(speedText: rideSpeedText, phase: phase)
-                .frame(width: min(size.width * 0.31, 128))
-                .offset(x: -size.width * 0.30, y: -size.height * 0.12)
-
-            // Keep the real model artwork as the hero while a subtle bob and
-            // pitch make it feel connected to the moving road.
-            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.76, 286), showsBackground: false)
-                .shadow(color: .black.opacity(0.26), radius: 17, x: 0, y: 13)
-                .rotationEffect(.degrees(vehiclePitch), anchor: .bottom)
-                .offset(x: size.width * 0.06, y: size.height * 0.06 + vehicleBob)
-
-            RideWheelGlints(phase: phase)
-                .frame(width: min(size.width * 0.69, 258), height: size.height * 0.43)
-                .offset(x: size.width * 0.06, y: size.height * 0.20 + vehicleBob)
-
-            // The rider is assembled from anchored joints and limbs rather
-            // than one transformed silhouette, so the human proportions stay
-            // intact throughout the animation.
-            RidingRobot(phase: phase)
-                .frame(width: min(size.width * 0.34, 132), height: size.height * 0.76)
-                .offset(x: size.width * 0.07, y: -size.height * 0.035 + vehicleBob)
-
-            RideMotionStreaks(phase: phase)
+            ReferenceRideWheelMotion(phase: phase)
+            ReferenceRideRoadMotion(phase: phase)
         }
+        .frame(width: size.width, height: size.height)
+        .clipped()
     }
 
     private func chargingGrid(size: CGSize) -> some View {
@@ -1902,200 +1875,62 @@ private struct RideSpeedHud: View {
     }
 }
 
-private struct RidingRobot: View {
+private struct ReferenceRideWheelMotion: View {
     var phase: TimeInterval
 
     var body: some View {
         GeometryReader { proxy in
-            let scale = min(proxy.size.width / 126, proxy.size.height / 154)
-            let bob = CGFloat(sin(phase * 6.4)) * 1.4 * scale
-            let stride = CGFloat(sin(phase * 7.0)) * scale
-            let counterStride = CGFloat(sin(phase * 7.0 + .pi)) * scale
-            let originX = (proxy.size.width - 126 * scale) / 2
-            let originY = (proxy.size.height - 154 * scale) / 2 + bob
-
-            let helmet = CGPoint(x: originX + 57 * scale, y: originY + 42 * scale)
-            let neckTop = CGPoint(x: originX + 59 * scale, y: originY + 53 * scale)
-            let neckBottom = CGPoint(x: originX + 61 * scale, y: originY + 60 * scale)
-            let torso = CGPoint(x: originX + 67 * scale, y: originY + 75 * scale)
-            let backShoulder = CGPoint(x: originX + 57 * scale, y: originY + 62 * scale)
-            let frontShoulder = CGPoint(x: originX + 53 * scale, y: originY + 65 * scale)
-            let backElbow = CGPoint(x: originX + 43 * scale, y: originY + (70 * scale + counterStride))
-            let backHand = CGPoint(x: originX + 31 * scale, y: originY + 75 * scale)
-            let frontElbow = CGPoint(x: originX + 43 * scale, y: originY + (76 * scale + stride))
-            let frontHand = CGPoint(x: originX + 31 * scale, y: originY + 80 * scale)
-            let hip = CGPoint(x: originX + 76 * scale, y: originY + 92 * scale)
-            let backKnee = CGPoint(x: originX + 89 * scale, y: originY + (111 * scale + counterStride * 1.8))
-            let backFoot = CGPoint(x: originX + 72 * scale, y: originY + 128 * scale)
-            let frontKnee = CGPoint(x: originX + 59 * scale, y: originY + (113 * scale + stride * 1.8))
-            let frontFoot = CGPoint(x: originX + 43 * scale, y: originY + 128 * scale)
+            let rotation = Angle.degrees((phase * 620).truncatingRemainder(dividingBy: 360))
+            let wheelDiameter = min(proxy.size.width * 0.118, proxy.size.height * 0.285)
 
             ZStack {
-                // Back limbs first maintain a clean, connected side profile.
-                RobotLimb(start: hip, end: backKnee, thickness: 13 * scale, accent: .cyan.opacity(0.32))
-                RobotLimb(start: backKnee, end: backFoot, thickness: 11 * scale, accent: .cyan.opacity(0.26))
-                RobotLimb(start: backShoulder, end: backElbow, thickness: 9 * scale, accent: .cyan.opacity(0.28))
-                RobotLimb(start: backElbow, end: backHand, thickness: 8 * scale, accent: .cyan.opacity(0.22))
-
-                RobotTorso(scale: scale)
-                    .position(torso)
-
-                RobotLimb(start: neckTop, end: neckBottom, thickness: 10 * scale, accent: Color.teslaGreen)
-                RobotHelmet(scale: scale)
-                    .position(helmet)
-
-                RobotLimb(start: frontShoulder, end: frontElbow, thickness: 11 * scale, accent: Color.teslaGreen)
-                RobotLimb(start: frontElbow, end: frontHand, thickness: 9 * scale, accent: Color.teslaGreen.opacity(0.74))
-                RobotLimb(start: hip, end: frontKnee, thickness: 15 * scale, accent: Color.teslaGreen.opacity(0.76))
-                RobotLimb(start: frontKnee, end: frontFoot, thickness: 12 * scale, accent: .cyan.opacity(0.52))
-
-                RobotBoot(scale: scale)
-                    .position(frontFoot)
-                RobotBoot(scale: scale)
-                    .position(backFoot)
-
-                Group {
-                    RobotJoint(scale: scale, color: .cyan).position(backShoulder)
-                    RobotJoint(scale: scale, color: .cyan).position(backElbow)
-                    RobotJoint(scale: scale, color: Color.teslaGreen).position(frontShoulder)
-                    RobotJoint(scale: scale, color: Color.teslaGreen).position(frontElbow)
-                    RobotJoint(scale: scale, color: Color.teslaGreen).position(hip)
-                    RobotJoint(scale: scale, color: .cyan).position(backKnee)
-                    RobotJoint(scale: scale, color: Color.teslaGreen).position(frontKnee)
-                }
+                referenceWheel(rotation: rotation, diameter: wheelDiameter)
+                    .position(x: proxy.size.width * 0.505, y: proxy.size.height * 0.765)
+                referenceWheel(rotation: rotation, diameter: wheelDiameter)
+                    .position(x: proxy.size.width * 0.842, y: proxy.size.height * 0.765)
             }
-            .shadow(color: .black.opacity(0.30), radius: 4, y: 4)
         }
+        .allowsHitTesting(false)
+    }
+
+    private func referenceWheel(rotation: Angle, diameter: CGFloat) -> some View {
+        ZStack {
+            Circle()
+                .stroke(.white.opacity(0.16), lineWidth: max(0.6, diameter * 0.018))
+            ForEach(0..<3, id: \.self) { index in
+                Capsule()
+                    .fill(Color.white.opacity(0.20))
+                    .frame(width: max(0.65, diameter * 0.014), height: diameter * 0.62)
+                    .rotationEffect(rotation + .degrees(Double(index) * 60))
+            }
+        }
+        .frame(width: diameter, height: diameter)
+        .blendMode(.screen)
+        .opacity(0.56)
     }
 }
 
-private struct RobotTorso: View {
-    var scale: CGFloat
+private struct ReferenceRideRoadMotion: View {
+    var phase: TimeInterval
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.16, green: 0.20, blue: 0.22), Color(red: 0.025, green: 0.04, blue: 0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
-                        .stroke(Color.white.opacity(0.20), lineWidth: max(0.7, scale))
-                }
+        GeometryReader { proxy in
+            let progress = CGFloat((phase * 0.88).truncatingRemainder(dividingBy: 1.0))
 
-            Capsule()
-                .fill(LinearGradient(colors: [Color.teslaGreen, .cyan], startPoint: .top, endPoint: .bottom))
-                .frame(width: 3 * scale, height: 31 * scale)
-                .offset(x: 7 * scale, y: -1 * scale)
-                .shadow(color: Color.teslaGreen.opacity(0.80), radius: 3 * scale)
-
-            RoundedRectangle(cornerRadius: 2 * scale, style: .continuous)
-                .fill(Color.white.opacity(0.26))
-                .frame(width: 9 * scale, height: 4 * scale)
-                .offset(x: -6 * scale, y: -11 * scale)
-        }
-        .frame(width: 34 * scale, height: 49 * scale)
-        .rotationEffect(.degrees(19))
-    }
-}
-
-private struct RobotHelmet: View {
-    var scale: CGFloat
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 9 * scale, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.22, green: 0.27, blue: 0.29), Color(red: 0.03, green: 0.05, blue: 0.06)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9 * scale, style: .continuous)
-                        .stroke(Color.teslaGreen.opacity(0.76), lineWidth: max(0.8, scale))
-                }
-
-            Capsule()
-                .fill(Color.black.opacity(0.86))
-                .frame(width: 19 * scale, height: 6 * scale)
-                .overlay(alignment: .leading) {
+            ZStack(alignment: .leading) {
+                ForEach(0..<4, id: \.self) { index in
                     Capsule()
-                        .fill(.white.opacity(0.52))
-                        .frame(width: 6 * scale, height: 1.2 * scale)
-                        .padding(.leading, 3 * scale)
+                        .fill(Color.white.opacity(0.18 - Double(index) * 0.025))
+                        .frame(width: proxy.size.width * (0.14 + CGFloat(index) * 0.04), height: 1.2)
+                        .offset(
+                            x: (progress * 1.5 - 0.55) * proxy.size.width,
+                            y: proxy.size.height * (0.79 + CGFloat(index) * 0.045)
+                        )
+                        .blur(radius: 0.55)
                 }
-                .offset(y: 1 * scale)
-        }
-        .frame(width: 33 * scale, height: 26 * scale)
-        .rotationEffect(.degrees(8))
-    }
-}
-
-private struct RobotLimb: View {
-    var start: CGPoint
-    var end: CGPoint
-    var thickness: CGFloat
-    var accent: Color
-
-    var body: some View {
-        let dx = end.x - start.x
-        let dy = end.y - start.y
-        let length = max(hypot(dx, dy), thickness)
-        let angle = Angle(radians: Double(atan2(dy, dx)) + .pi / 2)
-
-        ZStack {
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.22, green: 0.26, blue: 0.28), Color(red: 0.035, green: 0.05, blue: 0.06)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay {
-                    Capsule().stroke(Color.white.opacity(0.16), lineWidth: min(1, thickness * 0.11))
-                }
-
-            Capsule()
-                .fill(accent.opacity(0.84))
-                .frame(width: max(1.4, thickness * 0.16), height: max(4, length * 0.58))
-                .shadow(color: accent.opacity(0.70), radius: 2)
-        }
-        .frame(width: thickness, height: length)
-        .rotationEffect(angle)
-        .position(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
-    }
-}
-
-private struct RobotJoint: View {
-    var scale: CGFloat
-    var color: Color
-
-    var body: some View {
-        Circle()
-            .fill(Color(red: 0.04, green: 0.06, blue: 0.07))
-            .overlay {
-                Circle().stroke(color.opacity(0.88), lineWidth: max(0.7, scale))
             }
-            .frame(width: 10 * scale, height: 10 * scale)
-            .shadow(color: color.opacity(0.46), radius: 2)
-    }
-}
-
-private struct RobotBoot: View {
-    var scale: CGFloat
-
-    var body: some View {
-        Capsule()
-            .fill(LinearGradient(colors: [Color(red: 0.20, green: 0.24, blue: 0.25), Color.black], startPoint: .top, endPoint: .bottom))
-            .frame(width: 20 * scale, height: 9 * scale)
-            .rotationEffect(.degrees(-18))
+        }
+        .allowsHitTesting(false)
     }
 }
 
