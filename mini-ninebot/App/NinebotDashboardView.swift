@@ -1363,6 +1363,7 @@ private struct VehicleMotionScene: View {
     var snapshot: NinebotVehicleSnapshot
 
     @State private var isAnimating = false
+    @State private var rideStartedAt: Date?
 
     /// The Ninebot status endpoint used by this app often exposes no live
     /// speed/movement fields. In that payload the reliable active-ride signal
@@ -1387,20 +1388,14 @@ private struct VehicleMotionScene: View {
         return movementKeys.contains(where: { status[$0]?.boolValue == true })
     }
 
-    private var liveSpeedKmh: Double? {
-        guard let status = snapshot.state.rawStatus else { return nil }
-        let speedKeys = ["currentSpeed", "current_speed", "speedKmh", "speed_kmh", "realtimeSpeed", "realtime_speed"]
-        guard let speed = speedKeys.compactMap({ status[$0]?.doubleValue }).first,
-              speed.isFinite,
-              (2...120).contains(speed) else {
-            return nil
+    private func updateRideTimer(for newMode: VehicleMotionSceneMode) {
+        if newMode == .riding {
+            if rideStartedAt == nil {
+                rideStartedAt = .now
+            }
+        } else {
+            rideStartedAt = nil
         }
-        return speed
-    }
-
-    private var rideSpeedText: String? {
-        guard let liveSpeedKmh else { return nil }
-        return "\(Int(liveSpeedKmh.rounded()))"
     }
 
     var body: some View {
@@ -1417,7 +1412,11 @@ private struct VehicleMotionScene: View {
                     // This avoids the previous one-time state transition where
                     // the riding artwork could look like a still image.
                     TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isAnimating)) { timeline in
-                        ridingScene(in: proxy.size, phase: timeline.date.timeIntervalSinceReferenceDate)
+                        ridingScene(
+                            in: proxy.size,
+                            phase: timeline.date.timeIntervalSinceReferenceDate,
+                            now: timeline.date
+                        )
                     }
                 }
             }
@@ -1426,7 +1425,13 @@ private struct VehicleMotionScene: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilitySceneLabel)
         }
-        .onAppear { isAnimating = true }
+        .onAppear {
+            isAnimating = true
+            updateRideTimer(for: mode)
+        }
+        .onChange(of: mode) { newMode in
+            updateRideTimer(for: newMode)
+        }
         .onDisappear { isAnimating = false }
     }
 
@@ -1561,7 +1566,7 @@ private struct VehicleMotionScene: View {
     }
 
     @ViewBuilder
-    private func ridingScene(in size: CGSize, phase: TimeInterval) -> some View {
+    private func ridingScene(in size: CGSize, phase: TimeInterval, now: Date) -> some View {
         let vehicleBob = CGFloat(sin(phase * 6.4)) * 0.75
         let vehicleDrift = CGFloat(sin(phase * 1.8)) * 0.65
 
@@ -1577,6 +1582,13 @@ private struct VehicleMotionScene: View {
                 .scaleEffect(1.025)
                 .offset(x: vehicleDrift, y: vehicleBob)
                 .clipped()
+
+            // The original reference artwork contains a 45 km/h speed tile.
+            // Replace it with a native, live duration tile so no speed number
+            // or "km/h" text remains visible in the final card.
+            RideDurationHud(startedAt: rideStartedAt ?? now, now: now, phase: phase)
+                .frame(width: min(size.width * 0.35, 132), height: min(size.height * 0.52, 116))
+                .offset(x: -size.width * 0.242, y: -size.height * 0.07)
 
             ReferenceRideWheelMotion(phase: phase)
             ReferenceRideRoadMotion(phase: phase)
@@ -1632,7 +1644,7 @@ private struct VehicleMotionScene: View {
     }
 }
 
-private enum VehicleMotionSceneMode {
+private enum VehicleMotionSceneMode: Equatable {
     case charging
     case parked
     case riding
@@ -1823,55 +1835,64 @@ private struct RideRoad: View {
     }
 }
 
-private struct RideSpeedHud: View {
-    var speedText: String?
+private struct RideDurationHud: View {
+    var startedAt: Date
+    var now: Date
     var phase: TimeInterval
 
+    private var durationText: String {
+        let elapsed = max(0, Int(now.timeIntervalSince(startedAt)))
+        let hours = elapsed / 3_600
+        let minutes = (elapsed % 3_600) / 60
+        let seconds = elapsed % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+    }
+
     var body: some View {
-        let scan = CGFloat((phase * 0.85).truncatingRemainder(dividingBy: 1.0))
+        let glow = 0.68 + 0.22 * sin(phase * 2.2)
 
-        VStack(spacing: 3) {
-            if let speedText {
-                Text("当前速度")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.70))
-                HStack(alignment: .lastTextBaseline, spacing: 3) {
-                    Text(speedText)
-                        .font(.system(size: 36, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                    Text("km/h")
-                        .font(.caption.weight(.bold))
-                }
+        VStack(spacing: 5) {
+            Text("骑行时间")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.76))
+
+            Text(durationText)
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .monospacedDigit()
                 .foregroundStyle(.white)
-            } else {
-                Label("骑行模式", systemImage: "figure.outdoor.cycle")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.teslaGreen)
-                Text("已上电 · 未锁车")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.78))
-            }
+                .minimumScaleFactor(0.72)
+                .lineLimit(1)
 
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.14))
-                    Capsule()
-                        .fill(LinearGradient(colors: [Color.teslaGreen, .cyan, Color.teslaGreen], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: proxy.size.width * 0.42)
-                        .offset(x: (scan * 1.48 - 0.45) * proxy.size.width)
-                        .shadow(color: Color.teslaGreen.opacity(0.82), radius: 5)
-                }
-            }
-            .frame(height: 3)
-            .clipShape(Capsule())
+            Text("本次骑行")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.white.opacity(0.68))
+
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.teslaGreen.opacity(0.55), Color.teslaGreen, .cyan.opacity(0.55)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: 54, height: 3)
+                .shadow(color: Color.teslaGreen.opacity(glow), radius: 5)
         }
-        .padding(10)
-        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(7)
+        .background(.black.opacity(0.86), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(.white.opacity(0.24), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [.white.opacity(0.36), Color.teslaGreen.opacity(0.48)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
         }
-        .shadow(color: Color.teslaGreen.opacity(0.27), radius: 13)
+        .shadow(color: Color.teslaGreen.opacity(0.23), radius: 12)
     }
 }
 
