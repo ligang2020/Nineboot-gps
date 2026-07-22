@@ -1413,7 +1413,13 @@ private struct VehicleMotionScene: View {
                 case .parked:
                     parkedScene(in: proxy.size)
                 case .riding:
-                    ridingScene(in: proxy.size)
+                    // A TimelineView keeps this scene advancing even when the
+                    // dashboard itself receives no new vehicle-state updates.
+                    // This avoids the previous one-time state transition where
+                    // the riding artwork could look like a still image.
+                    TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isAnimating)) { timeline in
+                        ridingScene(in: proxy.size, phase: timeline.date.timeIntervalSinceReferenceDate)
+                    }
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
@@ -1422,6 +1428,7 @@ private struct VehicleMotionScene: View {
             .accessibilityLabel(accessibilitySceneLabel)
         }
         .onAppear { isAnimating = true }
+        .onDisappear { isAnimating = false }
     }
 
     @ViewBuilder
@@ -1555,38 +1562,53 @@ private struct VehicleMotionScene: View {
     }
 
     @ViewBuilder
-    private func ridingScene(in size: CGSize) -> some View {
+    private func ridingScene(in size: CGSize, phase: TimeInterval) -> some View {
+        let vehicleBob = CGFloat(sin(phase * 6.4)) * 1.6
+        let vehiclePitch = Double(sin(phase * 3.2)) * 0.35
+
         ZStack {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Color(red: 0.86, green: 0.91, blue: 0.94), Color.white, Color(red: 0.75, green: 0.81, blue: 0.84)],
+                        colors: [
+                            Color(red: 0.78, green: 0.86, blue: 0.90),
+                            Color(red: 0.93, green: 0.97, blue: 0.98),
+                            Color(red: 0.63, green: 0.72, blue: 0.76)
+                        ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
 
-            RideCityBackdrop(isAnimating: isAnimating)
-                .opacity(0.75)
+            RideCityBackdrop(phase: phase)
+                .opacity(0.78)
 
-            RideRoad(isAnimating: isAnimating)
+            RideRoad(phase: phase)
                 .offset(y: size.height * 0.22)
 
-            RideSpeedHud(speedText: rideSpeedText, isAnimating: isAnimating)
+            RideSpeedHud(speedText: rideSpeedText, phase: phase)
                 .frame(width: min(size.width * 0.31, 128))
                 .offset(x: -size.width * 0.30, y: -size.height * 0.12)
 
+            // Keep the real model artwork as the hero while a subtle bob and
+            // pitch make it feel connected to the moving road.
             VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.76, 286), showsBackground: false)
-                .shadow(color: .black.opacity(0.24), radius: 16, x: 0, y: 12)
-                .scaleEffect(x: 1.0, y: 1)
-                .offset(x: size.width * 0.06 + (isAnimating ? 4 : -4), y: size.height * 0.06)
-                .animation(.easeInOut(duration: 0.62).repeatForever(autoreverses: true), value: isAnimating)
+                .shadow(color: .black.opacity(0.26), radius: 17, x: 0, y: 13)
+                .rotationEffect(.degrees(vehiclePitch), anchor: .bottom)
+                .offset(x: size.width * 0.06, y: size.height * 0.06 + vehicleBob)
 
-            RiderSilhouette(isAnimating: isAnimating)
-                .frame(width: min(size.width * 0.29, 106), height: size.height * 0.67)
-                .offset(x: size.width * 0.08, y: -size.height * 0.02)
+            RideWheelGlints(phase: phase)
+                .frame(width: min(size.width * 0.69, 258), height: size.height * 0.43)
+                .offset(x: size.width * 0.06, y: size.height * 0.20 + vehicleBob)
 
-            RideMotionStreaks(isAnimating: isAnimating)
+            // The rider is assembled from anchored joints and limbs rather
+            // than one transformed silhouette, so the human proportions stay
+            // intact throughout the animation.
+            RidingRider(phase: phase)
+                .frame(width: min(size.width * 0.34, 132), height: size.height * 0.76)
+                .offset(x: size.width * 0.07, y: -size.height * 0.035 + vehicleBob)
+
+            RideMotionStreaks(phase: phase)
         }
     }
 
@@ -1744,11 +1766,19 @@ private struct ChargeHudCard: View {
 }
 
 private struct RideCityBackdrop: View {
-    var isAnimating: Bool
+    var phase: TimeInterval
 
     var body: some View {
         GeometryReader { proxy in
+            let drift = CGFloat((phase * 0.045).truncatingRemainder(dividingBy: 1.0)) * proxy.size.width * 0.15
+
             ZStack(alignment: .bottom) {
+                LinearGradient(
+                    colors: [.white.opacity(0.34), .clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
                 HStack(alignment: .bottom, spacing: proxy.size.width * 0.035) {
                     cityBuilding(width: proxy.size.width * 0.13, height: proxy.size.height * 0.34)
                     cityBuilding(width: proxy.size.width * 0.17, height: proxy.size.height * 0.52)
@@ -1756,15 +1786,14 @@ private struct RideCityBackdrop: View {
                     cityBuilding(width: proxy.size.width * 0.19, height: proxy.size.height * 0.62)
                     cityBuilding(width: proxy.size.width * 0.14, height: proxy.size.height * 0.45)
                 }
-                .offset(x: isAnimating ? -proxy.size.width * 0.055 : proxy.size.width * 0.055, y: proxy.size.height * 0.03)
-                .animation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true), value: isAnimating)
+                .offset(x: -drift, y: proxy.size.height * 0.03)
 
                 Path { path in
                     path.move(to: CGPoint(x: proxy.size.width * 0.66, y: proxy.size.height * 0.12))
                     path.addLine(to: CGPoint(x: proxy.size.width * 0.66, y: proxy.size.height * 0.67))
                     path.addLine(to: CGPoint(x: proxy.size.width * 0.99, y: proxy.size.height * 0.67))
                 }
-                .stroke(Color.white.opacity(0.63), style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+                .stroke(Color.white.opacity(0.60), style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
                 .shadow(color: .black.opacity(0.10), radius: 2)
             }
         }
@@ -1788,25 +1817,34 @@ private struct RideCityBackdrop: View {
 }
 
 private struct RideRoad: View {
-    var isAnimating: Bool
+    var phase: TimeInterval
 
     var body: some View {
         GeometryReader { proxy in
+            let progress = CGFloat((phase * 1.18).truncatingRemainder(dividingBy: 1.0))
+
             ZStack {
                 Rectangle()
-                    .fill(Color(red: 0.20, green: 0.25, blue: 0.28).opacity(0.86))
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 0.12, green: 0.16, blue: 0.18), Color(red: 0.29, green: 0.36, blue: 0.39)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
                     .rotation3DEffect(.degrees(64), axis: (x: 1, y: 0, z: 0), perspective: 0.55)
                     .offset(y: proxy.size.height * 0.36)
 
-                HStack(spacing: proxy.size.width * 0.21) {
-                    ForEach(0..<5, id: \.self) { _ in
-                        Capsule()
-                            .fill(Color.white.opacity(0.84))
-                            .frame(width: proxy.size.width * 0.13, height: 3)
-                    }
+                ForEach(0..<6, id: \.self) { index in
+                    let travel = (CGFloat(index) + progress) / 6.0
+                    Capsule()
+                        .fill(Color.white.opacity(0.84 - Double(index) * 0.07))
+                        .frame(width: proxy.size.width * (0.07 + travel * 0.13), height: 2.2 + travel * 2.4)
+                        .offset(
+                            x: -proxy.size.width * 0.48 + travel * proxy.size.width * 1.32,
+                            y: proxy.size.height * (0.22 + travel * 0.18)
+                        )
                 }
-                .offset(x: isAnimating ? proxy.size.width * 0.26 : -proxy.size.width * 0.26, y: proxy.size.height * 0.31)
-                .animation(.linear(duration: 0.82).repeatForever(autoreverses: false), value: isAnimating)
             }
         }
     }
@@ -1814,9 +1852,11 @@ private struct RideRoad: View {
 
 private struct RideSpeedHud: View {
     var speedText: String?
-    var isAnimating: Bool
+    var phase: TimeInterval
 
     var body: some View {
+        let scan = CGFloat((phase * 0.85).truncatingRemainder(dividingBy: 1.0))
+
         VStack(spacing: 3) {
             if let speedText {
                 Text("当前速度")
@@ -1839,87 +1879,165 @@ private struct RideSpeedHud: View {
                     .foregroundStyle(.white.opacity(0.78))
             }
 
-            Capsule()
-                .fill(AngularGradient(colors: [Color.teslaGreen, Color.cyan, Color.teslaGreen], center: .center))
-                .frame(height: 3)
-                .scaleEffect(x: isAnimating ? 1 : 0.55, y: 1, anchor: .leading)
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.14))
+                    Capsule()
+                        .fill(LinearGradient(colors: [Color.teslaGreen, .cyan, Color.teslaGreen], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: proxy.size.width * 0.42)
+                        .offset(x: (scan * 1.48 - 0.45) * proxy.size.width)
+                        .shadow(color: Color.teslaGreen.opacity(0.82), radius: 5)
+                }
+            }
+            .frame(height: 3)
+            .clipShape(Capsule())
         }
         .padding(10)
-        .background(.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .stroke(.white.opacity(0.24), lineWidth: 1)
         }
-        .shadow(color: Color.teslaGreen.opacity(isAnimating ? 0.32 : 0.10), radius: 13)
+        .shadow(color: Color.teslaGreen.opacity(0.27), radius: 13)
     }
 }
 
-private struct RiderSilhouette: View {
-    var isAnimating: Bool
+private struct RidingRider: View {
+    var phase: TimeInterval
 
     var body: some View {
+        GeometryReader { proxy in
+            let scale = min(proxy.size.width / 126, proxy.size.height / 154)
+            let bounce = CGFloat(sin(phase * 6.4)) * 1.8
+            let stride = CGFloat(sin(phase * 7.2))
+            let counterStride = CGFloat(sin(phase * 7.2 + .pi))
+            let originX = (proxy.size.width - 126 * scale) / 2
+            let originY = (proxy.size.height - 154 * scale) / 2
+            let point: (CGFloat, CGFloat) -> CGPoint = { x, y in
+                CGPoint(x: originX + x * scale, y: originY + (y + bounce) * scale)
+            }
+
+            let shoulder = point(49, 47)
+            let hip = point(72, 86)
+            let backElbow = point(37, 61 + counterStride * 1.8)
+            let backHand = point(25, 67)
+            let frontElbow = point(42, 67 + stride * 2.0)
+            let frontHand = point(28, 71)
+            let backKnee = point(91, 106 + counterStride * 3.6)
+            let backFoot = point(72, 127 + counterStride * 1.5)
+            let frontKnee = point(55, 108 + stride * 3.6)
+            let frontFoot = point(38, 127 + stride * 1.5)
+            let head = point(42, 25)
+
+            ZStack {
+                // Far limbs go first to preserve a clean, believable side profile.
+                RiderSegment(start: hip, end: backKnee, thickness: 13 * scale, colors: [Color(red: 0.04, green: 0.055, blue: 0.065), Color.black])
+                RiderSegment(start: backKnee, end: backFoot, thickness: 11 * scale, colors: [Color(red: 0.035, green: 0.045, blue: 0.055), Color.black])
+                RiderSegment(start: shoulder, end: backElbow, thickness: 9 * scale, colors: [Color(red: 0.08, green: 0.095, blue: 0.11), Color.black])
+                RiderSegment(start: backElbow, end: backHand, thickness: 8 * scale, colors: [Color(red: 0.06, green: 0.07, blue: 0.08), Color.black])
+
+                RiderSegment(start: hip, end: shoulder, thickness: 28 * scale, colors: [Color(red: 0.13, green: 0.16, blue: 0.17), Color(red: 0.025, green: 0.035, blue: 0.045)])
+                RiderSegment(start: point(57, 50), end: point(77, 83), thickness: 3 * scale, colors: [Color.teslaGreen.opacity(0.96), Color.cyan.opacity(0.50)])
+
+                RiderSegment(start: shoulder, end: frontElbow, thickness: 11 * scale, colors: [Color(red: 0.095, green: 0.115, blue: 0.13), Color.black])
+                RiderSegment(start: frontElbow, end: frontHand, thickness: 9 * scale, colors: [Color(red: 0.07, green: 0.08, blue: 0.09), Color.black])
+                RiderSegment(start: hip, end: frontKnee, thickness: 15 * scale, colors: [Color(red: 0.075, green: 0.09, blue: 0.10), Color.black])
+                RiderSegment(start: frontKnee, end: frontFoot, thickness: 12 * scale, colors: [Color(red: 0.05, green: 0.06, blue: 0.07), Color.black])
+
+                Circle()
+                    .fill(LinearGradient(colors: [Color(red: 0.17, green: 0.20, blue: 0.21), Color.black], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 25 * scale, height: 25 * scale)
+                    .overlay {
+                        Circle().stroke(Color.teslaGreen.opacity(0.60), lineWidth: max(0.8, scale))
+                    }
+                    .position(head)
+
+                Capsule()
+                    .fill(Color.white.opacity(0.34))
+                    .frame(width: 8 * scale, height: 2 * scale)
+                    .position(point(35, 21))
+            }
+            .shadow(color: .black.opacity(0.28), radius: 4, y: 4)
+        }
+    }
+}
+
+private struct RiderSegment: View {
+    var start: CGPoint
+    var end: CGPoint
+    var thickness: CGFloat
+    var colors: [Color]
+
+    var body: some View {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let length = max(hypot(dx, dy), thickness)
+        let angle = Angle(radians: Double(atan2(dy, dx)) + .pi / 2)
+
+        Capsule()
+            .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+            .frame(width: thickness, height: length)
+            .overlay {
+                Capsule().stroke(Color.white.opacity(0.08), lineWidth: min(1, thickness * 0.10))
+            }
+            .rotationEffect(angle)
+            .position(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+    }
+}
+
+private struct RideWheelGlints: View {
+    var phase: TimeInterval
+
+    var body: some View {
+        GeometryReader { proxy in
+            let rotation = Angle.degrees((phase * 520).truncatingRemainder(dividingBy: 360))
+
+            HStack(spacing: proxy.size.width * 0.28) {
+                wheelGlint(rotation: rotation)
+                wheelGlint(rotation: rotation)
+            }
+            .frame(maxWidth: .infinity)
+            .offset(y: proxy.size.height * 0.22)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func wheelGlint(rotation: Angle) -> some View {
         ZStack {
             Circle()
-                .fill(LinearGradient(colors: [Color(red: 0.16, green: 0.18, blue: 0.19), .black], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay(Circle().stroke(Color.teslaGreen.opacity(0.42), lineWidth: 1))
-                .frame(width: 21, height: 21)
-                .offset(x: -13, y: -47)
-
-            Capsule()
-                .fill(Color(red: 0.06, green: 0.07, blue: 0.08))
-                .frame(width: 24, height: 52)
-                .rotationEffect(.degrees(19))
-                .offset(x: -2, y: -12)
-
-            // Arms reach toward the left-side handlebar; legs follow the seat
-            // and footboard so the rider reads as a side profile, not seated
-            // vertically on top of the vehicle.
-            Capsule()
-                .fill(Color(red: 0.055, green: 0.065, blue: 0.075))
-                .frame(width: 9, height: 43)
-                .rotationEffect(.degrees(54))
-                .offset(x: -23, y: -22)
-
-            Capsule()
-                .fill(Color(red: 0.055, green: 0.065, blue: 0.075))
-                .frame(width: 11, height: 47)
-                .rotationEffect(.degrees(-53))
-                .offset(x: 13, y: 22)
-
-            Capsule()
-                .fill(Color(red: 0.055, green: 0.065, blue: 0.075))
-                .frame(width: 10, height: 40)
-                .rotationEffect(.degrees(60))
-                .offset(x: -1, y: 48)
-
-            Capsule()
-                .fill(Color.teslaGreen.opacity(0.86))
-                .frame(width: 2, height: 36)
-                .rotationEffect(.degrees(19))
-                .offset(x: -2, y: -12)
+                .stroke(Color.white.opacity(0.28), lineWidth: 1.1)
+            ForEach(0..<3, id: \.self) { index in
+                Capsule()
+                    .fill(Color.teslaGreen.opacity(0.58))
+                    .frame(width: 1.5, height: 21)
+                    .rotationEffect(rotation + .degrees(Double(index) * 60))
+            }
         }
-        .scaleEffect(0.82)
-        .shadow(color: .black.opacity(0.20), radius: 4, y: 4)
-        .animation(.easeInOut(duration: 0.58).repeatForever(autoreverses: true), value: isAnimating)
+        .frame(width: 36, height: 36)
+        .blur(radius: 0.15)
+        .opacity(0.70)
     }
 }
 
 private struct RideMotionStreaks: View {
-    var isAnimating: Bool
+    var phase: TimeInterval
 
     var body: some View {
         GeometryReader { proxy in
-            VStack(alignment: .leading, spacing: 15) {
-                ForEach(0..<4, id: \.self) { index in
+            ZStack(alignment: .leading) {
+                ForEach(0..<5, id: \.self) { index in
+                    let progress = CGFloat((phase * (1.08 + Double(index) * 0.13) + Double(index) * 0.19).truncatingRemainder(dividingBy: 1.0))
                     Capsule()
-                        .fill(Color.white.opacity(0.58 - Double(index) * 0.08))
-                        .frame(width: proxy.size.width * (0.13 + CGFloat(index) * 0.035), height: 1.4)
-                        .offset(x: isAnimating ? proxy.size.width * 0.46 : -proxy.size.width * 0.38)
-                        .animation(.linear(duration: 0.7 + Double(index) * 0.12).repeatForever(autoreverses: false).delay(Double(index) * 0.12), value: isAnimating)
+                        .fill(Color.white.opacity(0.53 - Double(index) * 0.065))
+                        .frame(width: proxy.size.width * (0.12 + CGFloat(index) * 0.026), height: 1.3)
+                        .offset(
+                            x: (progress * 1.52 - 0.48) * proxy.size.width,
+                            y: proxy.size.height * (0.49 + CGFloat(index) * 0.071)
+                        )
                 }
             }
-            .offset(y: proxy.size.height * 0.53)
         }
+        .allowsHitTesting(false)
     }
 }
 
