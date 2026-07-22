@@ -1473,13 +1473,13 @@ private struct VehicleMotionScene: View {
             // vehicle: a slimmer body and compact illuminated face create a
             // balanced right-side anchor instead of competing with the car.
             ChargePillar(isAnimating: isAnimating)
-                .frame(width: min(size.width * 0.155, 60), height: size.height * 0.59)
+                .frame(width: min(size.width * 0.15, 56), height: size.height * 0.57)
                 .offset(x: size.width * 0.39, y: size.height * 0.14)
 
             // The charging HUD is intentionally compact, leaving the handlebar
             // and front half of the real vehicle unobstructed.
             ChargeHudCard(state: snapshot.state, isAnimating: isAnimating)
-                .frame(width: min(size.width * 0.35, 132))
+                .frame(width: min(size.width * 0.31, 116))
                 .offset(x: -size.width * 0.035, y: -size.height * 0.255)
 
             Capsule()
@@ -1699,7 +1699,7 @@ private struct ChargePillar: View {
                         .shadow(color: Color.teslaGreen.opacity(0.9), radius: isAnimating ? 8 : 3)
                         .scaleEffect(isAnimating ? 1.08 : 0.92)
                 }
-                .frame(width: 40, height: 40)
+                .frame(width: 36, height: 36)
 
                 Capsule()
                     .fill(LinearGradient(colors: [Color.teslaGreen, Color.cyan.opacity(0.25)], startPoint: .top, endPoint: .bottom))
