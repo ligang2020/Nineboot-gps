@@ -1604,7 +1604,7 @@ private struct VehicleMotionScene: View {
             // The rider is assembled from anchored joints and limbs rather
             // than one transformed silhouette, so the human proportions stay
             // intact throughout the animation.
-            RidingRider(phase: phase)
+            RidingRobot(phase: phase)
                 .frame(width: min(size.width * 0.34, 132), height: size.height * 0.76)
                 .offset(x: size.width * 0.07, y: -size.height * 0.035 + vehicleBob)
 
@@ -1902,71 +1902,146 @@ private struct RideSpeedHud: View {
     }
 }
 
-private struct RidingRider: View {
+private struct RidingRobot: View {
     var phase: TimeInterval
 
     var body: some View {
         GeometryReader { proxy in
             let scale = min(proxy.size.width / 126, proxy.size.height / 154)
-            let bounce = CGFloat(sin(phase * 6.4)) * 1.8
-            let stride = CGFloat(sin(phase * 7.2))
-            let counterStride = CGFloat(sin(phase * 7.2 + .pi))
+            let bob = CGFloat(sin(phase * 6.4)) * 1.4 * scale
+            let stride = CGFloat(sin(phase * 7.0)) * scale
+            let counterStride = CGFloat(sin(phase * 7.0 + .pi)) * scale
             let originX = (proxy.size.width - 126 * scale) / 2
-            let originY = (proxy.size.height - 154 * scale) / 2
-            let point: (CGFloat, CGFloat) -> CGPoint = { x, y in
-                CGPoint(x: originX + x * scale, y: originY + (y + bounce) * scale)
-            }
+            let originY = (proxy.size.height - 154 * scale) / 2 + bob
 
-            let shoulder = point(49, 47)
-            let hip = point(72, 86)
-            let backElbow = point(37, 61 + counterStride * 1.8)
-            let backHand = point(25, 67)
-            let frontElbow = point(42, 67 + stride * 2.0)
-            let frontHand = point(28, 71)
-            let backKnee = point(91, 106 + counterStride * 3.6)
-            let backFoot = point(72, 127 + counterStride * 1.5)
-            let frontKnee = point(55, 108 + stride * 3.6)
-            let frontFoot = point(38, 127 + stride * 1.5)
-            let head = point(42, 25)
+            let helmet = CGPoint(x: originX + 57 * scale, y: originY + 42 * scale)
+            let neckTop = CGPoint(x: originX + 59 * scale, y: originY + 53 * scale)
+            let neckBottom = CGPoint(x: originX + 61 * scale, y: originY + 60 * scale)
+            let torso = CGPoint(x: originX + 67 * scale, y: originY + 75 * scale)
+            let backShoulder = CGPoint(x: originX + 57 * scale, y: originY + 62 * scale)
+            let frontShoulder = CGPoint(x: originX + 53 * scale, y: originY + 65 * scale)
+            let backElbow = CGPoint(x: originX + 43 * scale, y: originY + (70 * scale + counterStride))
+            let backHand = CGPoint(x: originX + 31 * scale, y: originY + 75 * scale)
+            let frontElbow = CGPoint(x: originX + 43 * scale, y: originY + (76 * scale + stride))
+            let frontHand = CGPoint(x: originX + 31 * scale, y: originY + 80 * scale)
+            let hip = CGPoint(x: originX + 76 * scale, y: originY + 92 * scale)
+            let backKnee = CGPoint(x: originX + 89 * scale, y: originY + (111 * scale + counterStride * 1.8))
+            let backFoot = CGPoint(x: originX + 72 * scale, y: originY + 128 * scale)
+            let frontKnee = CGPoint(x: originX + 59 * scale, y: originY + (113 * scale + stride * 1.8))
+            let frontFoot = CGPoint(x: originX + 43 * scale, y: originY + 128 * scale)
 
             ZStack {
-                // Far limbs go first to preserve a clean, believable side profile.
-                RiderSegment(start: hip, end: backKnee, thickness: 13 * scale, colors: [Color(red: 0.04, green: 0.055, blue: 0.065), Color.black])
-                RiderSegment(start: backKnee, end: backFoot, thickness: 11 * scale, colors: [Color(red: 0.035, green: 0.045, blue: 0.055), Color.black])
-                RiderSegment(start: shoulder, end: backElbow, thickness: 9 * scale, colors: [Color(red: 0.08, green: 0.095, blue: 0.11), Color.black])
-                RiderSegment(start: backElbow, end: backHand, thickness: 8 * scale, colors: [Color(red: 0.06, green: 0.07, blue: 0.08), Color.black])
+                // Back limbs first maintain a clean, connected side profile.
+                RobotLimb(start: hip, end: backKnee, thickness: 13 * scale, accent: .cyan.opacity(0.32))
+                RobotLimb(start: backKnee, end: backFoot, thickness: 11 * scale, accent: .cyan.opacity(0.26))
+                RobotLimb(start: backShoulder, end: backElbow, thickness: 9 * scale, accent: .cyan.opacity(0.28))
+                RobotLimb(start: backElbow, end: backHand, thickness: 8 * scale, accent: .cyan.opacity(0.22))
 
-                RiderSegment(start: hip, end: shoulder, thickness: 28 * scale, colors: [Color(red: 0.13, green: 0.16, blue: 0.17), Color(red: 0.025, green: 0.035, blue: 0.045)])
-                RiderSegment(start: point(57, 50), end: point(77, 83), thickness: 3 * scale, colors: [Color.teslaGreen.opacity(0.96), Color.cyan.opacity(0.50)])
+                RobotTorso(scale: scale)
+                    .position(torso)
 
-                RiderSegment(start: shoulder, end: frontElbow, thickness: 11 * scale, colors: [Color(red: 0.095, green: 0.115, blue: 0.13), Color.black])
-                RiderSegment(start: frontElbow, end: frontHand, thickness: 9 * scale, colors: [Color(red: 0.07, green: 0.08, blue: 0.09), Color.black])
-                RiderSegment(start: hip, end: frontKnee, thickness: 15 * scale, colors: [Color(red: 0.075, green: 0.09, blue: 0.10), Color.black])
-                RiderSegment(start: frontKnee, end: frontFoot, thickness: 12 * scale, colors: [Color(red: 0.05, green: 0.06, blue: 0.07), Color.black])
+                RobotLimb(start: neckTop, end: neckBottom, thickness: 10 * scale, accent: Color.teslaGreen)
+                RobotHelmet(scale: scale)
+                    .position(helmet)
 
-                Circle()
-                    .fill(LinearGradient(colors: [Color(red: 0.17, green: 0.20, blue: 0.21), Color.black], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 25 * scale, height: 25 * scale)
-                    .overlay {
-                        Circle().stroke(Color.teslaGreen.opacity(0.60), lineWidth: max(0.8, scale))
-                    }
-                    .position(head)
+                RobotLimb(start: frontShoulder, end: frontElbow, thickness: 11 * scale, accent: Color.teslaGreen)
+                RobotLimb(start: frontElbow, end: frontHand, thickness: 9 * scale, accent: Color.teslaGreen.opacity(0.74))
+                RobotLimb(start: hip, end: frontKnee, thickness: 15 * scale, accent: Color.teslaGreen.opacity(0.76))
+                RobotLimb(start: frontKnee, end: frontFoot, thickness: 12 * scale, accent: .cyan.opacity(0.52))
 
-                Capsule()
-                    .fill(Color.white.opacity(0.34))
-                    .frame(width: 8 * scale, height: 2 * scale)
-                    .position(point(35, 21))
+                RobotBoot(scale: scale)
+                    .position(frontFoot)
+                RobotBoot(scale: scale)
+                    .position(backFoot)
+
+                Group {
+                    RobotJoint(scale: scale, color: .cyan).position(backShoulder)
+                    RobotJoint(scale: scale, color: .cyan).position(backElbow)
+                    RobotJoint(scale: scale, color: Color.teslaGreen).position(frontShoulder)
+                    RobotJoint(scale: scale, color: Color.teslaGreen).position(frontElbow)
+                    RobotJoint(scale: scale, color: Color.teslaGreen).position(hip)
+                    RobotJoint(scale: scale, color: .cyan).position(backKnee)
+                    RobotJoint(scale: scale, color: Color.teslaGreen).position(frontKnee)
+                }
             }
-            .shadow(color: .black.opacity(0.28), radius: 4, y: 4)
+            .shadow(color: .black.opacity(0.30), radius: 4, y: 4)
         }
     }
 }
 
-private struct RiderSegment: View {
+private struct RobotTorso: View {
+    var scale: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 0.16, green: 0.20, blue: 0.22), Color(red: 0.025, green: 0.04, blue: 0.05)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
+                        .stroke(Color.white.opacity(0.20), lineWidth: max(0.7, scale))
+                }
+
+            Capsule()
+                .fill(LinearGradient(colors: [Color.teslaGreen, .cyan], startPoint: .top, endPoint: .bottom))
+                .frame(width: 3 * scale, height: 31 * scale)
+                .offset(x: 7 * scale, y: -1 * scale)
+                .shadow(color: Color.teslaGreen.opacity(0.80), radius: 3 * scale)
+
+            RoundedRectangle(cornerRadius: 2 * scale, style: .continuous)
+                .fill(Color.white.opacity(0.26))
+                .frame(width: 9 * scale, height: 4 * scale)
+                .offset(x: -6 * scale, y: -11 * scale)
+        }
+        .frame(width: 34 * scale, height: 49 * scale)
+        .rotationEffect(.degrees(19))
+    }
+}
+
+private struct RobotHelmet: View {
+    var scale: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 9 * scale, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 0.22, green: 0.27, blue: 0.29), Color(red: 0.03, green: 0.05, blue: 0.06)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9 * scale, style: .continuous)
+                        .stroke(Color.teslaGreen.opacity(0.76), lineWidth: max(0.8, scale))
+                }
+
+            Capsule()
+                .fill(Color.black.opacity(0.86))
+                .frame(width: 19 * scale, height: 6 * scale)
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(.white.opacity(0.52))
+                        .frame(width: 6 * scale, height: 1.2 * scale)
+                        .padding(.leading, 3 * scale)
+                }
+                .offset(y: 1 * scale)
+        }
+        .frame(width: 33 * scale, height: 26 * scale)
+        .rotationEffect(.degrees(8))
+    }
+}
+
+private struct RobotLimb: View {
     var start: CGPoint
     var end: CGPoint
     var thickness: CGFloat
-    var colors: [Color]
+    var accent: Color
 
     var body: some View {
         let dx = end.x - start.x
@@ -1974,14 +2049,53 @@ private struct RiderSegment: View {
         let length = max(hypot(dx, dy), thickness)
         let angle = Angle(radians: Double(atan2(dy, dx)) + .pi / 2)
 
-        Capsule()
-            .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-            .frame(width: thickness, height: length)
+        ZStack {
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 0.22, green: 0.26, blue: 0.28), Color(red: 0.035, green: 0.05, blue: 0.06)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay {
+                    Capsule().stroke(Color.white.opacity(0.16), lineWidth: min(1, thickness * 0.11))
+                }
+
+            Capsule()
+                .fill(accent.opacity(0.84))
+                .frame(width: max(1.4, thickness * 0.16), height: max(4, length * 0.58))
+                .shadow(color: accent.opacity(0.70), radius: 2)
+        }
+        .frame(width: thickness, height: length)
+        .rotationEffect(angle)
+        .position(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+    }
+}
+
+private struct RobotJoint: View {
+    var scale: CGFloat
+    var color: Color
+
+    var body: some View {
+        Circle()
+            .fill(Color(red: 0.04, green: 0.06, blue: 0.07))
             .overlay {
-                Capsule().stroke(Color.white.opacity(0.08), lineWidth: min(1, thickness * 0.10))
+                Circle().stroke(color.opacity(0.88), lineWidth: max(0.7, scale))
             }
-            .rotationEffect(angle)
-            .position(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+            .frame(width: 10 * scale, height: 10 * scale)
+            .shadow(color: color.opacity(0.46), radius: 2)
+    }
+}
+
+private struct RobotBoot: View {
+    var scale: CGFloat
+
+    var body: some View {
+        Capsule()
+            .fill(LinearGradient(colors: [Color(red: 0.20, green: 0.24, blue: 0.25), Color.black], startPoint: .top, endPoint: .bottom))
+            .frame(width: 20 * scale, height: 9 * scale)
+            .rotationEffect(.degrees(-18))
     }
 }
 
