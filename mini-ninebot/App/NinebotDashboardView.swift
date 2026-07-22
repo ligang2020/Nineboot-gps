@@ -1365,25 +1365,31 @@ private struct VehicleMotionScene: View {
 
     @State private var isAnimating = false
 
-    /// A riding scene must never be inferred from power state or historical
-    /// trips: both are common while a parked vehicle is stationary. It is only
-    /// enabled if the live status payload explicitly reports both motion and a
-    /// plausible real-time speed.
+    /// The Ninebot status endpoint used by this app often exposes no live
+    /// speed/movement fields. In that payload the reliable active-ride signal
+    /// is "powered on + unlocked" (the same state shown by the dashboard's
+    /// “滑动关锁” control). Use it as the fallback so the riding 3D scene is
+    /// actually visible while a rider has the vehicle active, instead of
+    /// incorrectly falling back to the parked card shown in the screenshot.
     private var mode: VehicleMotionSceneMode {
         if snapshot.state.isCharging == true && !snapshot.state.isFullyCharged {
             return .charging
         }
-        return explicitLiveSpeedKmh == nil ? .parked : .riding
+        return hasExplicitLiveMovement || isRideSessionActive ? .riding : .parked
     }
 
-    private var explicitLiveSpeedKmh: Double? {
-        guard let status = snapshot.state.rawStatus else { return nil }
+    private var isRideSessionActive: Bool {
+        snapshot.state.isPoweredOn == true && snapshot.state.isLocked != true
+    }
 
+    private var hasExplicitLiveMovement: Bool {
+        guard let status = snapshot.state.rawStatus else { return false }
         let movementKeys = ["isRiding", "riding", "isMoving", "moving", "inMotion", "driving"]
-        guard movementKeys.contains(where: { status[$0]?.boolValue == true }) else {
-            return nil
-        }
+        return movementKeys.contains(where: { status[$0]?.boolValue == true })
+    }
 
+    private var liveSpeedKmh: Double? {
+        guard let status = snapshot.state.rawStatus else { return nil }
         let speedKeys = ["currentSpeed", "current_speed", "speedKmh", "speed_kmh", "realtimeSpeed", "realtime_speed"]
         guard let speed = speedKeys.compactMap({ status[$0]?.doubleValue }).first,
               speed.isFinite,
@@ -1393,9 +1399,9 @@ private struct VehicleMotionScene: View {
         return speed
     }
 
-    private var rideSpeedText: String {
-        guard let explicitLiveSpeedKmh else { return "--" }
-        return "\(Int(explicitLiveSpeedKmh.rounded()))"
+    private var rideSpeedText: String? {
+        guard let liveSpeedKmh else { return nil }
+        return "\(Int(liveSpeedKmh.rounded()))"
     }
 
     var body: some View {
@@ -1807,22 +1813,32 @@ private struct RideRoad: View {
 }
 
 private struct RideSpeedHud: View {
-    var speedText: String
+    var speedText: String?
     var isAnimating: Bool
 
     var body: some View {
-        VStack(spacing: 2) {
-            Text("当前速度")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.70))
-            HStack(alignment: .lastTextBaseline, spacing: 3) {
-                Text(speedText)
-                    .font(.system(size: 36, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                Text("km/h")
+        VStack(spacing: 3) {
+            if let speedText {
+                Text("当前速度")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.70))
+                HStack(alignment: .lastTextBaseline, spacing: 3) {
+                    Text(speedText)
+                        .font(.system(size: 36, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                    Text("km/h")
+                        .font(.caption.weight(.bold))
+                }
+                .foregroundStyle(.white)
+            } else {
+                Label("骑行模式", systemImage: "figure.outdoor.cycle")
                     .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.teslaGreen)
+                Text("已上电 · 未锁车")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.78))
             }
-            .foregroundStyle(.white)
+
             Capsule()
                 .fill(AngularGradient(colors: [Color.teslaGreen, Color.cyan, Color.teslaGreen], center: .center))
                 .frame(height: 3)
