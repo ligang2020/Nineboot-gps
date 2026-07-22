@@ -1408,7 +1408,15 @@ private struct VehicleMotionScene: View {
                         chargingScene(in: proxy.size, phase: timeline.date.timeIntervalSinceReferenceDate)
                     }
                 case .parked:
-                    parkedScene(in: proxy.size)
+                    // The vehicle remains still, while the location-aware city
+                    // environment keeps weather, daylight and building lights current.
+                    TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !isAnimating)) { timeline in
+                        parkedScene(
+                            in: proxy.size,
+                            phase: timeline.date.timeIntervalSinceReferenceDate,
+                            weather: rideWeather.snapshot
+                        )
+                    }
                 case .riding:
                     // A TimelineView keeps this scene advancing even when the
                     // dashboard itself receives no new vehicle-state updates.
@@ -1532,78 +1540,38 @@ private struct VehicleMotionScene: View {
     }
 
     @ViewBuilder
-    private func parkedScene(in size: CGSize) -> some View {
+    private func parkedScene(
+        in size: CGSize,
+        phase: TimeInterval,
+        weather: RideWeatherSnapshot
+    ) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.95), Color(red: 0.92, green: 0.95, blue: 0.96), Color.white.opacity(0.92)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            // Parked and riding views deliberately share one city scene so the
+            // vehicle never falls back to a disconnected plain background.
+            LiveRideEnvironment(weather: weather, phase: phase, rideDurationText: nil)
 
             Ellipse()
-                .fill(Color.black.opacity(0.10))
-                .frame(width: size.width * 0.66, height: size.height * 0.11)
-                .blur(radius: 10)
-                .offset(y: size.height * 0.31)
+                .fill(Color.black.opacity(weather.isNight ? 0.34 : 0.19))
+                .frame(width: size.width * 0.53, height: size.height * 0.065)
+                .blur(radius: 7)
+                .offset(x: size.width * 0.045, y: size.height * 0.30)
 
-            Circle()
-                .fill(Color.teslaGreen.opacity(0.12))
-                .frame(width: size.width * 0.52, height: size.width * 0.52)
-                .blur(radius: 28)
-                .scaleEffect(isAnimating ? 1.05 : 0.96)
-                .offset(x: size.width * 0.18, y: -size.height * 0.10)
-                .animation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true), value: isAnimating)
+            VehicleImage(
+                urlString: snapshot.vehicle.imageURLString,
+                size: min(size.width * 0.76, 270),
+                showsBackground: false
+            )
+            .shadow(color: .black.opacity(weather.isNight ? 0.32 : 0.21), radius: 12, x: 0, y: 8)
+            .offset(x: size.width * 0.045, y: size.height * 0.03)
 
-            parkedBackdrop(size: size)
-
-            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.79, 292), showsBackground: false)
-                .shadow(color: .black.opacity(0.18), radius: 16, x: 0, y: 11)
-                .scaleEffect(x: 1.0, y: 1)
-                .offset(y: size.height * 0.04)
-
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(snapshot.state.isPoweredOn == true ? Color.teslaGreen : Color.teslaSecondaryText.opacity(0.55))
-                    .frame(width: 7, height: 7)
-                Text(snapshot.state.isPoweredOn == true ? "车辆已停稳 · 已上电" : "车辆已停稳")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.teslaSecondaryText)
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
-            .background(.white.opacity(0.74), in: Capsule())
-            .overlay {
-                Capsule().stroke(Color.black.opacity(0.06), lineWidth: 1)
-            }
-            .offset(y: -size.height * 0.36)
+            Text(snapshot.state.isPoweredOn == true ? "车辆已停稳 · 已上电" : "车辆已停稳")
+                .font(.system(size: 8.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(weather.isNight ? Color.white.opacity(0.76) : Color.black.opacity(0.55))
+                .shadow(color: weather.isNight ? .black.opacity(0.55) : .white.opacity(0.65), radius: 2)
+                .offset(x: -size.width * 0.30, y: -size.height * 0.335)
         }
-    }
-
-    private func parkedBackdrop(size: CGSize) -> some View {
-        ZStack {
-            ForEach(0..<3, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.44))
-                    .frame(width: size.width * (0.15 + CGFloat(index) * 0.04), height: size.height * (0.28 + CGFloat(index) * 0.08))
-                    .overlay {
-                        VStack(spacing: 6) {
-                            ForEach(0..<3, id: \.self) { _ in
-                                Capsule().fill(Color.teslaSecondaryText.opacity(0.10)).frame(height: 3)
-                            }
-                        }
-                        .padding(10)
-                    }
-                    .offset(x: size.width * (-0.37 + CGFloat(index) * 0.34), y: size.height * 0.10)
-            }
-
-            Rectangle()
-                .fill(Color.teslaSecondaryText.opacity(0.10))
-                .frame(height: 1)
-                .offset(y: size.height * 0.34)
-        }
+        .frame(width: size.width, height: size.height)
+        .clipped()
     }
 
     @ViewBuilder
@@ -1617,7 +1585,11 @@ private struct VehicleMotionScene: View {
         let vehicleDrift = CGFloat(sin(phase * 1.8)) * 0.42
 
         ZStack {
-            LiveRideEnvironment(weather: weather, phase: phase)
+            LiveRideEnvironment(
+                weather: weather,
+                phase: phase,
+                rideDurationText: rideDurationText(now: now)
+            )
             RideMotionStreaks(phase: phase)
 
             // Keep the customer vehicle entirely within the road composition.
@@ -1635,12 +1607,17 @@ private struct VehicleMotionScene: View {
             .shadow(color: .black.opacity(weather.isNight ? 0.32 : 0.21), radius: 11, x: 0, y: 7)
             .offset(x: size.width * 0.055 + vehicleDrift, y: size.height * 0.025 + vehicleBob)
 
-            RideDurationHud(startedAt: rideStartedAt ?? now, now: now, phase: phase)
-                .frame(width: min(size.width * 0.29, 104), height: min(size.height * 0.42, 90))
-                .offset(x: -size.width * 0.265, y: -size.height * 0.115)
         }
         .frame(width: size.width, height: size.height)
         .clipped()
+    }
+
+    private func rideDurationText(now: Date) -> String {
+        let elapsed = max(0, Int(now.timeIntervalSince(rideStartedAt ?? now)))
+        let hours = elapsed / 3_600
+        let minutes = (elapsed % 3_600) / 60
+        let seconds = elapsed % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
     }
 
     private func chargingGrid(size: CGSize) -> some View {
@@ -1798,35 +1775,87 @@ private struct RideWeatherSnapshot: Equatable {
         case clear
         case cloudy
         case rain
+        case snow
         case storm
     }
 
     var condition: Condition
     var isDay: Bool
     var observedAt: Date
+    var temperatureCelsius: Double?
+    var ultravioletIndex: Double?
+    var airQualityIndex: Int?
+    var isBlizzard: Bool
 
     var isNight: Bool { !isDay }
     var hasRain: Bool { condition == .rain || condition == .storm }
     var hasLightning: Bool { condition == .storm }
+    var hasSnow: Bool { condition == .snow }
+
+    var temperatureText: String {
+        guard let temperatureCelsius else { return "--°" }
+        return String(format: "%.0f°", temperatureCelsius)
+    }
+
+    var ultravioletText: String {
+        guard let ultravioletIndex else { return "--" }
+        return String(format: "%.0f", ultravioletIndex)
+    }
+
+    var airQualityText: String {
+        guard let airQualityIndex else { return "--" }
+        switch airQualityIndex {
+        case ...50: return "优 \(airQualityIndex)"
+        case 51...100: return "良 \(airQualityIndex)"
+        case 101...150: return "轻度 \(airQualityIndex)"
+        case 151...200: return "中度 \(airQualityIndex)"
+        default: return "较差 \(airQualityIndex)"
+        }
+    }
 
     static func fallback(for date: Date = .now) -> RideWeatherSnapshot {
         let hour = Calendar.current.component(.hour, from: date)
-        return RideWeatherSnapshot(condition: .clear, isDay: (6..<19).contains(hour), observedAt: date)
+        return RideWeatherSnapshot(
+            condition: .clear,
+            isDay: (6..<19).contains(hour),
+            observedAt: date,
+            temperatureCelsius: nil,
+            ultravioletIndex: nil,
+            airQualityIndex: nil,
+            isBlizzard: false
+        )
     }
 
-    static func openMeteo(weatherCode: Int, isDay: Int, observedAt: Date) -> RideWeatherSnapshot {
+    static func openMeteo(
+        weatherCode: Int,
+        isDay: Int,
+        temperatureCelsius: Double?,
+        ultravioletIndex: Double?,
+        airQualityIndex: Int?,
+        observedAt: Date
+    ) -> RideWeatherSnapshot {
         let condition: Condition
         switch weatherCode {
+        case 71...77, 85...86:
+            condition = .snow
         case 51...67, 80...82:
             condition = .rain
         case 95...99:
             condition = .storm
-        case 1...3, 45...48, 71...77, 85...86:
+        case 1...3, 45...48:
             condition = .cloudy
         default:
             condition = .clear
         }
-        return RideWeatherSnapshot(condition: condition, isDay: isDay == 1, observedAt: observedAt)
+        return RideWeatherSnapshot(
+            condition: condition,
+            isDay: isDay == 1,
+            observedAt: observedAt,
+            temperatureCelsius: temperatureCelsius,
+            ultravioletIndex: ultravioletIndex,
+            airQualityIndex: airQualityIndex,
+            isBlizzard: [75, 77, 86].contains(weatherCode)
+        )
     }
 }
 
@@ -1854,30 +1883,65 @@ private final class RideWeatherProvider: ObservableObject {
             return
         }
 
-        var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
-        components?.queryItems = [
+        var forecastComponents = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
+        forecastComponents?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
-            URLQueryItem(name: "current", value: "weather_code,is_day"),
+            URLQueryItem(name: "current", value: "weather_code,is_day,temperature_2m"),
+            URLQueryItem(name: "daily", value: "uv_index_max"),
+            URLQueryItem(name: "forecast_days", value: "1"),
             URLQueryItem(name: "timezone", value: "auto")
         ]
 
-        guard let url = components?.url else { return }
+        guard let forecastURL = forecastComponents?.url else { return }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.shared.data(from: forecastURL)
             guard let httpResponse = response as? HTTPURLResponse,
                   (200..<300).contains(httpResponse.statusCode) else {
                 return
             }
             let payload = try JSONDecoder().decode(OpenMeteoRideWeatherResponse.self, from: data)
             guard let current = payload.current else { return }
-            snapshot = .openMeteo(weatherCode: current.weatherCode, isDay: current.isDay, observedAt: .now)
+
+            let airQualityIndex = await fetchAirQuality(latitude: latitude, longitude: longitude)
+            snapshot = .openMeteo(
+                weatherCode: current.weatherCode,
+                isDay: current.isDay,
+                temperatureCelsius: current.temperature2M,
+                ultravioletIndex: payload.daily?.ultravioletIndexMaximum?.first,
+                airQualityIndex: airQualityIndex,
+                observedAt: .now
+            )
             lastCoordinate = coordinate
             lastRefreshAt = .now
         } catch {
-            // Preserve the last known local condition. The visual falls back
-            // to time-of-day only when no weather result is available yet.
+            // Preserve the last known conditions. The view still falls back to
+            // a local day/night city scene before the first successful request.
+        }
+    }
+
+    private func fetchAirQuality(latitude: Double, longitude: Double) async -> Int? {
+        var components = URLComponents(string: "https://air-quality-api.open-meteo.com/v1/air-quality")
+        components?.queryItems = [
+            URLQueryItem(name: "latitude", value: String(latitude)),
+            URLQueryItem(name: "longitude", value: String(longitude)),
+            URLQueryItem(name: "current", value: "us_aqi"),
+            URLQueryItem(name: "timezone", value: "auto")
+        ]
+        guard let url = components?.url else { return nil }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode) else {
+                return nil
+            }
+            let payload = try JSONDecoder().decode(OpenMeteoAirQualityResponse.self, from: data)
+            guard let value = payload.current?.usAirQualityIndex else { return nil }
+            return Int(value.rounded())
+        } catch {
+            return nil
         }
     }
 }
@@ -1886,10 +1950,33 @@ private struct OpenMeteoRideWeatherResponse: Decodable {
     struct Current: Decodable {
         let weatherCode: Int
         let isDay: Int
+        let temperature2M: Double?
 
         enum CodingKeys: String, CodingKey {
             case weatherCode = "weather_code"
             case isDay = "is_day"
+            case temperature2M = "temperature_2m"
+        }
+    }
+
+    struct Daily: Decodable {
+        let ultravioletIndexMaximum: [Double]?
+
+        enum CodingKeys: String, CodingKey {
+            case ultravioletIndexMaximum = "uv_index_max"
+        }
+    }
+
+    let current: Current?
+    let daily: Daily?
+}
+
+private struct OpenMeteoAirQualityResponse: Decodable {
+    struct Current: Decodable {
+        let usAirQualityIndex: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case usAirQualityIndex = "us_aqi"
         }
     }
 
@@ -1899,12 +1986,13 @@ private struct OpenMeteoRideWeatherResponse: Decodable {
 private struct LiveRideEnvironment: View {
     var weather: RideWeatherSnapshot
     var phase: TimeInterval
+    var rideDurationText: String?
 
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
             let cloudDrift = CGFloat((phase * 0.010).truncatingRemainder(dividingBy: 1.0)) * size.width
-            let rainDrift = CGFloat((phase * 0.82).truncatingRemainder(dividingBy: 1.0))
+            let precipitationDrift = CGFloat((phase * (weather.isBlizzard ? 1.42 : 0.82)).truncatingRemainder(dividingBy: 1.0))
             let lightningFlash = weather.hasLightning
                 ? pow(max(0, sin(phase * 1.9) + sin(phase * 0.47 + 1.8) - 1.42) / 0.58, 2)
                 : 0
@@ -1913,17 +2001,22 @@ private struct LiveRideEnvironment: View {
                 sky
 
                 if weather.isNight {
-                    nightSky(size: size, phase: phase)
+                    nightSky(size: size, cloudDrift: cloudDrift, phase: phase)
                 } else {
                     daySky(size: size, cloudDrift: cloudDrift)
                 }
 
                 citySkyline(size: size, phase: phase)
                 road(size: size, phase: phase)
-                streetLights(size: size, phase: phase)
+                streetLights(size: size)
+                CityEnvironmentReadout(weather: weather, rideDurationText: rideDurationText)
 
                 if weather.hasRain {
-                    rain(size: size, drift: rainDrift)
+                    rain(size: size, drift: precipitationDrift)
+                }
+
+                if weather.hasSnow {
+                    snow(size: size, drift: precipitationDrift, phase: phase)
                 }
 
                 if weather.hasLightning {
@@ -1941,11 +2034,7 @@ private struct LiveRideEnvironment: View {
     }
 
     private var sky: some View {
-        LinearGradient(
-            colors: skyColors,
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        LinearGradient(colors: skyColors, startPoint: .top, endPoint: .bottom)
     }
 
     private var skyColors: [Color] {
@@ -1953,6 +2042,7 @@ private struct LiveRideEnvironment: View {
             switch weather.condition {
             case .storm: return [Color(red: 0.035, green: 0.06, blue: 0.12), Color(red: 0.08, green: 0.12, blue: 0.19), Color(red: 0.15, green: 0.18, blue: 0.22)]
             case .rain: return [Color(red: 0.045, green: 0.08, blue: 0.14), Color(red: 0.10, green: 0.16, blue: 0.22), Color(red: 0.17, green: 0.21, blue: 0.25)]
+            case .snow: return [Color(red: 0.10, green: 0.15, blue: 0.22), Color(red: 0.22, green: 0.29, blue: 0.36), Color(red: 0.36, green: 0.41, blue: 0.44)]
             case .cloudy: return [Color(red: 0.07, green: 0.10, blue: 0.16), Color(red: 0.14, green: 0.18, blue: 0.24), Color(red: 0.23, green: 0.25, blue: 0.28)]
             case .clear: return [Color(red: 0.025, green: 0.06, blue: 0.14), Color(red: 0.10, green: 0.18, blue: 0.31), Color(red: 0.29, green: 0.33, blue: 0.38)]
             }
@@ -1961,6 +2051,7 @@ private struct LiveRideEnvironment: View {
         switch weather.condition {
         case .storm: return [Color(red: 0.36, green: 0.44, blue: 0.53), Color(red: 0.55, green: 0.62, blue: 0.67), Color(red: 0.78, green: 0.82, blue: 0.82)]
         case .rain: return [Color(red: 0.48, green: 0.61, blue: 0.69), Color(red: 0.65, green: 0.74, blue: 0.78), Color(red: 0.84, green: 0.87, blue: 0.87)]
+        case .snow: return [Color(red: 0.49, green: 0.60, blue: 0.70), Color(red: 0.73, green: 0.80, blue: 0.86), Color(red: 0.92, green: 0.94, blue: 0.95)]
         case .cloudy: return [Color(red: 0.62, green: 0.74, blue: 0.82), Color(red: 0.77, green: 0.84, blue: 0.87), Color(red: 0.93, green: 0.94, blue: 0.93)]
         case .clear: return [Color(red: 0.35, green: 0.68, blue: 0.96), Color(red: 0.66, green: 0.84, blue: 0.97), Color(red: 0.94, green: 0.95, blue: 0.92)]
         }
@@ -1976,7 +2067,6 @@ private struct LiveRideEnvironment: View {
                 .offset(x: size.width * 0.31, y: -size.height * 0.29)
         }
 
-        // Even on clear days, retain a light moving cloud layer for a more natural sky.
         cloud(width: size.width * 0.34, height: size.height * 0.15, opacity: weather.condition == .clear ? 0.64 : 0.88)
             .offset(x: -size.width * 0.33 + cloudDrift * 0.34, y: -size.height * 0.29)
         cloud(width: size.width * 0.42, height: size.height * 0.18, opacity: weather.condition == .clear ? 0.48 : 0.86)
@@ -1984,21 +2074,28 @@ private struct LiveRideEnvironment: View {
     }
 
     @ViewBuilder
-    private func nightSky(size: CGSize, phase: TimeInterval) -> some View {
-        ForEach(0..<22, id: \.self) { index in
-            let x = (CGFloat((index * 37) % 100) / 100 - 0.5) * size.width
-            let y = (CGFloat((index * 19) % 54) / 100 - 0.41) * size.height
-            Circle()
-                .fill(Color.white.opacity(0.32 + 0.24 * sin(phase * 1.7 + Double(index))))
-                .frame(width: index.isMultiple(of: 3) ? 1.6 : 1.0, height: index.isMultiple(of: 3) ? 1.6 : 1.0)
-                .offset(x: x, y: y)
-        }
+    private func nightSky(size: CGSize, cloudDrift: CGFloat, phase: TimeInterval) -> some View {
+        if weather.condition == .clear || weather.condition == .cloudy {
+            ForEach(0..<28, id: \.self) { index in
+                let x = (CGFloat((index * 37) % 100) / 100 - 0.5) * size.width
+                let y = (CGFloat((index * 19) % 54) / 100 - 0.41) * size.height
+                Circle()
+                    .fill(Color.white.opacity(0.32 + 0.24 * sin(phase * 1.7 + Double(index))))
+                    .frame(width: index.isMultiple(of: 3) ? 1.6 : 1.0, height: index.isMultiple(of: 3) ? 1.6 : 1.0)
+                    .offset(x: x, y: y)
+            }
 
-        Circle()
-            .fill(Color(red: 0.88, green: 0.93, blue: 1.0))
-            .frame(width: size.width * 0.082, height: size.width * 0.082)
-            .shadow(color: Color.white.opacity(0.36), radius: 9)
-            .offset(x: size.width * 0.30, y: -size.height * 0.29)
+            Circle()
+                .fill(Color(red: 0.88, green: 0.93, blue: 1.0))
+                .frame(width: size.width * 0.082, height: size.width * 0.082)
+                .shadow(color: Color.white.opacity(0.36), radius: 9)
+                .offset(x: size.width * 0.30, y: -size.height * 0.29)
+        } else {
+            cloud(width: size.width * 0.45, height: size.height * 0.18, opacity: 0.30)
+                .offset(x: -size.width * 0.24 + cloudDrift * 0.16, y: -size.height * 0.29)
+            cloud(width: size.width * 0.52, height: size.height * 0.20, opacity: 0.36)
+                .offset(x: size.width * 0.26 - cloudDrift * 0.13, y: -size.height * 0.20)
+        }
     }
 
     private func cloud(width: CGFloat, height: CGFloat, opacity: Double) -> some View {
@@ -2011,45 +2108,99 @@ private struct LiveRideEnvironment: View {
     }
 
     private func citySkyline(size: CGSize, phase: TimeInterval) -> some View {
-        let buildingCount = 9
+        let drift = CGFloat(sin(phase * 0.10)) * size.width * 0.008
         return ZStack(alignment: .bottom) {
-            ForEach(0..<buildingCount, id: \.self) { index in
-                let width = size.width * (0.085 + CGFloat(index % 3) * 0.018)
-                let height = size.height * (0.22 + CGFloat((index * 7) % 5) * 0.075)
-                let x = size.width * (-0.46 + CGFloat(index) * 0.115)
-                let tone = weather.isNight ? 0.13 + Double(index % 3) * 0.035 : 0.50 + Double(index % 3) * 0.055
+            ForEach(0..<4, id: \.self) { index in
+                officeTower(
+                    index: index + 20,
+                    width: size.width * (0.13 + CGFloat(index % 2) * 0.025),
+                    height: size.height * (0.27 + CGFloat(index) * 0.055),
+                    isRearTower: true,
+                    size: size
+                )
+                .offset(x: size.width * (-0.40 + CGFloat(index) * 0.27), y: size.height * 0.11)
+            }
 
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color(white: tone + 0.10).opacity(weather.isNight ? 0.90 : 0.58), Color(white: tone).opacity(weather.isNight ? 0.94 : 0.52)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(width: width, height: height)
-                    .overlay(alignment: .top) {
-                        VStack(spacing: max(2, size.height * 0.018)) {
-                            ForEach(0..<4, id: \.self) { row in
-                                HStack(spacing: max(2, width * 0.16)) {
-                                    ForEach(0..<2, id: \.self) { column in
-                                        RoundedRectangle(cornerRadius: 0.8)
-                                            .fill(weather.isNight ? Color(red: 1.0, green: 0.75, blue: 0.30).opacity((row + column + index).isMultiple(of: 3) ? 0.86 : 0.22) : Color.white.opacity(0.45))
-                                            .frame(width: max(1.5, width * 0.16), height: max(1.5, size.height * 0.010))
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.top, 7)
-                    }
-                    .offset(x: x, y: size.height * 0.15)
+            ForEach(0..<12, id: \.self) { index in
+                officeTower(
+                    index: index,
+                    width: size.width * (0.075 + CGFloat((index * 5) % 4) * 0.014),
+                    height: size.height * (0.25 + CGFloat((index * 7) % 7) * 0.052),
+                    isRearTower: false,
+                    size: size
+                )
+                .offset(x: size.width * (-0.47 + CGFloat(index) * 0.086) + drift, y: size.height * 0.15)
             }
 
             Rectangle()
-                .fill(Color.black.opacity(weather.isNight ? 0.21 : 0.10))
+                .fill(Color.black.opacity(weather.isNight ? 0.24 : 0.12))
                 .frame(height: 2)
                 .offset(y: size.height * 0.32)
         }
+    }
+
+    private func officeTower(
+        index: Int,
+        width: CGFloat,
+        height: CGFloat,
+        isRearTower: Bool,
+        size: CGSize
+    ) -> some View {
+        let glassTop = weather.isNight
+            ? Color(red: 0.10, green: 0.17, blue: 0.26).opacity(isRearTower ? 0.66 : 0.96)
+            : Color(red: 0.56, green: 0.76, blue: 0.87).opacity(isRearTower ? 0.36 : 0.72)
+        let glassBottom = weather.isNight
+            ? Color(red: 0.025, green: 0.05, blue: 0.10).opacity(isRearTower ? 0.70 : 0.98)
+            : Color(red: 0.24, green: 0.45, blue: 0.59).opacity(isRearTower ? 0.44 : 0.70)
+        let windowOpacity = weather.isNight ? 0.90 : 0.34
+
+        return ZStack(alignment: .top) {
+            RoundedRectangle(cornerRadius: max(2, width * 0.08), style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [glassTop, glassBottom],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: max(2, width * 0.08), style: .continuous)
+                        .stroke(Color.white.opacity(weather.isNight ? 0.14 : 0.32), lineWidth: 0.7)
+                }
+                .overlay(alignment: .top) {
+                    VStack(spacing: max(1.5, height * 0.045)) {
+                        ForEach(0..<6, id: \.self) { row in
+                            HStack(spacing: max(1.5, width * 0.13)) {
+                                ForEach(0..<3, id: \.self) { column in
+                                    RoundedRectangle(cornerRadius: 0.7, style: .continuous)
+                                        .fill(
+                                            weather.isNight
+                                                ? Color(red: 1.0, green: 0.72, blue: 0.28).opacity((row * 3 + column + index).isMultiple(of: 4) ? windowOpacity : 0.20)
+                                                : Color.white.opacity((row + column + index).isMultiple(of: 3) ? windowOpacity : 0.16)
+                                        )
+                                        .frame(width: max(1.4, width * 0.13), height: max(1.2, height * 0.019))
+                                }
+                            }
+                        }
+                    }
+                    .padding(.top, max(5, height * 0.07))
+                }
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(Color.white.opacity(weather.isNight ? 0.10 : 0.22))
+                        .frame(width: max(1, width * 0.055))
+                        .padding(.vertical, 5)
+                }
+
+            if index.isMultiple(of: 4) {
+                Capsule()
+                    .fill(Color(white: weather.isNight ? 0.50 : 0.72))
+                    .frame(width: 1, height: max(5, height * 0.12))
+                    .offset(y: -max(4, height * 0.10))
+            }
+        }
+        .frame(width: width, height: height)
+        .shadow(color: weather.isNight ? Color.black.opacity(0.22) : Color.blue.opacity(0.08), radius: 4, y: 2)
     }
 
     private func road(size: CGSize, phase: TimeInterval) -> some View {
@@ -2082,7 +2233,7 @@ private struct LiveRideEnvironment: View {
                         x: -size.width * 0.49 + progression * size.width * 1.12,
                         y: size.height * (0.22 + progression * 0.25)
                     )
-                    .blur(radius: weather.hasRain ? 0.5 : 0)
+                    .blur(radius: weather.hasRain || weather.hasSnow ? 0.5 : 0)
             }
 
             Path { path in
@@ -2093,11 +2244,11 @@ private struct LiveRideEnvironment: View {
         }
     }
 
-    private func streetLights(size: CGSize, phase: TimeInterval) -> some View {
+    private func streetLights(size: CGSize) -> some View {
         ZStack {
-            streetLamp(height: size.height * 0.43, glow: weather.isNight ? 0.96 : 0.22)
+            streetLamp(height: size.height * 0.43, glow: weather.isNight ? 0.96 : 0.16)
                 .offset(x: -size.width * 0.35, y: size.height * 0.09)
-            streetLamp(height: size.height * 0.36, glow: weather.isNight ? 0.82 : 0.18)
+            streetLamp(height: size.height * 0.36, glow: weather.isNight ? 0.82 : 0.13)
                 .scaleEffect(0.76)
                 .offset(x: size.width * 0.34, y: size.height * 0.13)
         }
@@ -2136,6 +2287,26 @@ private struct LiveRideEnvironment: View {
         .blur(radius: 0.22)
     }
 
+    private func snow(size: CGSize, drift: CGFloat, phase: TimeInterval) -> some View {
+        let flakeCount = weather.isBlizzard ? 112 : 58
+        let wind = CGFloat(sin(phase * 2.6)) * (weather.isBlizzard ? size.width * 0.13 : size.width * 0.035)
+        return ZStack {
+            ForEach(0..<flakeCount, id: \.self) { index in
+                let x = (CGFloat((index * 47) % 100) / 100 - 0.5) * size.width
+                let y = (CGFloat((index * 29) % 100) / 100 - 0.5) * size.height + drift * size.height * 1.28
+                let flakeSize = weather.isBlizzard ? CGFloat(1.7 + (index % 4)) * 0.58 : CGFloat(1.1 + (index % 3)) * 0.56
+                Circle()
+                    .fill(Color.white.opacity(weather.isNight ? 0.82 : 0.76))
+                    .frame(width: flakeSize, height: flakeSize)
+                    .blur(radius: weather.isBlizzard && index.isMultiple(of: 5) ? 0.6 : 0)
+                    .offset(
+                        x: x + wind * (0.35 + CGFloat(index % 4) * 0.18),
+                        y: y.truncatingRemainder(dividingBy: size.height * 1.25) - size.height * 0.30
+                    )
+            }
+        }
+    }
+
     private func lightning(size: CGSize, opacity: Double) -> some View {
         Path { path in
             path.move(to: CGPoint(x: size.width * 0.71, y: size.height * 0.10))
@@ -2145,6 +2316,68 @@ private struct LiveRideEnvironment: View {
         }
         .stroke(Color.white.opacity(opacity), style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round))
         .shadow(color: Color.white.opacity(opacity), radius: 9)
+    }
+}
+
+private struct CityEnvironmentReadout: View {
+    var weather: RideWeatherSnapshot
+    var rideDurationText: String?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let foreground = weather.isNight ? Color.white.opacity(0.88) : Color.black.opacity(0.62)
+            let secondary = weather.isNight ? Color.white.opacity(0.66) : Color.black.opacity(0.45)
+            let labelSize = min(max(proxy.size.width * 0.024, 7.2), 9.2)
+            let timeSize = min(max(proxy.size.width * 0.031, 8.5), 11)
+
+            ZStack(alignment: .top) {
+                if let rideDurationText {
+                    HStack(spacing: 3) {
+                        Image(systemName: "figure.outdoor.cycle")
+                        Text("骑行 \(rideDurationText)")
+                            .monospacedDigit()
+                    }
+                    .font(.system(size: timeSize, weight: .semibold, design: .rounded))
+                    .foregroundStyle(foreground)
+                    .shadow(color: weather.isNight ? .black.opacity(0.72) : .white.opacity(0.75), radius: 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, proxy.size.width * 0.065)
+                    .padding(.top, proxy.size.height * 0.062)
+                }
+
+                VStack(alignment: .trailing, spacing: 2.5) {
+                    metric(icon: "thermometer.medium", title: "气温", value: weather.temperatureText, foreground: foreground, secondary: secondary, fontSize: labelSize)
+                    metric(icon: "sun.max", title: "紫外线", value: weather.ultravioletText, foreground: foreground, secondary: secondary, fontSize: labelSize)
+                    metric(icon: "aqi.medium", title: "空气", value: weather.airQualityText, foreground: foreground, secondary: secondary, fontSize: labelSize)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, proxy.size.width * 0.055)
+                .padding(.top, proxy.size.height * 0.060)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func metric(
+        icon: String,
+        title: String,
+        value: String,
+        foreground: Color,
+        secondary: Color,
+        fontSize: CGFloat
+    ) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: fontSize, weight: .semibold))
+                .foregroundStyle(secondary)
+            Text(title)
+                .foregroundStyle(secondary)
+            Text(value)
+                .foregroundStyle(foreground)
+                .monospacedDigit()
+        }
+        .font(.system(size: fontSize, weight: .medium, design: .rounded))
+        .shadow(color: weather.isNight ? .black.opacity(0.72) : .white.opacity(0.75), radius: 1.5)
     }
 }
 
