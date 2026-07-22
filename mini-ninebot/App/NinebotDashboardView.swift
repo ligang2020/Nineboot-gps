@@ -1811,17 +1811,25 @@ private struct RideWeatherSnapshot: Equatable {
     var hasSnow: Bool { condition == .snow }
 
     var temperatureText: String {
-        guard let temperatureCelsius else { return "--°" }
+        guard let temperatureCelsius,
+              temperatureCelsius.isFinite,
+              (-80...70).contains(temperatureCelsius) else {
+            return "--°"
+        }
         return String(format: "%.0f°", temperatureCelsius)
     }
 
     var ultravioletText: String {
-        guard let ultravioletIndex else { return "--" }
-        return String(format: "%.0f", ultravioletIndex)
+        // The daily maximum UV index is not the live UV value. Even if a stale
+        // provider response arrives around sunset, the active night signal must
+        // never render a daytime UV number in the city scene.
+        guard isDay else { return "0" }
+        guard let ultravioletIndex, ultravioletIndex.isFinite else { return "--" }
+        return String(format: "%.0f", max(0, ultravioletIndex))
     }
 
     var airQualityText: String {
-        guard let airQualityIndex else { return "--" }
+        guard let airQualityIndex, (0...500).contains(airQualityIndex) else { return "--" }
         switch airQualityIndex {
         case ...50: return "优 \(airQualityIndex)"
         case 51...100: return "良 \(airQualityIndex)"
@@ -1905,9 +1913,10 @@ private final class RideWeatherProvider: ObservableObject {
         forecastComponents?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
-            URLQueryItem(name: "current", value: "weather_code,is_day,temperature_2m"),
-            URLQueryItem(name: "daily", value: "uv_index_max"),
-            URLQueryItem(name: "forecast_days", value: "1"),
+            // Request the instantaneous UV index. `daily=uv_index_max` is a
+            // daytime peak and incorrectly shows a non-zero value after dark.
+            URLQueryItem(name: "current", value: "weather_code,is_day,temperature_2m,uv_index"),
+            URLQueryItem(name: "temperature_unit", value: "celsius"),
             URLQueryItem(name: "timezone", value: "auto")
         ]
 
@@ -1927,7 +1936,7 @@ private final class RideWeatherProvider: ObservableObject {
                 weatherCode: current.weatherCode,
                 isDay: current.isDay,
                 temperatureCelsius: current.temperature2M,
-                ultravioletIndex: payload.daily?.ultravioletIndexMaximum?.first,
+                ultravioletIndex: current.uvIndex,
                 airQualityIndex: airQualityIndex,
                 observedAt: .now
             )
@@ -1969,24 +1978,17 @@ private struct OpenMeteoRideWeatherResponse: Decodable {
         let weatherCode: Int
         let isDay: Int
         let temperature2M: Double?
+        let uvIndex: Double?
 
         enum CodingKeys: String, CodingKey {
             case weatherCode = "weather_code"
             case isDay = "is_day"
             case temperature2M = "temperature_2m"
-        }
-    }
-
-    struct Daily: Decodable {
-        let ultravioletIndexMaximum: [Double]?
-
-        enum CodingKeys: String, CodingKey {
-            case ultravioletIndexMaximum = "uv_index_max"
+            case uvIndex = "uv_index"
         }
     }
 
     let current: Current?
-    let daily: Daily?
 }
 
 private struct OpenMeteoAirQualityResponse: Decodable {
@@ -2398,7 +2400,7 @@ private struct CityEnvironmentReadout: View {
             VStack(alignment: .trailing, spacing: 3) {
                 metric(icon: "thermometer.medium", title: "气温", value: weather.temperatureText, foreground: foreground, secondary: secondary, fontSize: labelSize)
                 metric(icon: "sun.max", title: "紫外线", value: weather.ultravioletText, foreground: foreground, secondary: secondary, fontSize: labelSize)
-                metric(icon: "aqi.medium", title: "空气", value: weather.airQualityText, foreground: foreground, secondary: secondary, fontSize: labelSize)
+                metric(icon: "aqi.medium", title: "空气质量", value: weather.airQualityText, foreground: foreground, secondary: secondary, fontSize: labelSize)
             }
             .frame(width: metricsWidth, alignment: .trailing)
             .offset(x: metricsX, y: topInset)
