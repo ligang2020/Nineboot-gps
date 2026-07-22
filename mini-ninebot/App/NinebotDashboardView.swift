@@ -1408,15 +1408,9 @@ private struct VehicleMotionScene: View {
                         chargingScene(in: proxy.size, phase: timeline.date.timeIntervalSinceReferenceDate)
                     }
                 case .parked:
-                    // The vehicle remains still, while the location-aware city
-                    // environment keeps weather, daylight and building lights current.
-                    TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !isAnimating)) { timeline in
-                        parkedScene(
-                            in: proxy.size,
-                            phase: timeline.date.timeIntervalSinceReferenceDate,
-                            weather: rideWeather.snapshot
-                        )
-                    }
+                    // A parked scene is deliberately a still composition: no
+                    // road scrolling, precipitation drift or vehicle movement.
+                    parkedScene(in: proxy.size, phase: 0, weather: rideWeather.snapshot)
                 case .riding:
                     // A TimelineView keeps this scene advancing even when the
                     // dashboard itself receives no new vehicle-state updates.
@@ -1565,10 +1559,11 @@ private struct VehicleMotionScene: View {
             .offset(x: size.width * 0.045, y: size.height * 0.03)
 
             Text(snapshot.state.isPoweredOn == true ? "车辆已停稳 · 已上电" : "车辆已停稳")
-                .font(.system(size: 8.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(weather.isNight ? Color.white.opacity(0.76) : Color.black.opacity(0.55))
-                .shadow(color: weather.isNight ? .black.opacity(0.55) : .white.opacity(0.65), radius: 2)
-                .offset(x: -size.width * 0.30, y: -size.height * 0.335)
+                .font(.system(size: min(max(size.width * 0.034, 11), 13), weight: .semibold, design: .rounded))
+                .foregroundStyle(weather.isNight ? Color.white.opacity(0.88) : Color.black.opacity(0.68))
+                .shadow(color: weather.isNight ? .black.opacity(0.72) : .white.opacity(0.82), radius: 2)
+                .lineLimit(1)
+                .offset(x: -size.width * 0.27, y: -size.height * 0.315)
         }
         .frame(width: size.width, height: size.height)
         .clipped()
@@ -2091,9 +2086,9 @@ private struct LiveRideEnvironment: View {
                 .shadow(color: Color.white.opacity(0.36), radius: 9)
                 .offset(x: size.width * 0.30, y: -size.height * 0.29)
         } else {
-            cloud(width: size.width * 0.45, height: size.height * 0.18, opacity: 0.30)
+            nightCloud(width: size.width * 0.45, height: size.height * 0.18, opacity: 0.52)
                 .offset(x: -size.width * 0.24 + cloudDrift * 0.16, y: -size.height * 0.29)
-            cloud(width: size.width * 0.52, height: size.height * 0.20, opacity: 0.36)
+            nightCloud(width: size.width * 0.52, height: size.height * 0.20, opacity: 0.58)
                 .offset(x: size.width * 0.26 - cloudDrift * 0.13, y: -size.height * 0.20)
         }
     }
@@ -2105,6 +2100,17 @@ private struct LiveRideEnvironment: View {
             Circle().fill(Color.white.opacity(opacity)).frame(width: height * 0.84, height: height * 0.84).offset(x: width * 0.05, y: -height * 0.15)
         }
         .blur(radius: 0.4)
+    }
+
+    // Rain and snow should not look like white daytime clouds over a night city.
+    private func nightCloud(width: CGFloat, height: CGFloat, opacity: Double) -> some View {
+        let tone = Color(red: 0.12, green: 0.17, blue: 0.24).opacity(opacity)
+        return ZStack {
+            Capsule().fill(tone).frame(width: width * 0.64, height: height * 0.40)
+            Circle().fill(tone).frame(width: height * 0.72, height: height * 0.72).offset(x: -width * 0.14, y: -height * 0.08)
+            Circle().fill(tone).frame(width: height * 0.86, height: height * 0.86).offset(x: width * 0.05, y: -height * 0.14)
+        }
+        .blur(radius: 0.8)
     }
 
     private func citySkyline(size: CGSize, phase: TimeInterval) -> some View {
@@ -2337,12 +2343,15 @@ private struct CityEnvironmentReadout: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let foreground = weather.isNight ? Color.white.opacity(0.88) : Color.black.opacity(0.62)
-            let secondary = weather.isNight ? Color.white.opacity(0.66) : Color.black.opacity(0.45)
-            let labelSize = min(max(proxy.size.width * 0.024, 7.2), 9.2)
-            let timeSize = min(max(proxy.size.width * 0.031, 8.5), 11)
+            let size = proxy.size
+            let foreground = weather.isNight ? Color.white.opacity(0.90) : Color.black.opacity(0.66)
+            let secondary = weather.isNight ? Color.white.opacity(0.68) : Color.black.opacity(0.48)
+            let labelSize = min(max(size.width * 0.024, 7.5), 9.5)
+            let timeSize = min(max(size.width * 0.030, 9), 11)
+            let topInset = min(max(size.height * 0.070, 16), 25)
+            let horizontalInset = min(max(size.width * 0.055, 18), 32)
 
-            ZStack(alignment: .top) {
+            ZStack(alignment: .topLeading) {
                 if let rideDurationText {
                     HStack(spacing: 3) {
                         Image(systemName: "figure.outdoor.cycle")
@@ -2351,21 +2360,27 @@ private struct CityEnvironmentReadout: View {
                     }
                     .font(.system(size: timeSize, weight: .semibold, design: .rounded))
                     .foregroundStyle(foreground)
-                    .shadow(color: weather.isNight ? .black.opacity(0.72) : .white.opacity(0.75), radius: 2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, proxy.size.width * 0.065)
-                    .padding(.top, proxy.size.height * 0.062)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .shadow(color: weather.isNight ? .black.opacity(0.76) : .white.opacity(0.82), radius: 2)
+                    .frame(width: size.width * 0.40, alignment: .leading)
+                    .padding(.leading, horizontalInset)
+                    .padding(.top, topInset)
                 }
 
-                VStack(alignment: .trailing, spacing: 2.5) {
+                VStack(alignment: .trailing, spacing: 3) {
                     metric(icon: "thermometer.medium", title: "气温", value: weather.temperatureText, foreground: foreground, secondary: secondary, fontSize: labelSize)
                     metric(icon: "sun.max", title: "紫外线", value: weather.ultravioletText, foreground: foreground, secondary: secondary, fontSize: labelSize)
                     metric(icon: "aqi.medium", title: "空气", value: weather.airQualityText, foreground: foreground, secondary: secondary, fontSize: labelSize)
                 }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.trailing, proxy.size.width * 0.055)
-                .padding(.top, proxy.size.height * 0.060)
+                .frame(width: size.width * 0.34, alignment: .trailing)
+                .padding(.leading, size.width * 0.61)
+                .padding(.top, topInset)
             }
+            // The explicit frame prevents the two readouts from being laid out
+            // against an unconstrained overlay and clipping above the card.
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .clipped()
         }
         .allowsHitTesting(false)
     }
@@ -2389,7 +2404,9 @@ private struct CityEnvironmentReadout: View {
                 .monospacedDigit()
         }
         .font(.system(size: fontSize, weight: .medium, design: .rounded))
-        .shadow(color: weather.isNight ? .black.opacity(0.72) : .white.opacity(0.75), radius: 1.5)
+        .lineLimit(1)
+        .minimumScaleFactor(0.78)
+        .shadow(color: weather.isNight ? .black.opacity(0.76) : .white.opacity(0.82), radius: 1.5)
     }
 }
 
