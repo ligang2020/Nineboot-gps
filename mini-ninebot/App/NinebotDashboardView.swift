@@ -1408,9 +1408,15 @@ private struct VehicleMotionScene: View {
                         chargingScene(in: proxy.size, phase: timeline.date.timeIntervalSinceReferenceDate)
                     }
                 case .parked:
-                    // A parked scene is deliberately a still composition: no
-                    // road scrolling, precipitation drift or vehicle movement.
-                    parkedScene(in: proxy.size, phase: 0, weather: rideWeather.snapshot)
+                    // Keep the parked vehicle and roadway still, while weather
+                    // particles (rain/snow) continue to move naturally.
+                    TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !isAnimating)) { timeline in
+                        parkedScene(
+                            in: proxy.size,
+                            phase: timeline.date.timeIntervalSinceReferenceDate,
+                            weather: rideWeather.snapshot
+                        )
+                    }
                 case .riding:
                     // A TimelineView keeps this scene advancing even when the
                     // dashboard itself receives no new vehicle-state updates.
@@ -1542,7 +1548,12 @@ private struct VehicleMotionScene: View {
         ZStack {
             // Parked and riding views deliberately share one city scene so the
             // vehicle never falls back to a disconnected plain background.
-            LiveRideEnvironment(weather: weather, phase: phase, rideDurationText: nil)
+            LiveRideEnvironment(
+                weather: weather,
+                phase: phase,
+                rideDurationText: nil,
+                animatesRoadAndCity: false
+            )
 
             Ellipse()
                 .fill(Color.black.opacity(weather.isNight ? 0.34 : 0.19))
@@ -1982,6 +1993,8 @@ private struct LiveRideEnvironment: View {
     var weather: RideWeatherSnapshot
     var phase: TimeInterval
     var rideDurationText: String?
+    /// Parked scenes retain weather particles but must not scroll the road or city.
+    var animatesRoadAndCity: Bool = true
 
     var body: some View {
         GeometryReader { proxy in
@@ -2001,8 +2014,8 @@ private struct LiveRideEnvironment: View {
                     daySky(size: size, cloudDrift: cloudDrift)
                 }
 
-                citySkyline(size: size, phase: phase)
-                road(size: size, phase: phase)
+                citySkyline(size: size, phase: animatesRoadAndCity ? phase : 0)
+                road(size: size, phase: animatesRoadAndCity ? phase : 0)
                 streetLights(size: size)
                 CityEnvironmentReadout(weather: weather, rideDurationText: rideDurationText)
 
