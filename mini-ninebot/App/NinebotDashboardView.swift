@@ -1588,27 +1588,35 @@ private struct VehicleMotionScene: View {
         let vehicleDrift = CGFloat(sin(phase * 1.8)) * 0.65
 
         ZStack {
-            // This approved rider artwork matches the supplied reference: an
-            // all-black full-face helmet, integrated riding suit, natural
-            // seated posture, hands placed on the handlebar, and both feet
-            // resting on the scooter. It intentionally replaces the previous
-            // custom robot/line-joint drawing.
-            Image("RidingHeroReference")
-                .resizable()
-                .scaledToFill()
-                .scaleEffect(1.025)
-                .offset(x: vehicleDrift, y: vehicleBob)
-                .clipped()
+            // Always render the current API vehicle artwork. A baked riding
+            // reference would replace the owner’s actual vehicle image.
+            LinearGradient(
+                colors: [Color.white, Color(red: 0.88, green: 0.93, blue: 0.94), Color.white],
+                startPoint: .top,
+                endPoint: .bottom
+            )
 
-            // The original reference artwork contains a 45 km/h speed tile.
-            // Replace it with a native, live duration tile so no speed number
-            // or "km/h" text remains visible in the final card.
+            RideCityBackdrop(phase: phase)
+            RideRoad(phase: phase)
+            RideMotionStreaks(phase: phase)
+
+            Ellipse()
+                .fill(Color.black.opacity(0.20))
+                .frame(width: size.width * 0.58, height: size.height * 0.075)
+                .blur(radius: 7)
+                .offset(x: size.width * 0.09, y: size.height * 0.31)
+
+            VehicleImage(
+                urlString: snapshot.vehicle.imageURLString,
+                size: min(size.width * 0.86, 300),
+                showsBackground: false
+            )
+            .shadow(color: .black.opacity(0.24), radius: 13, x: 0, y: 9)
+            .offset(x: size.width * 0.09 + vehicleDrift, y: size.height * 0.09 + vehicleBob)
+
             RideDurationHud(startedAt: rideStartedAt ?? now, now: now, phase: phase)
                 .frame(width: min(size.width * 0.35, 132), height: min(size.height * 0.52, 116))
                 .offset(x: -size.width * 0.242, y: -size.height * 0.07)
-
-            ReferenceRideWheelMotion(phase: phase)
-            ReferenceRideRoadMotion(phase: phase)
         }
         .frame(width: size.width, height: size.height)
         .clipped()
@@ -1952,65 +1960,6 @@ private struct ChargingCableEnergyFlow: View {
             .frame(width: max(3, size.width * 0.012), height: max(3, size.width * 0.012))
             .shadow(color: Color.teslaGreen.opacity(0.96), radius: 6)
             .position(point)
-    }
-}
-
-private struct ReferenceRideWheelMotion: View {
-    var phase: TimeInterval
-
-    var body: some View {
-        GeometryReader { proxy in
-            let rotation = Angle.degrees((phase * 620).truncatingRemainder(dividingBy: 360))
-            let wheelDiameter = min(proxy.size.width * 0.118, proxy.size.height * 0.285)
-
-            ZStack {
-                referenceWheel(rotation: rotation, diameter: wheelDiameter)
-                    .position(x: proxy.size.width * 0.505, y: proxy.size.height * 0.765)
-                referenceWheel(rotation: rotation, diameter: wheelDiameter)
-                    .position(x: proxy.size.width * 0.842, y: proxy.size.height * 0.765)
-            }
-        }
-        .allowsHitTesting(false)
-    }
-
-    private func referenceWheel(rotation: Angle, diameter: CGFloat) -> some View {
-        ZStack {
-            Circle()
-                .stroke(.white.opacity(0.16), lineWidth: max(0.6, diameter * 0.018))
-            ForEach(0..<3, id: \.self) { index in
-                Capsule()
-                    .fill(Color.white.opacity(0.20))
-                    .frame(width: max(0.65, diameter * 0.014), height: diameter * 0.62)
-                    .rotationEffect(rotation + .degrees(Double(index) * 60))
-            }
-        }
-        .frame(width: diameter, height: diameter)
-        .blendMode(.screen)
-        .opacity(0.56)
-    }
-}
-
-private struct ReferenceRideRoadMotion: View {
-    var phase: TimeInterval
-
-    var body: some View {
-        GeometryReader { proxy in
-            let progress = CGFloat((phase * 0.88).truncatingRemainder(dividingBy: 1.0))
-
-            ZStack(alignment: .leading) {
-                ForEach(0..<4, id: \.self) { index in
-                    Capsule()
-                        .fill(Color.white.opacity(0.18 - Double(index) * 0.025))
-                        .frame(width: proxy.size.width * (0.14 + CGFloat(index) * 0.04), height: 1.2)
-                        .offset(
-                            x: (progress * 1.5 - 0.55) * proxy.size.width,
-                            y: proxy.size.height * (0.79 + CGFloat(index) * 0.045)
-                        )
-                        .blur(radius: 0.55)
-                }
-            }
-        }
-        .allowsHitTesting(false)
     }
 }
 
