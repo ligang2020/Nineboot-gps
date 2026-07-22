@@ -1551,7 +1551,6 @@ private struct VehicleMotionScene: View {
             LiveRideEnvironment(
                 weather: weather,
                 phase: phase,
-                rideDurationText: nil,
                 animatesRoadAndCity: false
             )
 
@@ -1577,6 +1576,13 @@ private struct VehicleMotionScene: View {
                 .offset(x: -size.width * 0.27, y: -size.height * 0.315)
         }
         .frame(width: size.width, height: size.height)
+        .overlay(alignment: .topLeading) {
+            CityEnvironmentReadout(
+                weather: weather,
+                rideDurationText: nil,
+                sceneSize: size
+            )
+        }
         .clipped()
     }
 
@@ -1593,8 +1599,7 @@ private struct VehicleMotionScene: View {
         ZStack {
             LiveRideEnvironment(
                 weather: weather,
-                phase: phase,
-                rideDurationText: rideDurationText(now: now)
+                phase: phase
             )
             RideMotionStreaks(phase: phase)
 
@@ -1615,6 +1620,13 @@ private struct VehicleMotionScene: View {
 
         }
         .frame(width: size.width, height: size.height)
+        .overlay(alignment: .topLeading) {
+            CityEnvironmentReadout(
+                weather: weather,
+                rideDurationText: rideDurationText(now: now),
+                sceneSize: size
+            )
+        }
         .clipped()
     }
 
@@ -1992,7 +2004,6 @@ private struct OpenMeteoAirQualityResponse: Decodable {
 private struct LiveRideEnvironment: View {
     var weather: RideWeatherSnapshot
     var phase: TimeInterval
-    var rideDurationText: String?
     /// Parked scenes retain weather particles but must not scroll the road or city.
     var animatesRoadAndCity: Bool = true
 
@@ -2029,14 +2040,6 @@ private struct LiveRideEnvironment: View {
                 if weather.hasLightning {
                     lightning(size: size, opacity: lightningFlash)
                 }
-
-                // Keep scene information above weather particles and constrain it
-                // to the same measured card bounds as the city scene.
-                CityEnvironmentReadout(
-                    weather: weather,
-                    rideDurationText: rideDurationText,
-                    sceneSize: size
-                )
             }
             .overlay {
                 if lightningFlash > 0.02 {
