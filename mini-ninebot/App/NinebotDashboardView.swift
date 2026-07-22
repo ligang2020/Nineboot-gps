@@ -1479,8 +1479,8 @@ private struct VehicleMotionScene: View {
             // The charging HUD is intentionally compact, leaving the handlebar
             // and front half of the real vehicle unobstructed.
             ChargeHudCard(state: snapshot.state, isAnimating: isAnimating)
-                .frame(width: min(size.width * 0.31, 116))
-                .offset(x: -size.width * 0.035, y: -size.height * 0.255)
+                .frame(width: min(size.width * 0.245, 86))
+                .offset(x: size.width * 0.015, y: -size.height * 0.275)
 
             Capsule()
                 .fill(LinearGradient(colors: [.clear, Color.teslaGreen.opacity(0.88), .white.opacity(0.88), Color.teslaGreen.opacity(0.88), .clear], startPoint: .leading, endPoint: .trailing))
@@ -1720,18 +1720,18 @@ private struct ChargeHudCard: View {
     var body: some View {
         VStack(spacing: 2) {
             Text("正在充电")
-                .font(.caption2.weight(.bold))
+                .font(.system(size: 10, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.teslaGreen)
             HStack(alignment: .lastTextBaseline, spacing: 2) {
                 Text(state.battery.map(String.init) ?? "--")
-                    .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    .font(.system(size: 23, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                 Text("%")
-                    .font(.caption.weight(.bold))
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
             }
             .foregroundStyle(.white)
-            Text("预计充满 \(state.estimatedFullChargeTimeText)")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+            Text("约 \(state.estimatedFullChargeTimeText)")
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.72))
                 .lineLimit(1)
 
@@ -1739,28 +1739,28 @@ private struct ChargeHudCard: View {
                 ForEach(0..<3, id: \.self) { index in
                     Circle()
                         .fill(Color.teslaGreen)
-                        .frame(width: 4, height: 4)
-                        .scaleEffect(isAnimating && index == 1 ? 1.30 : 0.76)
+                        .frame(width: 3.5, height: 3.5)
+                        .scaleEffect(isAnimating && index == 1 ? 1.25 : 0.78)
                 }
             }
             .padding(.top, 1)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 7)
         .background(
             LinearGradient(
                 colors: [Color(red: 0.13, green: 0.17, blue: 0.18).opacity(0.96), Color.black.opacity(0.88)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.teslaGreen.opacity(0.66), lineWidth: 1.0)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.teslaGreen.opacity(0.62), lineWidth: 0.9)
         }
-        .shadow(color: Color.teslaGreen.opacity(isAnimating ? 0.26 : 0.10), radius: 11)
+        .shadow(color: Color.teslaGreen.opacity(isAnimating ? 0.22 : 0.08), radius: 8)
     }
 }
 
