@@ -1440,17 +1440,52 @@ private struct VehicleMotionScene: View {
     @ViewBuilder
     private func chargingScene(in size: CGSize, phase: TimeInterval) -> some View {
         ZStack {
-            // Approved charging reference: bright white studio environment,
-            // silver scooter, real cable path, upright charging pillar, and
-            // the centered charging status panel. This replaces the earlier
-            // hand-drawn charging composition.
-            Image("ChargingHeroReference")
-                .resizable()
-                .scaledToFill()
-                .scaleEffect(1.018)
-                .clipped()
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.96), Color.teslaGreen.opacity(0.055), Color.black.opacity(0.025)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
 
-            ReferenceChargingMotion(phase: phase)
+            Ellipse()
+                .fill(Color.teslaGreen.opacity(0.12))
+                .frame(width: size.width * 0.64, height: size.height * 0.30)
+                .blur(radius: 22)
+                .scaleEffect(1.0 + CGFloat(sin(phase * 1.7)) * 0.06)
+                .offset(x: size.width * 0.13, y: size.height * 0.22)
+
+            chargingGrid(size: size)
+            chargingCable(size: size)
+
+            // Energy must travel in the physical charging direction: from the
+            // right-side charging pillar into this vehicle's battery socket.
+            ChargingCableEnergyFlow(phase: phase)
+
+            // Always use the selected vehicle artwork from the API. Do not
+            // substitute the scooter shown in any visual reference image.
+            VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.74, 276), showsBackground: false)
+                .shadow(color: .black.opacity(0.18), radius: 17, x: 0, y: 12)
+                .offset(x: -size.width * 0.08, y: size.height * 0.04)
+
+            ChargePillar(isAnimating: isAnimating)
+                .frame(width: min(size.width * 0.18, 72), height: size.height * 0.67)
+                .offset(x: size.width * 0.37, y: size.height * 0.10)
+
+            ChargeHudCard(state: snapshot.state, isAnimating: isAnimating)
+                .frame(width: min(size.width * 0.46, 180))
+                .offset(x: -size.width * 0.01, y: -size.height * 0.22)
+
+            Capsule()
+                .fill(LinearGradient(colors: [.clear, Color.teslaGreen.opacity(0.88), .white.opacity(0.88), Color.teslaGreen.opacity(0.88), .clear], startPoint: .leading, endPoint: .trailing))
+                .frame(width: size.width * 0.26, height: 2)
+                .offset(
+                    x: (CGFloat((phase * 0.64).truncatingRemainder(dividingBy: 1.0)) * 1.43 - 0.49) * size.width,
+                    y: size.height * 0.39
+                )
+                .blur(radius: 0.45)
+                .shadow(color: Color.teslaGreen.opacity(0.68), radius: 4)
         }
         .frame(width: size.width, height: size.height)
         .clipped()
@@ -1595,28 +1630,24 @@ private struct VehicleMotionScene: View {
     }
 
     private func chargingCable(size: CGSize) -> some View {
-        ZStack {
+        let chargerPort = CGPoint(x: size.width * 0.87, y: size.height * 0.58)
+        let batteryPort = CGPoint(x: size.width * 0.57, y: size.height * 0.66)
+        let firstControl = CGPoint(x: size.width * 0.80, y: size.height * 0.84)
+        let secondControl = CGPoint(x: size.width * 0.65, y: size.height * 0.54)
+
+        return ZStack {
             Path { path in
-                path.move(to: CGPoint(x: size.width * 0.87, y: size.height * 0.58))
-                path.addCurve(
-                    to: CGPoint(x: size.width * 0.47, y: size.height * 0.74),
-                    control1: CGPoint(x: size.width * 0.79, y: size.height * 0.85),
-                    control2: CGPoint(x: size.width * 0.57, y: size.height * 0.56)
-                )
+                path.move(to: chargerPort)
+                path.addCurve(to: batteryPort, control1: firstControl, control2: secondControl)
             }
-            .stroke(Color.black.opacity(0.62), style: StrokeStyle(lineWidth: 3.2, lineCap: .round))
+            .stroke(Color.black.opacity(0.64), style: StrokeStyle(lineWidth: 3.2, lineCap: .round))
 
             Path { path in
-                path.move(to: CGPoint(x: size.width * 0.87, y: size.height * 0.58))
-                path.addCurve(
-                    to: CGPoint(x: size.width * 0.47, y: size.height * 0.74),
-                    control1: CGPoint(x: size.width * 0.79, y: size.height * 0.85),
-                    control2: CGPoint(x: size.width * 0.57, y: size.height * 0.56)
-                )
+                path.move(to: chargerPort)
+                path.addCurve(to: batteryPort, control1: firstControl, control2: secondControl)
             }
-            .stroke(Color.teslaGreen.opacity(0.9), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [3, 10], dashPhase: isAnimating ? 52 : 0))
-            .shadow(color: Color.teslaGreen.opacity(0.8), radius: 3)
-            .animation(.linear(duration: 1.2).repeatForever(autoreverses: false), value: isAnimating)
+            .stroke(Color.teslaGreen.opacity(0.38), style: StrokeStyle(lineWidth: 1.1, lineCap: .round, dash: [2, 11]))
+            .shadow(color: Color.teslaGreen.opacity(0.42), radius: 2)
         }
     }
 }
@@ -1873,73 +1904,47 @@ private struct RideDurationHud: View {
     }
 }
 
-private struct ReferenceChargingMotion: View {
+private struct ChargingCableEnergyFlow: View {
     var phase: TimeInterval
 
     var body: some View {
         GeometryReader { proxy in
-            let travel = CGFloat((phase * 0.72).truncatingRemainder(dividingBy: 1.0))
-            let breathe = 0.48 + 0.34 * sin(phase * 2.1)
+            let travel = CGFloat((phase * 0.68).truncatingRemainder(dividingBy: 1.0))
 
             ZStack {
-                // A soft pulse over the charging pillar makes the green power
-                // core feel alive while retaining the reference proportions.
-                RoundedRectangle(cornerRadius: proxy.size.width * 0.025, style: .continuous)
-                    .stroke(Color.teslaGreen.opacity(breathe), lineWidth: 1.2)
-                    .frame(width: proxy.size.width * 0.055, height: proxy.size.height * 0.39)
-                    .position(x: proxy.size.width * 0.838, y: proxy.size.height * 0.53)
-                    .shadow(color: Color.teslaGreen.opacity(0.52), radius: 7)
-
-                Circle()
-                    .fill(Color.teslaGreen)
-                    .frame(width: max(3, proxy.size.width * 0.014), height: max(3, proxy.size.width * 0.014))
-                    .shadow(color: Color.teslaGreen.opacity(0.94), radius: 6)
-                    .position(
-                        x: proxy.size.width * 0.833,
-                        y: proxy.size.height * (0.67 - travel * 0.20)
-                    )
-
-                // Two energy particles travel from the vehicle connection to
-                // the pillar along the visible cable route.
-                chargingParticle(progress: travel, size: proxy.size)
-                chargingParticle(progress: (travel + 0.48).truncatingRemainder(dividingBy: 1.0), size: proxy.size)
-
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [.clear, Color.teslaGreen.opacity(0.96), .white.opacity(0.90), .clear],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(width: proxy.size.width * 0.20, height: 2.4)
-                    .offset(
-                        x: (travel * 1.44 - 0.49) * proxy.size.width,
-                        y: proxy.size.height * 0.468
-                    )
-                    .shadow(color: Color.teslaGreen.opacity(0.78), radius: 4)
+                energyParticle(progress: travel, size: proxy.size)
+                energyParticle(progress: (travel + 0.34).truncatingRemainder(dividingBy: 1.0), size: proxy.size)
+                energyParticle(progress: (travel + 0.68).truncatingRemainder(dividingBy: 1.0), size: proxy.size)
             }
         }
         .allowsHitTesting(false)
     }
 
     @ViewBuilder
-    private func chargingParticle(progress: CGFloat, size: CGSize) -> some View {
-        // Quadratic curve approximating the reference cable from the vehicle
-        // socket to the bottom of the charging pillar.
-        let start = CGPoint(x: size.width * 0.518, y: size.height * 0.555)
-        let control = CGPoint(x: size.width * 0.670, y: size.height * 0.900)
-        let end = CGPoint(x: size.width * 0.812, y: size.height * 0.732)
+    private func energyParticle(progress: CGFloat, size: CGSize) -> some View {
+        // Cubic Bezier follows the cable from the right charging pile to the
+        // vehicle-side battery socket. Increasing progress therefore means
+        // "charger → vehicle", never the reverse.
+        let start = CGPoint(x: size.width * 0.87, y: size.height * 0.58)
+        let control1 = CGPoint(x: size.width * 0.80, y: size.height * 0.84)
+        let control2 = CGPoint(x: size.width * 0.65, y: size.height * 0.54)
+        let end = CGPoint(x: size.width * 0.57, y: size.height * 0.66)
         let inverse = 1 - progress
         let point = CGPoint(
-            x: inverse * inverse * start.x + 2 * inverse * progress * control.x + progress * progress * end.x,
-            y: inverse * inverse * start.y + 2 * inverse * progress * control.y + progress * progress * end.y
+            x: inverse * inverse * inverse * start.x
+                + 3 * inverse * inverse * progress * control1.x
+                + 3 * inverse * progress * progress * control2.x
+                + progress * progress * progress * end.x,
+            y: inverse * inverse * inverse * start.y
+                + 3 * inverse * inverse * progress * control1.y
+                + 3 * inverse * progress * progress * control2.y
+                + progress * progress * progress * end.y
         )
 
         Circle()
             .fill(Color.teslaGreen)
             .frame(width: max(3, size.width * 0.012), height: max(3, size.width * 0.012))
-            .shadow(color: Color.teslaGreen.opacity(0.95), radius: 6)
+            .shadow(color: Color.teslaGreen.opacity(0.96), radius: 6)
             .position(point)
     }
 }
