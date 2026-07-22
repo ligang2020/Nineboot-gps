@@ -1469,13 +1469,18 @@ private struct VehicleMotionScene: View {
                 .shadow(color: .black.opacity(0.18), radius: 17, x: 0, y: 12)
                 .offset(x: -size.width * 0.08, y: size.height * 0.04)
 
+            // Keep the charging pile visually secondary to the customer's
+            // vehicle: a slimmer body and compact illuminated face create a
+            // balanced right-side anchor instead of competing with the car.
             ChargePillar(isAnimating: isAnimating)
-                .frame(width: min(size.width * 0.18, 72), height: size.height * 0.67)
-                .offset(x: size.width * 0.37, y: size.height * 0.10)
+                .frame(width: min(size.width * 0.155, 60), height: size.height * 0.59)
+                .offset(x: size.width * 0.39, y: size.height * 0.14)
 
+            // The charging HUD is intentionally compact, leaving the handlebar
+            // and front half of the real vehicle unobstructed.
             ChargeHudCard(state: snapshot.state, isAnimating: isAnimating)
-                .frame(width: min(size.width * 0.46, 180))
-                .offset(x: -size.width * 0.01, y: -size.height * 0.22)
+                .frame(width: min(size.width * 0.35, 132))
+                .offset(x: -size.width * 0.035, y: -size.height * 0.255)
 
             Capsule()
                 .fill(LinearGradient(colors: [.clear, Color.teslaGreen.opacity(0.88), .white.opacity(0.88), Color.teslaGreen.opacity(0.88), .clear], startPoint: .leading, endPoint: .trailing))
@@ -1680,30 +1685,30 @@ private struct ChargePillar: View {
                 }
                 .shadow(color: .black.opacity(0.20), radius: 8, x: -3, y: 7)
 
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(.black)
                         .overlay {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.teslaGreen.opacity(0.8), lineWidth: 1.4)
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(Color.teslaGreen.opacity(0.8), lineWidth: 1.25)
                         }
                     Image(systemName: "bolt.fill")
-                        .font(.system(size: 21, weight: .black))
+                        .font(.system(size: 16, weight: .black))
                         .foregroundStyle(Color.teslaGreen)
                         .shadow(color: Color.teslaGreen.opacity(0.9), radius: isAnimating ? 8 : 3)
                         .scaleEffect(isAnimating ? 1.08 : 0.92)
                 }
-                .frame(height: 54)
+                .frame(width: 40, height: 40)
 
                 Capsule()
                     .fill(LinearGradient(colors: [Color.teslaGreen, Color.cyan.opacity(0.25)], startPoint: .top, endPoint: .bottom))
-                    .frame(width: 3, height: 32)
-                    .shadow(color: Color.teslaGreen.opacity(0.9), radius: 4)
+                    .frame(width: 2.5, height: 25)
+                    .shadow(color: Color.teslaGreen.opacity(0.9), radius: 3)
 
                 Spacer(minLength: 0)
             }
-            .padding(7)
+            .padding(6)
         }
     }
 }
@@ -1713,20 +1718,20 @@ private struct ChargeHudCard: View {
     var isAnimating: Bool
 
     var body: some View {
-        VStack(spacing: 3) {
+        VStack(spacing: 2) {
             Text("正在充电")
-                .font(.caption.weight(.bold))
+                .font(.caption2.weight(.bold))
                 .foregroundStyle(Color.teslaGreen)
             HStack(alignment: .lastTextBaseline, spacing: 2) {
                 Text(state.battery.map(String.init) ?? "--")
-                    .font(.system(size: 34, weight: .semibold, design: .rounded))
+                    .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                 Text("%")
-                    .font(.subheadline.weight(.bold))
+                    .font(.caption.weight(.bold))
             }
             .foregroundStyle(.white)
             Text("预计充满 \(state.estimatedFullChargeTimeText)")
-                .font(.caption2.monospacedDigit().weight(.medium))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.72))
                 .lineLimit(1)
 
@@ -1734,27 +1739,28 @@ private struct ChargeHudCard: View {
                 ForEach(0..<3, id: \.self) { index in
                     Circle()
                         .fill(Color.teslaGreen)
-                        .frame(width: 5, height: 5)
-                        .scaleEffect(isAnimating && index == 1 ? 1.35 : 0.75)
+                        .frame(width: 4, height: 4)
+                        .scaleEffect(isAnimating && index == 1 ? 1.30 : 0.76)
                 }
             }
-            .padding(.top, 2)
+            .padding(.top, 1)
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 13)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 9)
         .background(
             LinearGradient(
                 colors: [Color(red: 0.13, green: 0.17, blue: 0.18).opacity(0.96), Color.black.opacity(0.88)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.teslaGreen.opacity(0.70), lineWidth: 1.2)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.teslaGreen.opacity(0.66), lineWidth: 1.0)
         }
-        .shadow(color: Color.teslaGreen.opacity(isAnimating ? 0.32 : 0.12), radius: 16)
+        .shadow(color: Color.teslaGreen.opacity(isAnimating ? 0.26 : 0.10), radius: 11)
     }
 }
 
