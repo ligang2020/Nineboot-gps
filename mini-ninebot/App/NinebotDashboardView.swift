@@ -2017,7 +2017,6 @@ private struct LiveRideEnvironment: View {
                 citySkyline(size: size, phase: animatesRoadAndCity ? phase : 0)
                 road(size: size, phase: animatesRoadAndCity ? phase : 0)
                 streetLights(size: size)
-                CityEnvironmentReadout(weather: weather, rideDurationText: rideDurationText)
 
                 if weather.hasRain {
                     rain(size: size, drift: precipitationDrift)
@@ -2030,6 +2029,14 @@ private struct LiveRideEnvironment: View {
                 if weather.hasLightning {
                     lightning(size: size, opacity: lightningFlash)
                 }
+
+                // Keep scene information above weather particles and constrain it
+                // to the same measured card bounds as the city scene.
+                CityEnvironmentReadout(
+                    weather: weather,
+                    rideDurationText: rideDurationText,
+                    sceneSize: size
+                )
             }
             .overlay {
                 if lightningFlash > 0.02 {
@@ -2353,48 +2360,48 @@ private struct LiveRideEnvironment: View {
 private struct CityEnvironmentReadout: View {
     var weather: RideWeatherSnapshot
     var rideDurationText: String?
+    /// Supplied by `LiveRideEnvironment` so this overlay shares the exact card
+    /// bounds and never receives an unconstrained nested GeometryReader proposal.
+    var sceneSize: CGSize
 
     var body: some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-            let foreground = weather.isNight ? Color.white.opacity(0.90) : Color.black.opacity(0.66)
-            let secondary = weather.isNight ? Color.white.opacity(0.68) : Color.black.opacity(0.48)
-            let labelSize = min(max(size.width * 0.024, 7.5), 9.5)
-            let timeSize = min(max(size.width * 0.030, 9), 11)
-            let topInset = min(max(size.height * 0.070, 16), 25)
-            let horizontalInset = min(max(size.width * 0.055, 18), 32)
+        let size = sceneSize
+        let foreground = weather.isNight ? Color.white.opacity(0.92) : Color.black.opacity(0.70)
+        let secondary = weather.isNight ? Color.white.opacity(0.72) : Color.black.opacity(0.52)
+        let labelSize = min(max(size.width * 0.023, 8), 9.5)
+        let timeSize = min(max(size.width * 0.028, 9), 10.5)
+        let topInset = min(max(size.height * 0.075, 18), 24)
+        let horizontalInset = min(max(size.width * 0.055, 18), 26)
+        let metricsWidth = min(max(size.width * 0.34, 112), 142)
+        let rideTimeWidth = max(96, size.width - metricsWidth - horizontalInset * 3)
+        let metricsX = max(horizontalInset, size.width - metricsWidth - horizontalInset)
 
-            ZStack(alignment: .topLeading) {
-                if let rideDurationText {
-                    HStack(spacing: 3) {
-                        Image(systemName: "figure.outdoor.cycle")
-                        Text("骑行 \(rideDurationText)")
-                            .monospacedDigit()
-                    }
-                    .font(.system(size: timeSize, weight: .semibold, design: .rounded))
-                    .foregroundStyle(foreground)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-                    .shadow(color: weather.isNight ? .black.opacity(0.76) : .white.opacity(0.82), radius: 2)
-                    .frame(width: size.width * 0.40, alignment: .leading)
-                    .padding(.leading, horizontalInset)
-                    .padding(.top, topInset)
+        ZStack(alignment: .topLeading) {
+            if let rideDurationText {
+                HStack(spacing: 3) {
+                    Image(systemName: "figure.outdoor.cycle")
+                    Text("骑行 \(rideDurationText)")
+                        .monospacedDigit()
                 }
-
-                VStack(alignment: .trailing, spacing: 3) {
-                    metric(icon: "thermometer.medium", title: "气温", value: weather.temperatureText, foreground: foreground, secondary: secondary, fontSize: labelSize)
-                    metric(icon: "sun.max", title: "紫外线", value: weather.ultravioletText, foreground: foreground, secondary: secondary, fontSize: labelSize)
-                    metric(icon: "aqi.medium", title: "空气", value: weather.airQualityText, foreground: foreground, secondary: secondary, fontSize: labelSize)
-                }
-                .frame(width: size.width * 0.34, alignment: .trailing)
-                .padding(.leading, size.width * 0.61)
-                .padding(.top, topInset)
+                .font(.system(size: timeSize, weight: .semibold, design: .rounded))
+                .foregroundStyle(foreground)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .shadow(color: weather.isNight ? .black.opacity(0.76) : .white.opacity(0.82), radius: 2)
+                .frame(width: rideTimeWidth, alignment: .leading)
+                .offset(x: horizontalInset, y: topInset)
             }
-            // The explicit frame prevents the two readouts from being laid out
-            // against an unconstrained overlay and clipping above the card.
-            .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .clipped()
+
+            VStack(alignment: .trailing, spacing: 3) {
+                metric(icon: "thermometer.medium", title: "气温", value: weather.temperatureText, foreground: foreground, secondary: secondary, fontSize: labelSize)
+                metric(icon: "sun.max", title: "紫外线", value: weather.ultravioletText, foreground: foreground, secondary: secondary, fontSize: labelSize)
+                metric(icon: "aqi.medium", title: "空气", value: weather.airQualityText, foreground: foreground, secondary: secondary, fontSize: labelSize)
+            }
+            .frame(width: metricsWidth, alignment: .trailing)
+            .offset(x: metricsX, y: topInset)
         }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .clipped()
         .allowsHitTesting(false)
     }
 
