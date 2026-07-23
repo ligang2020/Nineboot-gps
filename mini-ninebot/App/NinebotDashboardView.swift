@@ -1996,7 +1996,10 @@ private struct LiveRideEnvironment: View {
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            let cloudDrift = CGFloat(sin(phase * 0.035)) * size.width * 0.10
+            // Clouds stay alive even in parked and charging scenes. The prior
+            // drift covered only a few on-screen points over a very long cycle;
+            // this gives each layer a clearly readable, gentle cross-card glide.
+            let cloudDrift = CGFloat(sin(phase * 0.78)) * size.width * 0.30
             let precipitationDrift = CGFloat((phase * (weather.isBlizzard ? 1.42 : 0.82)).truncatingRemainder(dividingBy: 1.0))
             let lightningFlash = weather.hasLightning
                 ? pow(max(0, sin(phase * 1.9) + sin(phase * 0.47 + 1.8) - 1.42) / 0.58, 2)
@@ -2078,7 +2081,7 @@ private struct LiveRideEnvironment: View {
             phase: phase,
             variant: 0
         )
-            .offset(x: -size.width * 0.33 + cloudDrift * 0.34, y: -size.height * 0.29)
+            .offset(x: -size.width * 0.33 + cloudDrift * 0.88, y: -size.height * 0.29)
         cloud(
             width: size.width * 0.42,
             height: size.height * 0.18,
@@ -2086,7 +2089,7 @@ private struct LiveRideEnvironment: View {
             phase: phase,
             variant: 1
         )
-            .offset(x: size.width * 0.27 - cloudDrift * 0.22, y: -size.height * 0.18)
+            .offset(x: size.width * 0.27 - cloudDrift * 0.72, y: -size.height * 0.18)
     }
 
     @ViewBuilder
@@ -2117,9 +2120,9 @@ private struct LiveRideEnvironment: View {
         if weather.condition != .clear {
             let cloudOpacity = weather.condition == .cloudy ? 0.44 : 0.58
             nightCloud(width: size.width * 0.45, height: size.height * 0.18, opacity: cloudOpacity, phase: phase, variant: 0)
-                .offset(x: -size.width * 0.24 + cloudDrift * 0.16, y: -size.height * 0.29)
+                .offset(x: -size.width * 0.24 + cloudDrift * 0.72, y: -size.height * 0.29)
             nightCloud(width: size.width * 0.52, height: size.height * 0.20, opacity: cloudOpacity + 0.06, phase: phase, variant: 1)
-                .offset(x: size.width * 0.26 - cloudDrift * 0.13, y: -size.height * 0.20)
+                .offset(x: size.width * 0.26 - cloudDrift * 0.60, y: -size.height * 0.20)
         }
     }
 
@@ -2180,12 +2183,14 @@ private struct LiveRideEnvironment: View {
     }
 
     private func citySkyline(size: CGSize, phase: TimeInterval) -> some View {
-        let frontProgress = CGFloat((phase * 0.060).truncatingRemainder(dividingBy: 1.0))
-        let rearProgress = CGFloat((phase * 0.034).truncatingRemainder(dividingBy: 1.0))
-        let frontSpacing = size.width * 0.086
-        let rearSpacing = size.width * 0.27
-        let frontScroll = frontProgress * frontSpacing * 12
-        let rearScroll = rearProgress * rearSpacing * 4
+        let frontProgress = CGFloat((phase * 0.045).truncatingRemainder(dividingBy: 1.0))
+        let rearProgress = CGFloat((phase * 0.028).truncatingRemainder(dividingBy: 1.0))
+        // Use a deliberately open rhythm. The former 24-tower front row had
+        // narrower gaps than the towers themselves, so it collapsed into a wall.
+        let frontSpacing = size.width * 0.205
+        let rearSpacing = size.width * 0.34
+        let frontScroll = frontProgress * frontSpacing * 8
+        let rearScroll = rearProgress * rearSpacing * 5
 
         return ZStack(alignment: .bottom) {
             // Atmospheric distance and a continuous street-level silhouette give
@@ -2200,33 +2205,52 @@ private struct LiveRideEnvironment: View {
             .frame(height: size.height * 0.40)
             .offset(y: size.height * 0.08)
 
-            ForEach(0..<8, id: \.self) { index in
+            // The distant layer uses only a few tall landmarks, leaving sky
+            // clearly visible between them rather than drawing a second wall.
+            ForEach(0..<6, id: \.self) { index in
                 let pattern = index % 4
                 officeTower(
                     index: pattern + 20,
-                    width: size.width * (0.13 + CGFloat(pattern % 2) * 0.025),
-                    height: size.height * (0.46 + CGFloat(pattern) * 0.065),
+                    width: size.width * (0.12 + CGFloat(pattern % 2) * 0.022),
+                    height: size.height * (0.42 + CGFloat(pattern) * 0.055),
                     isRearTower: true,
                     size: size
                 )
                 .offset(
-                    x: -size.width * 0.43 + CGFloat(index) * rearSpacing - rearScroll,
-                    y: size.height * 0.035
+                    x: -size.width * 0.54 + CGFloat(index) * rearSpacing - rearScroll,
+                    y: size.height * 0.055
                 )
             }
 
-            ForEach(0..<24, id: \.self) { index in
-                let pattern = index % 12
+            // Keep open alleys between foreground towers. At phone size these
+            // negative spaces read far better than a large number of tiny façades.
+            ForEach(0..<9, id: \.self) { index in
+                let pattern = index % 9
                 officeTower(
                     index: pattern,
-                    width: size.width * (0.075 + CGFloat((pattern * 5) % 4) * 0.014),
-                    height: size.height * (0.54 + CGFloat((pattern * 7) % 7) * 0.048),
+                    width: size.width * (0.085 + CGFloat((pattern * 5) % 4) * 0.014),
+                    height: size.height * (0.48 + CGFloat((pattern * 7) % 6) * 0.043),
                     isRearTower: false,
                     size: size
                 )
                 .offset(
-                    x: -size.width * 0.47 + CGFloat(index) * frontSpacing - frontScroll,
-                    y: size.height * 0.025
+                    x: -size.width * 0.56 + CGFloat(index) * frontSpacing - frontScroll,
+                    y: size.height * 0.050
+                )
+            }
+
+            // A short row of varied low-rise buildings grounds the scene while
+            // retaining visible streets and alleys between each building.
+            ForEach(0..<7, id: \.self) { index in
+                let pattern = index % 6
+                lowRiseBuilding(
+                    index: pattern,
+                    width: size.width * (0.18 + CGFloat((pattern * 3) % 3) * 0.020),
+                    height: size.height * (0.12 + CGFloat((pattern * 5) % 4) * 0.020)
+                )
+                .offset(
+                    x: -size.width * 0.57 + CGFloat(index) * size.width * 0.30 - frontScroll * 0.56,
+                    y: size.height * 0.270
                 )
             }
 
@@ -2236,15 +2260,87 @@ private struct LiveRideEnvironment: View {
                 .offset(y: size.height * 0.32)
 
             HStack(alignment: .bottom, spacing: 0) {
-                ForEach(0..<14, id: \.self) { index in
+                ForEach(0..<9, id: \.self) { index in
                     Rectangle()
                         .fill(weather.isNight ? Color.black.opacity(0.48) : Color(red: 0.16, green: 0.25, blue: 0.28).opacity(0.28))
-                        .frame(width: size.width * 0.086, height: size.height * (0.025 + CGFloat((index * 11) % 4) * 0.009))
+                        .frame(width: size.width * 0.14, height: size.height * (0.025 + CGFloat((index * 11) % 4) * 0.009))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .center)
             .offset(y: size.height * 0.335)
         }
+    }
+
+    private func lowRiseBuilding(index: Int, width: CGFloat, height: CGFloat) -> some View {
+        let façadeTop = weather.isNight
+            ? Color(red: 0.11, green: 0.15, blue: 0.20)
+            : Color(red: 0.35, green: 0.49, blue: 0.55)
+        let façadeBottom = weather.isNight
+            ? Color(red: 0.035, green: 0.055, blue: 0.08)
+            : Color(red: 0.20, green: 0.34, blue: 0.40)
+
+        return ZStack(alignment: .top) {
+            RoundedRectangle(cornerRadius: max(1.5, width * 0.055), style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [façadeTop, façadeBottom],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: max(1.5, width * 0.055), style: .continuous)
+                        .stroke(Color.white.opacity(weather.isNight ? 0.09 : 0.20), lineWidth: 0.55)
+                }
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Color.black.opacity(weather.isNight ? 0.36 : 0.18))
+                        .frame(height: max(2, height * 0.18))
+                }
+
+            if weather.isNight {
+                VStack(spacing: max(1.3, height * 0.11)) {
+                    ForEach(0..<3, id: \.self) { row in
+                        HStack(spacing: max(1.4, width * 0.075)) {
+                            ForEach(0..<5, id: \.self) { column in
+                                RoundedRectangle(cornerRadius: 0.45, style: .continuous)
+                                    .fill(
+                                        Color(red: 1.0, green: 0.71, blue: 0.28)
+                                            .opacity((row * 5 + column + index).isMultiple(of: 3) ? 0.82 : 0.13)
+                                    )
+                                    .frame(width: max(1.2, width * 0.075), height: max(1.0, height * 0.055))
+                            }
+                        }
+                    }
+                }
+                .padding(.top, max(3, height * 0.13))
+            } else {
+                // Daytime has façade seams only: windows must remain unlit.
+                VStack(spacing: max(2, height * 0.19)) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        Rectangle()
+                            .fill(Color(red: 0.08, green: 0.22, blue: 0.29).opacity(0.18))
+                            .frame(height: 0.5)
+                    }
+                }
+                .padding(.top, max(3, height * 0.13))
+                .padding(.horizontal, width * 0.08)
+            }
+
+            if index.isMultiple(of: 2) {
+                HStack(spacing: width * 0.10) {
+                    RoundedRectangle(cornerRadius: 0.8)
+                        .fill(Color.black.opacity(weather.isNight ? 0.34 : 0.20))
+                        .frame(width: max(3, width * 0.22), height: max(1.5, height * 0.055))
+                    RoundedRectangle(cornerRadius: 0.8)
+                        .fill(Color.black.opacity(weather.isNight ? 0.34 : 0.20))
+                        .frame(width: max(3, width * 0.16), height: max(1.5, height * 0.055))
+                }
+                .offset(y: -max(2, height * 0.07))
+            }
+        }
+        .frame(width: width, height: height)
+        .shadow(color: Color.black.opacity(weather.isNight ? 0.20 : 0.08), radius: 3, y: 1)
     }
 
     private func officeTower(
@@ -2260,7 +2356,9 @@ private struct LiveRideEnvironment: View {
         let glassBottom = weather.isNight
             ? Color(red: 0.025, green: 0.05, blue: 0.10).opacity(isRearTower ? 0.70 : 0.98)
             : Color(red: 0.24, green: 0.45, blue: 0.59).opacity(isRearTower ? 0.44 : 0.70)
-        let windowOpacity = weather.isNight ? 0.90 : 0.34
+        // Window illumination belongs strictly to the night scene. Daytime
+        // façades retain their glass and structural lines but no lit windows.
+        let windowOpacity = weather.isNight ? 0.90 : 0
 
         return ZStack(alignment: .top) {
             // Narrow side plane, roof parapet and HVAC boxes create the hard
@@ -2287,22 +2385,35 @@ private struct LiveRideEnvironment: View {
                         .stroke(Color.white.opacity(weather.isNight ? 0.14 : 0.32), lineWidth: 0.7)
                 }
                 .overlay(alignment: .top) {
-                    VStack(spacing: max(1.5, height * 0.045)) {
-                        ForEach(0..<9, id: \.self) { row in
-                            HStack(spacing: max(1.5, width * 0.10)) {
-                                ForEach(0..<4, id: \.self) { column in
-                                    RoundedRectangle(cornerRadius: 0.7, style: .continuous)
-                                        .fill(
-                                            weather.isNight
-                                                ? Color(red: 1.0, green: 0.72, blue: 0.28).opacity((row * 4 + column + index).isMultiple(of: 4) ? windowOpacity : 0.18)
-                                                : Color.white.opacity((row + column + index).isMultiple(of: 3) ? windowOpacity : 0.14)
-                                        )
-                                        .frame(width: max(1.4, width * 0.10), height: max(1.2, height * 0.014))
+                    if weather.isNight {
+                        VStack(spacing: max(1.5, height * 0.045)) {
+                            ForEach(0..<9, id: \.self) { row in
+                                HStack(spacing: max(1.5, width * 0.10)) {
+                                    ForEach(0..<4, id: \.self) { column in
+                                        RoundedRectangle(cornerRadius: 0.7, style: .continuous)
+                                            .fill(
+                                                Color(red: 1.0, green: 0.72, blue: 0.28)
+                                                    .opacity((row * 4 + column + index).isMultiple(of: 4) ? windowOpacity : 0.18)
+                                            )
+                                            .frame(width: max(1.4, width * 0.10), height: max(1.2, height * 0.014))
+                                    }
                                 }
                             }
                         }
+                        .padding(.top, max(5, height * 0.07))
+                    } else {
+                        // Subtle façade mullions preserve architectural detail
+                        // during the day without appearing as illuminated windows.
+                        VStack(spacing: max(2.5, height * 0.075)) {
+                            ForEach(0..<7, id: \.self) { _ in
+                                Rectangle()
+                                    .fill(Color(red: 0.10, green: 0.28, blue: 0.39).opacity(0.18))
+                                    .frame(height: 0.55)
+                            }
+                        }
+                        .padding(.top, max(5, height * 0.07))
+                        .padding(.horizontal, width * 0.08)
                     }
-                    .padding(.top, max(5, height * 0.07))
                 }
                 .overlay(alignment: .leading) {
                     Rectangle()
@@ -2435,7 +2546,11 @@ private struct LiveRideEnvironment: View {
 
         return ZStack {
             ForEach(0..<4, id: \.self) { index in
-                streetLamp(height: size.height * 0.43, glow: weather.isNight ? 0.96 : 0.16)
+                streetLamp(
+                    height: size.height * 0.43,
+                    isLit: weather.isNight,
+                    glow: weather.isNight ? 0.96 : 0
+                )
                     .scaleEffect(0.82)
                     .offset(
                         x: -size.width * 0.48 + CGFloat(index) * spacing - travel * spacing,
@@ -2445,7 +2560,7 @@ private struct LiveRideEnvironment: View {
         }
     }
 
-    private func streetLamp(height: CGFloat, glow: Double) -> some View {
+    private func streetLamp(height: CGFloat, isLit: Bool, glow: Double) -> some View {
         ZStack(alignment: .bottom) {
             if glow > 0.4 {
                 Path { path in
@@ -2468,10 +2583,14 @@ private struct LiveRideEnvironment: View {
                         .frame(width: 18, height: 2.8)
                         .offset(x: 7, y: 1)
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Color(red: 1.0, green: 0.78, blue: 0.30).opacity(glow))
+                        .fill(
+                            isLit
+                                ? Color(red: 1.0, green: 0.78, blue: 0.30).opacity(glow)
+                                : Color(white: 0.16)
+                        )
                         .frame(width: 9, height: 4)
                         .offset(x: 15, y: 3)
-                        .shadow(color: Color.orange.opacity(glow), radius: glow > 0.5 ? 11 : 1)
+                        .shadow(color: Color.orange.opacity(isLit ? glow : 0), radius: isLit ? 11 : 0)
                 }
                 Capsule()
                     .fill(LinearGradient(colors: [Color(white: 0.28), Color(white: 0.08)], startPoint: .leading, endPoint: .trailing))
