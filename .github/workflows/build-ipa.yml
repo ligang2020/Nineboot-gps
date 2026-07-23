@@ -2,12 +2,25 @@ name: Build and publish IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Also upload the IPA to a GitHub Release'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      release_tag:
+        description: 'Release tag to create/update when publish_release=true'
+        required: false
+        default: 'latest-unsigned-ipa'
   push:
     branches: [main, master]
     tags: ['v*']
 
-# A tag build creates/updates the matching GitHub Release. Branch builds upload
-# an Actions artifact, which keeps unsigned development packages short-lived.
+# Every run uploads an Actions artifact. Tag builds publish the matching GitHub
+# Release automatically; manual runs can opt into publishing/updating a release.
 permissions:
   contents: write
 
@@ -36,24 +49,41 @@ jobs:
             --derived-data "$DERIVED_DATA")"
           echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
           echo "checksum_path=$IPA_PATH.sha256" >> "$GITHUB_OUTPUT"
+          echo "ipa_name=$(basename "$IPA_PATH")" >> "$GITHUB_OUTPUT"
 
-      - name: Upload IPA artifact
+      - name: Upload IPA artifact to GitHub Actions
         uses: actions/upload-artifact@v4
         with:
-          name: NinePlus-LiveRide-unsigned-ipa
+          name: ${{ steps.package.outputs.ipa_name }}
           path: |
             ${{ steps.package.outputs.ipa_path }}
             ${{ steps.package.outputs.checksum_path }}
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish tag release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish_release }}" == "true" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload IPA to GitHub Release
+        if: steps.release.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           IPA_PATH: ${{ steps.package.outputs.ipa_path }}
           CHECKSUM_PATH: ${{ steps.package.outputs.checksum_path }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
           files=("$IPA_PATH" "$CHECKSUM_PATH")
@@ -62,5 +92,5 @@ jobs:
           else
             gh release create "$TAG_NAME" "${files[@]}" \
               --title "NinePlus LiveRide $TAG_NAME" \
-              --generate-notes
+              --notes "Unsigned IPA built by GitHub Actions from ${GITHUB_SHA}."
           fi

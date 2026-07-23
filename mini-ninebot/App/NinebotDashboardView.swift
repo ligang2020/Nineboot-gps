@@ -1485,8 +1485,15 @@ private struct VehicleMotionScene: View {
         if let latitude = snapshot.state.latitude,
            let longitude = snapshot.state.longitude,
            CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: latitude, longitude: longitude)) {
+            // Send the raw vehicle GPS to the weather providers. MapKit uses
+            // its own China-coordinate conversion for display, but Open-Meteo
+            // expects WGS-84 values; converting this coordinate for the map
+            // here would move the weather lookup away from the vehicle.
             return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
         }
+
+        // Only use the phone as a one-shot fallback while the vehicle endpoint
+        // has not returned a coordinate at all.
         return weatherLocation.coordinate
     }
 
@@ -1948,6 +1955,62 @@ private final class RideWeatherLocationProvider: NSObject, ObservableObject, CLL
     }
 }
 
+
+private struct RideWeatherCache: Codable {
+    var latitude: Double
+    var longitude: Double
+    var condition: String
+    var isDay: Bool
+    var observedAt: Date
+    var temperatureCelsius: Double?
+    var ultravioletIndex: Double?
+    var airQualityIndex: Int?
+    var isBlizzard: Bool
+
+    init(coordinate: CLLocationCoordinate2D, snapshot: RideWeatherSnapshot) {
+        latitude = coordinate.latitude
+        longitude = coordinate.longitude
+        switch snapshot.condition {
+        case .clear: condition = "clear"
+        case .cloudy: condition = "cloudy"
+        case .rain: condition = "rain"
+        case .snow: condition = "snow"
+        case .storm: condition = "storm"
+        }
+        isDay = snapshot.isDay
+        observedAt = snapshot.observedAt
+        temperatureCelsius = snapshot.temperatureCelsius
+        ultravioletIndex = snapshot.ultravioletIndex
+        airQualityIndex = snapshot.airQualityIndex
+        isBlizzard = snapshot.isBlizzard
+    }
+
+    var snapshot: RideWeatherSnapshot {
+        let resolvedCondition: RideWeatherSnapshot.Condition
+        switch condition {
+        case "cloudy": resolvedCondition = .cloudy
+        case "rain": resolvedCondition = .rain
+        case "snow": resolvedCondition = .snow
+        case "storm": resolvedCondition = .storm
+        default: resolvedCondition = .clear
+        }
+        return RideWeatherSnapshot(
+            condition: resolvedCondition,
+            isDay: isDay,
+            observedAt: observedAt,
+            temperatureCelsius: temperatureCelsius,
+            ultravioletIndex: ultravioletIndex,
+            airQualityIndex: airQualityIndex,
+            isBlizzard: isBlizzard
+        )
+    }
+
+    func applies(to coordinate: CLLocationCoordinate2D) -> Bool {
+        CLLocation(latitude: latitude, longitude: longitude)
+            .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)) < 25_000
+    }
+}
+
 @MainActor
 private final class RideWeatherProvider: ObservableObject {
     @Published private(set) var snapshot = RideWeatherSnapshot.fallback()
@@ -1955,6 +2018,9 @@ private final class RideWeatherProvider: ObservableObject {
     private var lastCoordinate: CLLocationCoordinate2D?
     private var lastRefreshAt: Date?
     private var currentRequestID = UUID()
+
+    private static let cacheKey = "ninebot.ride-weather.cache.v1"
+    private static let cacheLifetime: TimeInterval = 30 * 60
 
     func refresh(latitude: Double?, longitude: Double?, force: Bool = false) async {
         guard let latitude, let longitude,
@@ -1965,6 +2031,8 @@ private final class RideWeatherProvider: ObservableObject {
         }
 
         let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+        restoreCachedSnapshot(for: coordinate)
+
         if !force,
            let lastCoordinate,
            let lastRefreshAt,
@@ -1976,49 +2044,104 @@ private final class RideWeatherProvider: ObservableObject {
 
         let requestID = UUID()
         currentRequestID = requestID
-        var forecastComponents = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
-        forecastComponents?.queryItems = [
-            URLQueryItem(name: "latitude", value: String(latitude)),
-            URLQueryItem(name: "longitude", value: String(longitude)),
-            // Request the instantaneous UV index. `daily=uv_index_max` is a
-            // daytime peak and incorrectly shows a non-zero value after dark.
-            URLQueryItem(name: "current", value: "weather_code,is_day,temperature_2m,uv_index"),
-            URLQueryItem(name: "temperature_unit", value: "celsius"),
-            URLQueryItem(name: "timezone", value: "auto")
-        ]
-
-        guard let forecastURL = forecastComponents?.url else { return }
-
         do {
-            let (data, response) = try await URLSession.shared.data(from: forecastURL)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200..<300).contains(httpResponse.statusCode) else {
-                return
-            }
-            let payload = try JSONDecoder().decode(OpenMeteoRideWeatherResponse.self, from: data)
+            // Open-Meteo deployments have not always exposed `uv_index` as a
+            // current-weather variable. Try the richer request first, then fall
+            // back to the core current values so temperature never disappears
+            // just because UV is rejected by the API.
+            let payload = try await fetchForecast(latitude: latitude, longitude: longitude)
             guard let current = payload.current, currentRequestID == requestID else { return }
 
-            // Publish temperature and UV immediately. The air-quality service
-            // is independent and can occasionally take longer; previously its
-            // failure or delay prevented every weather value from appearing.
+            let preservedAirQualityIndex = nearbyPreviousAirQualityIndex(for: coordinate)
             snapshot = .openMeteo(
                 weatherCode: current.weatherCode,
                 isDay: current.isDay,
                 temperatureCelsius: current.temperature2M,
                 ultravioletIndex: current.uvIndex,
-                airQualityIndex: nil,
+                airQualityIndex: preservedAirQualityIndex,
                 observedAt: .now
             )
             lastCoordinate = coordinate
             lastRefreshAt = .now
+            saveCachedSnapshot(for: coordinate)
 
-            let airQualityIndex = await fetchAirQuality(latitude: latitude, longitude: longitude)
-            guard currentRequestID == requestID else { return }
-            snapshot.airQualityIndex = airQualityIndex
+            if let airQualityIndex = await fetchAirQuality(latitude: latitude, longitude: longitude),
+               currentRequestID == requestID {
+                var updatedSnapshot = snapshot
+                updatedSnapshot.airQualityIndex = airQualityIndex
+                snapshot = updatedSnapshot
+                saveCachedSnapshot(for: coordinate)
+            }
         } catch {
             // Preserve the last known conditions. The view still falls back to
             // a local day/night city scene before the first successful request.
         }
+    }
+
+    private func restoreCachedSnapshot(for coordinate: CLLocationCoordinate2D) {
+        guard let data = UserDefaults.standard.data(forKey: Self.cacheKey),
+              let cache = try? JSONDecoder().decode(RideWeatherCache.self, from: data),
+              Date().timeIntervalSince(cache.observedAt) < Self.cacheLifetime,
+              cache.applies(to: coordinate) else {
+            return
+        }
+        snapshot = cache.snapshot
+    }
+
+    private func saveCachedSnapshot(for coordinate: CLLocationCoordinate2D) {
+        let cache = RideWeatherCache(coordinate: coordinate, snapshot: snapshot)
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        UserDefaults.standard.set(data, forKey: Self.cacheKey)
+    }
+
+    private func nearbyPreviousAirQualityIndex(for coordinate: CLLocationCoordinate2D) -> Int? {
+        if let lastCoordinate,
+           CLLocation(latitude: lastCoordinate.latitude, longitude: lastCoordinate.longitude)
+            .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)) < 25_000 {
+            return snapshot.airQualityIndex
+        }
+
+        guard let data = UserDefaults.standard.data(forKey: Self.cacheKey),
+              let cache = try? JSONDecoder().decode(RideWeatherCache.self, from: data),
+              Date().timeIntervalSince(cache.observedAt) < Self.cacheLifetime,
+              cache.applies(to: coordinate) else {
+            return nil
+        }
+        return cache.airQualityIndex
+    }
+
+    private func fetchForecast(latitude: Double, longitude: Double) async throws -> OpenMeteoRideWeatherResponse {
+        do {
+            return try await fetchForecast(latitude: latitude, longitude: longitude, includesCurrentUV: true)
+        } catch {
+            return try await fetchForecast(latitude: latitude, longitude: longitude, includesCurrentUV: false)
+        }
+    }
+
+    private func fetchForecast(
+        latitude: Double,
+        longitude: Double,
+        includesCurrentUV: Bool
+    ) async throws -> OpenMeteoRideWeatherResponse {
+        var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
+        let currentVariables = includesCurrentUV
+            ? "weather_code,is_day,temperature_2m,uv_index"
+            : "weather_code,is_day,temperature_2m"
+        components?.queryItems = [
+            URLQueryItem(name: "latitude", value: String(latitude)),
+            URLQueryItem(name: "longitude", value: String(longitude)),
+            URLQueryItem(name: "current", value: currentVariables),
+            URLQueryItem(name: "temperature_unit", value: "celsius"),
+            URLQueryItem(name: "timezone", value: "auto")
+        ]
+        guard let forecastURL = components?.url else { throw URLError(.badURL) }
+
+        let (data, response) = try await URLSession.shared.data(from: forecastURL)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(OpenMeteoRideWeatherResponse.self, from: data)
     }
 
     private func fetchAirQuality(latitude: Double, longitude: Double) async -> Int? {
@@ -2026,7 +2149,9 @@ private final class RideWeatherProvider: ObservableObject {
         components?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
-            URLQueryItem(name: "current", value: "us_aqi"),
+            URLQueryItem(name: "current", value: "us_aqi,european_aqi,pm2_5"),
+            URLQueryItem(name: "hourly", value: "us_aqi,european_aqi,pm2_5"),
+            URLQueryItem(name: "forecast_days", value: "1"),
             URLQueryItem(name: "timezone", value: "auto")
         ]
         guard let url = components?.url else { return nil }
@@ -2038,8 +2163,7 @@ private final class RideWeatherProvider: ObservableObject {
                 return nil
             }
             let payload = try JSONDecoder().decode(OpenMeteoAirQualityResponse.self, from: data)
-            guard let value = payload.current?.usAirQualityIndex else { return nil }
-            return Int(value.rounded())
+            return payload.bestAirQualityIndex
         } catch {
             return nil
         }
@@ -2065,15 +2189,64 @@ private struct OpenMeteoRideWeatherResponse: Decodable {
 }
 
 private struct OpenMeteoAirQualityResponse: Decodable {
-    struct Current: Decodable {
+    struct Values: Decodable {
         let usAirQualityIndex: Double?
+        let europeanAirQualityIndex: Double?
+        let pm25: Double?
 
         enum CodingKeys: String, CodingKey {
             case usAirQualityIndex = "us_aqi"
+            case europeanAirQualityIndex = "european_aqi"
+            case pm25 = "pm2_5"
         }
     }
 
-    let current: Current?
+    struct Hourly: Decodable {
+        let usAirQualityIndex: [Double?]?
+        let europeanAirQualityIndex: [Double?]?
+        let pm25: [Double?]?
+
+        enum CodingKeys: String, CodingKey {
+            case usAirQualityIndex = "us_aqi"
+            case europeanAirQualityIndex = "european_aqi"
+            case pm25 = "pm2_5"
+        }
+    }
+
+    let current: Values?
+    let hourly: Hourly?
+
+    var bestAirQualityIndex: Int? {
+        let directValue = current?.usAirQualityIndex
+            ?? hourly?.usAirQualityIndex?.compactMap { $0 }.first
+            ?? current?.europeanAirQualityIndex
+            ?? hourly?.europeanAirQualityIndex?.compactMap { $0 }.first
+        if let directValue, directValue.isFinite, (0...500).contains(directValue) {
+            return Int(directValue.rounded())
+        }
+
+        let pm25Value = current?.pm25 ?? hourly?.pm25?.compactMap { $0 }.first
+        guard let pm25Value, pm25Value.isFinite, pm25Value >= 0 else { return nil }
+        return usAQIFromPM25(pm25Value)
+    }
+
+    private func usAQIFromPM25(_ value: Double) -> Int? {
+        let breakpoints: [(cLow: Double, cHigh: Double, iLow: Double, iHigh: Double)] = [
+            (0.0, 12.0, 0, 50),
+            (12.1, 35.4, 51, 100),
+            (35.5, 55.4, 101, 150),
+            (55.5, 150.4, 151, 200),
+            (150.5, 250.4, 201, 300),
+            (250.5, 350.4, 301, 400),
+            (350.5, 500.4, 401, 500)
+        ]
+        guard let breakpoint = breakpoints.first(where: { value >= $0.cLow && value <= $0.cHigh }) else {
+            return nil
+        }
+        let aqi = (breakpoint.iHigh - breakpoint.iLow) / (breakpoint.cHigh - breakpoint.cLow)
+            * (value - breakpoint.cLow) + breakpoint.iLow
+        return min(max(Int(aqi.rounded()), 0), 500)
+    }
 }
 
 private struct LiveRideEnvironment: View {
@@ -2721,7 +2894,9 @@ private struct LiveRideEnvironment: View {
 
                         var drop = Path()
                         drop.move(to: CGPoint(x: x, y: y))
-                        drop.addLine(to: CGPoint(x: x - length * 0.30, y: y + length))
+                        // Left-to-right wind: rain leans forward across the
+                        // riding direction instead of blowing backwards.
+                        drop.addLine(to: CGPoint(x: x + length * 0.42, y: y + length))
                         context.stroke(
                             drop,
                             with: .color(Color.white.opacity(baseOpacity * (0.38 + Double(layer) * 0.24))),
@@ -2762,7 +2937,7 @@ private struct LiveRideEnvironment: View {
         let isBlizzard = weather.isBlizzard
         let flakeCount = isBlizzard ? 112 : 58
         let windAmplitude = isBlizzard ? size.width * 0.13 : size.width * 0.035
-        let wind = CGFloat(sin(phase * 2.6)) * windAmplitude
+        let wind = (0.45 + CGFloat(sin(phase * 2.6)) * 0.55) * windAmplitude
         let flakeOpacity = weather.isNight ? 0.82 : 0.76
         let verticalCycle = size.height * 1.25
         let verticalOffset = size.height * 0.30
@@ -3161,32 +3336,34 @@ private struct ChargingCableEnergyFlow: View {
         .allowsHitTesting(false)
     }
 
-    @ViewBuilder
     private func energyParticle(progress: CGFloat, size: CGSize) -> some View {
         // Cubic Bezier follows the cable from the right charging pile to the
-        // vehicle-side battery socket. Increasing progress therefore means
-        // "charger → vehicle", never the reverse.
+        // vehicle-side battery socket. Splitting the coefficients prevents the
+        // SwiftUI type checker from timing out in a Release build.
         let start = CGPoint(x: size.width * 0.87, y: size.height * 0.58)
         let control1 = CGPoint(x: size.width * 0.80, y: size.height * 0.84)
         let control2 = CGPoint(x: size.width * 0.65, y: size.height * 0.54)
         let end = CGPoint(x: size.width * 0.57, y: size.height * 0.66)
         let inverse = 1 - progress
-        let point = CGPoint(
-            x: inverse * inverse * inverse * start.x
-                + 3 * inverse * inverse * progress * control1.x
-                + 3 * inverse * progress * progress * control2.x
-                + progress * progress * progress * end.x,
-            y: inverse * inverse * inverse * start.y
-                + 3 * inverse * inverse * progress * control1.y
-                + 3 * inverse * progress * progress * control2.y
-                + progress * progress * progress * end.y
-        )
+        let startCoefficient = inverse * inverse * inverse
+        let control1Coefficient = 3 * inverse * inverse * progress
+        let control2Coefficient = 3 * inverse * progress * progress
+        let endCoefficient = progress * progress * progress
+        let x = startCoefficient * start.x
+            + control1Coefficient * control1.x
+            + control2Coefficient * control2.x
+            + endCoefficient * end.x
+        let y = startCoefficient * start.y
+            + control1Coefficient * control1.y
+            + control2Coefficient * control2.y
+            + endCoefficient * end.y
+        let diameter = max(3, size.width * 0.012)
 
-        Circle()
+        return Circle()
             .fill(Color.teslaGreen)
-            .frame(width: max(3, size.width * 0.012), height: max(3, size.width * 0.012))
+            .frame(width: diameter, height: diameter)
             .shadow(color: Color.teslaGreen.opacity(0.96), radius: 6)
-            .position(point)
+            .position(x: x, y: y)
     }
 }
 
@@ -3231,18 +3408,73 @@ private struct RideMotionStreaks: View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 ForEach(0..<5, id: \.self) { index in
-                    let progress = CGFloat((phase * (1.08 + Double(index) * 0.13) + Double(index) * 0.19).truncatingRemainder(dividingBy: 1.0))
-                    Capsule()
-                        .fill(Color.white.opacity(0.53 - Double(index) * 0.065))
-                        .frame(width: proxy.size.width * (0.12 + CGFloat(index) * 0.026), height: 1.3)
-                        .offset(
-                            x: (1.04 - progress * 1.52) * proxy.size.width,
-                            y: proxy.size.height * (0.49 + CGFloat(index) * 0.071)
-                        )
+                    RideMotionStreak(index: index, phase: phase, size: proxy.size)
                 }
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+private struct RideMotionStreak: View {
+    var index: Int
+    var phase: TimeInterval
+    var size: CGSize
+
+    private var progress: CGFloat {
+        let speed = 1.08 + Double(index) * 0.13
+        let offset = Double(index) * 0.19
+        return CGFloat((phase * speed + offset).truncatingRemainder(dividingBy: 1.0))
+    }
+
+    var body: some View {
+        let width = size.width * (0.17 + CGFloat(index) * 0.032)
+        let height = max(10, size.height * (0.030 + CGFloat(index % 2) * 0.006))
+        // Positive progress now travels from the left edge to the right edge,
+        // matching the requested left-to-right airflow.
+        let x = (-0.30 + progress * 1.58) * size.width
+        let y = size.height * (0.49 + CGFloat(index) * 0.071)
+        let opacity = 0.50 - Double(index) * 0.055
+
+        CurvedRideWindRibbon(variant: index)
+            .stroke(
+                LinearGradient(
+                    colors: [
+                        .clear,
+                        Color.white.opacity(opacity * 0.68),
+                        Color.teslaGreen.opacity(opacity * 0.62),
+                        Color.white.opacity(opacity * 0.20)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                style: StrokeStyle(lineWidth: 1.45, lineCap: .round, lineJoin: .round)
+            )
+            .frame(width: width, height: height)
+            .shadow(color: Color.teslaGreen.opacity(opacity * 0.20), radius: 3)
+            .offset(x: x, y: y)
+    }
+}
+
+private struct CurvedRideWindRibbon: Shape {
+    var variant: Int
+
+    func path(in rect: CGRect) -> Path {
+        let bend = rect.height * (variant.isMultiple(of: 2) ? 0.32 : -0.28)
+        let secondaryBend = rect.height * (variant.isMultiple(of: 3) ? -0.18 : 0.16)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY + secondaryBend))
+        path.addCurve(
+            to: CGPoint(x: rect.midX, y: rect.midY - bend),
+            control1: CGPoint(x: rect.minX + rect.width * 0.18, y: rect.midY + bend),
+            control2: CGPoint(x: rect.minX + rect.width * 0.33, y: rect.midY - bend * 1.15)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.maxX, y: rect.midY + bend * 0.25),
+            control1: CGPoint(x: rect.minX + rect.width * 0.68, y: rect.midY + bend * 0.55),
+            control2: CGPoint(x: rect.minX + rect.width * 0.84, y: rect.midY - secondaryBend)
+        )
+        return path
     }
 }
 

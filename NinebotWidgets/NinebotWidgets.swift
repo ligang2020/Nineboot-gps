@@ -141,7 +141,12 @@ struct NinebotWatchChargeLiveActivity: Widget {
             }
             .keylineTint(WidgetTheme.green)
         }
+        // `supplementalActivityFamilies` is provided by the newer watchOS
+        // Live Activity SDK. Keep the IPA workflow compatible with Xcode 15
+        // while enabling the Watch Smart Stack when built with a newer SDK.
+        #if compiler(>=6.0)
         .supplementalActivityFamilies([.small])
+        #endif
         .configurationDisplayName("九号充电实况")
         .description("车辆充电时自动上岛，并在 Apple Watch 智能叠放中显示充电进度。")
     }
@@ -543,6 +548,7 @@ struct NinebotRideLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack(spacing: 8) {
                         RideIslandMetric(title: "速度", value: rideSpeedText(context.state.speedKmh))
+                        RideIslandMetric(title: "电量", value: rideBatteryText(context.state.battery))
                         RideIslandMetric(title: "续航", value: rideRangeText(context.state.remainingRangeKm))
                         RideIslandMetric(title: "距离", value: rideDistanceText(context.state.distanceMeters))
                     }
@@ -550,15 +556,15 @@ struct NinebotRideLiveActivity: Widget {
                     .padding(.top, 6)
                 }
             } compactLeading: {
+                // Keep the compact presentation to a fixed icon. A live timer
+                // in the trailing region makes the Dynamic Island expand into
+                // an unnecessarily wide pill on the Home Screen.
                 Image(systemName: "scooter")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(WidgetTheme.green)
+                    .frame(width: 18, height: 18)
             } compactTrailing: {
-                Text(context.attributes.startedAt, style: .timer)
-                    .font(.caption2.monospacedDigit().weight(.bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.68)
+                EmptyView()
             } minimal: {
                 Image(systemName: "scooter")
                     .font(.caption2.weight(.bold))
@@ -577,77 +583,156 @@ private struct RideLiveActivityCard: View {
     var state: NinebotRideActivityContentState
 
     var body: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+            let isCompact = size.height < 126
+
+            ZStack(alignment: .topLeading) {
+                RideActivityPremiumBackground(size: size)
+
+                VStack(spacing: isCompact ? 7 : 10) {
+                    HStack(alignment: .top, spacing: 10) {
+                        RideActivityVehicleArtwork()
+                            .frame(width: isCompact ? 42 : 48, height: isCompact ? 42 : 48)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(attributes.vehicleName)
+                                .font(.system(size: isCompact ? 13 : 15, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .minimumScaleFactor(0.72)
+
+                            HStack(spacing: 5) {
+                                RideStatusPill(text: "LIVE 骑行", icon: "wave.3.right")
+                                Text("更新 " + formatWidgetTime(state.updatedAt))
+                                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.48))
+                                    .lineLimit(1)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text(attributes.startedAt, style: .timer)
+                                .font(.system(size: isCompact ? 13 : 15, weight: .heavy, design: .rounded).monospacedDigit())
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.70)
+                            RideBatteryBadge(battery: state.battery)
+                                .frame(width: isCompact ? 34 : 38, height: isCompact ? 34 : 38)
+                        }
+                    }
+
+                    HStack(alignment: .bottom, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack(alignment: .lastTextBaseline, spacing: 3) {
+                                Text(rideSpeedValue(state.speedKmh))
+                                    .font(.system(size: isCompact ? 31 : 38, weight: .black, design: .rounded))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.70)
+                                Text("km/h")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.58))
+                                    .lineLimit(1)
+                            }
+                            Text("实时速度")
+                                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                .foregroundStyle(WidgetTheme.green.opacity(0.90))
+                        }
+                        .frame(minWidth: 82, maxWidth: 118, alignment: .leading)
+
+                        HStack(spacing: 7) {
+                            RideActivityMetric(
+                                value: rideRangeText(state.remainingRangeKm),
+                                title: "剩余",
+                                icon: "road.lanes"
+                            )
+                            RideActivityMetric(
+                                value: rideDistanceText(state.distanceMeters),
+                                title: "本次",
+                                icon: "point.3.connected.trianglepath.dotted"
+                            )
+                        }
+                        .layoutPriority(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 13)
+                .padding(.top, isCompact ? 8 : 10)
+                .padding(.bottom, isCompact ? 7 : 10)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .frame(minHeight: 108)
+    }
+}
+
+@available(iOS 16.1, *)
+private struct RideActivityPremiumBackground: View {
+    var size: CGSize
+
+    var body: some View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(red: 0.025, green: 0.035, blue: 0.050),
-                    Color(red: 0.045, green: 0.075, blue: 0.090),
-                    Color(red: 0.018, green: 0.028, blue: 0.038)
+                    Color(red: 0.018, green: 0.024, blue: 0.034),
+                    Color(red: 0.030, green: 0.070, blue: 0.082),
+                    Color(red: 0.012, green: 0.017, blue: 0.026)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
 
-            RideActivityRoad()
-                .opacity(0.72)
+            Circle()
+                .fill(WidgetTheme.green.opacity(0.20))
+                .frame(width: size.width * 0.58, height: size.width * 0.58)
+                .blur(radius: 36)
+                .offset(x: size.width * 0.36, y: -size.height * 0.46)
 
             Circle()
-                .fill(WidgetTheme.green.opacity(0.13))
-                .frame(width: 156, height: 156)
-                .blur(radius: 24)
-                .offset(x: 138, y: -64)
+                .fill(Color.cyan.opacity(0.13))
+                .frame(width: size.width * 0.48, height: size.width * 0.48)
+                .blur(radius: 34)
+                .offset(x: -size.width * 0.30, y: size.height * 0.34)
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 9) {
-                    RideActivityVehicleArtwork()
+            RideActivityRoad()
+                .opacity(0.62)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(attributes.vehicleName)
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.72)
-                        Label("骑行中", systemImage: "scooter")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(WidgetTheme.green)
-                    }
-                    Spacer(minLength: 6)
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("已骑行")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.white.opacity(0.56))
-                        Text(attributes.startedAt, style: .timer)
-                            .font(.system(size: 19, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                    }
-                }
-
-                HStack(alignment: .lastTextBaseline, spacing: 5) {
-                    Text(rideSpeedValue(state.speedKmh))
-                        .font(.system(size: 40, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Text("km/h")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.66))
-                    Spacer(minLength: 8)
-                    RideBatteryBadge(battery: state.battery)
-                }
-
-                HStack(spacing: 7) {
-                    RideActivityMetric(value: rideRangeText(state.remainingRangeKm), title: "剩余里程", icon: "road.lanes")
-                    RideActivityMetric(value: rideDistanceText(state.distanceMeters), title: "本次距离", icon: "point.3.connected.trianglepath.dotted")
-                    RideActivityMetric(value: "实时", title: "数据状态", icon: "dot.radiowaves.left.and.right")
-                }
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [.white.opacity(0.14), .clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(height: 0.7)
+                Spacer()
             }
             .padding(.horizontal, 16)
-            .padding(.top, 13)
-            .padding(.bottom, 11)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.top, 7)
         }
+    }
+}
+
+@available(iOS 16.1, *)
+private struct RideStatusPill: View {
+    var text: String
+    var icon: String
+
+    var body: some View {
+        Label(text, systemImage: icon)
+            .font(.system(size: 9, weight: .heavy, design: .rounded))
+            .foregroundStyle(WidgetTheme.green)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(WidgetTheme.green.opacity(0.13), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(WidgetTheme.green.opacity(0.28), lineWidth: 0.7)
+            }
     }
 }
 
@@ -657,7 +742,7 @@ private struct RideActivityVehicleArtwork: View {
         Image("RideScooter")
             .resizable()
             .scaledToFill()
-            .frame(width: 62, height: 62)
+            .frame(width: 42, height: 42)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -699,10 +784,10 @@ private struct RideBatteryBadge: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(.white.opacity(0.16), lineWidth: 5)
+                .stroke(.white.opacity(0.16), lineWidth: 4)
             Circle()
                 .trim(from: 0, to: fraction)
-                .stroke(WidgetTheme.green, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .stroke(WidgetTheme.green, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .shadow(color: WidgetTheme.green.opacity(0.55), radius: 4)
             VStack(spacing: 0) {
@@ -713,7 +798,7 @@ private struct RideBatteryBadge: View {
             }
             .foregroundStyle(WidgetTheme.green)
         }
-        .frame(width: 51, height: 51)
+        .frame(width: 37, height: 37)
         .accessibilityLabel("电量 \(rideBatteryText(battery))")
     }
 }
@@ -725,21 +810,37 @@ private struct RideActivityMetric: View {
     var icon: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Label(title, systemImage: icon)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.white.opacity(0.48))
-                .lineLimit(1)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .bold))
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+            }
+            .foregroundStyle(.white.opacity(0.50))
+            .lineLimit(1)
+
             Text(value)
-                .font(.caption.monospacedDigit().weight(.bold))
-                .foregroundStyle(.white.opacity(0.94))
+                .font(.system(size: 13, weight: .heavy, design: .rounded).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.96))
                 .lineLimit(1)
-                .minimumScaleFactor(0.64)
+                .minimumScaleFactor(0.58)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 5)
-        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(
+            LinearGradient(
+                colors: [.white.opacity(0.105), .white.opacity(0.045)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(.white.opacity(0.10), lineWidth: 0.7)
+        }
     }
 }
 

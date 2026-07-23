@@ -42,6 +42,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 mkdir -p "$OUTPUT_DIR" "$DERIVED_DATA"
+# The archive step runs from a temporary directory. Normalize caller-supplied
+# relative paths first so the IPA is always written to the requested location.
+OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
+DERIVED_DATA="$(cd "$DERIVED_DATA" && pwd)"
 
 xcodebuild \
   -project "$PROJECT" \

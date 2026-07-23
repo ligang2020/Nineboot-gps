@@ -34,6 +34,7 @@
 		B30000000000000000000008 /* NinebotSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000205 /* NinebotSharedStore.swift */; };
 		B30000000000000000000009 /* NinebotRideActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000206 /* NinebotRideActivityAttributes.swift */; };
 		B40000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000103 /* Assets.xcassets */; };
+		B40000000000000000000002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000305 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -85,6 +86,7 @@
 		B100000000000000000000302 /* NinebotWidgetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotWidgetProvider.swift"; sourceTree = "<group>"; };
 		B100000000000000000000303 /* NinebotWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotWidgets.swift"; sourceTree = "<group>"; };
 		B100000000000000000000304 /* NinebotWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "NinebotWidgets.entitlements"; sourceTree = "<group>"; };
+		B100000000000000000000305 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Assets.xcassets"; sourceTree = "<group>"; };
 		B100000000000000000000401 /* mini-ninebot-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "mini-ninebot-Info.plist"; sourceTree = "<group>"; };
 		B100000000000000000000402 /* NinebotWidgets-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "NinebotWidgets-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -167,6 +169,7 @@
 				B100000000000000000000302 /* NinebotWidgetProvider.swift */,
 				B100000000000000000000303 /* NinebotWidgets.swift */,
 				B100000000000000000000304 /* NinebotWidgets.entitlements */,
+				B100000000000000000000305 /* Assets.xcassets */,
 			);
 			path = NinebotWidgets;
 			sourceTree = "<group>";
@@ -281,6 +284,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B40000000000000000000002 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -465,7 +469,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "mini-ninebot/mini-ninebot.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -479,7 +483,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.30;
+				MARKETING_VERSION = 1.2.31;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -499,7 +503,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "mini-ninebot/mini-ninebot.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -513,7 +517,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.30;
+				MARKETING_VERSION = 1.2.31;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -532,7 +536,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = NinebotWidgets/NinebotWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -544,7 +548,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.30;
+				MARKETING_VERSION = 1.2.31;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ.NinebotWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -561,7 +565,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = NinebotWidgets/NinebotWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -573,7 +577,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.30;
+				MARKETING_VERSION = 1.2.31;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ.NinebotWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
