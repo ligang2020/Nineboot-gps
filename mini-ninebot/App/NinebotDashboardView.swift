@@ -1827,7 +1827,7 @@ private struct RideWeatherSnapshot: Equatable {
 
     var isNight: Bool { !isDay }
     var hasRain: Bool { condition == .rain || condition == .storm }
-    var hasLightning: Bool { condition == .storm }
+    var hasLightning: Bool { condition == .storm || condition == .rain }
     var hasSnow: Bool { condition == .snow }
 
     var temperatureText: String {
@@ -2870,7 +2870,10 @@ private struct LiveRideEnvironment: View {
         // otherwise normal rain becomes nearly invisible behind the vehicle.
         let isStorm = weather.condition == .storm || weather.condition == .rain
         let baseOpacity = weather.isNight ? 0.74 : 0.62
-        let gust = CGFloat(sin(phase * 1.35) + sin(phase * 0.41 + 1.2)) * size.width * 0.018
+        // Rain and snow should fall from the sky to the road. Keep only a
+        // tiny natural sway so particles do not inherit the horizontal riding
+        // wind direction.
+        let verticalSway = CGFloat(sin(phase * 1.35) + sin(phase * 0.41 + 1.2)) * size.width * 0.004
         let splashSpeed = isStorm ? 2.4 : 1.9
 
         return ZStack {
@@ -2888,15 +2891,16 @@ private struct LiveRideEnvironment: View {
                         let cycle = (seed + phase * layerSpeeds[layer] * 0.34 + Double(drift) * 0.11)
                             .truncatingRemainder(dividingBy: 1.0)
                         let xSeed = CGFloat((index * 67 + layer * 23) % 109) / 109.0
-                        let x = xSeed * (canvasSize.width + 80) - 40 + gust * CGFloat(layer + 1) * 0.45
+                        let x = xSeed * (canvasSize.width + 80) - 40 + verticalSway * CGFloat(layer + 1) * 0.42
                         let y = CGFloat(cycle) * (canvasSize.height + 90) - 62
                         let length = layerLengths[layer] * max(0.82, size.height / 218)
+                        let fallWobble = CGFloat(sin(phase * 1.8 + Double(index * 13 + layer * 7))) * min(1.6, length * 0.08)
 
                         var drop = Path()
                         drop.move(to: CGPoint(x: x, y: y))
-                        // Left-to-right wind: rain leans forward across the
-                        // riding direction instead of blowing backwards.
-                        drop.addLine(to: CGPoint(x: x + length * 0.42, y: y + length))
+                        // Precipitation falls top-to-bottom; only a subtle
+                        // micro-wobble prevents the rain from looking static.
+                        drop.addLine(to: CGPoint(x: x + fallWobble, y: y + length))
                         context.stroke(
                             drop,
                             with: .color(Color.white.opacity(baseOpacity * (0.38 + Double(layer) * 0.24))),
@@ -2936,8 +2940,11 @@ private struct LiveRideEnvironment: View {
     private func snow(size: CGSize, drift: CGFloat, phase: TimeInterval) -> some View {
         let isBlizzard = weather.isBlizzard
         let flakeCount = isBlizzard ? 112 : 58
-        let windAmplitude = isBlizzard ? size.width * 0.13 : size.width * 0.035
-        let wind = (0.45 + CGFloat(sin(phase * 2.6)) * 0.55) * windAmplitude
+        // Snow also falls mostly top-to-bottom. Blizzard mode increases the
+        // density/blur, but lateral movement remains a small float instead of
+        // a wind-blown sideways stream.
+        let windAmplitude = isBlizzard ? size.width * 0.018 : size.width * 0.007
+        let wind = CGFloat(sin(phase * 1.15)) * windAmplitude
         let flakeOpacity = weather.isNight ? 0.82 : 0.76
         let verticalCycle = size.height * 1.25
         let verticalOffset = size.height * 0.30
@@ -2953,14 +2960,15 @@ private struct LiveRideEnvironment: View {
                 let flakeSize: CGFloat = isBlizzard
                     ? (1.7 + CGFloat(index % 4)) * 0.58
                     : (1.1 + CGFloat(index % 3)) * 0.56
-                let windMultiplier = 0.35 + CGFloat(index % 4) * 0.18
+                let windMultiplier = 0.18 + CGFloat(index % 4) * 0.08
+                let floatWobble = CGFloat(sin(phase * 1.7 + Double(index) * 0.37)) * size.width * (isBlizzard ? 0.006 : 0.003)
                 let animatedY = y.truncatingRemainder(dividingBy: verticalCycle) - verticalOffset
 
                 Circle()
                     .fill(Color.white.opacity(flakeOpacity))
                     .frame(width: flakeSize, height: flakeSize)
                     .blur(radius: isBlizzard && index.isMultiple(of: 5) ? 0.6 : 0)
-                    .offset(x: x + wind * windMultiplier, y: animatedY)
+                    .offset(x: x + wind * windMultiplier + floatWobble, y: animatedY)
             }
         }
     }
