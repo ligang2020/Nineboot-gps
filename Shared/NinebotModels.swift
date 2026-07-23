@@ -60,7 +60,6 @@ enum NinebotVehicleNameResolver {
 }
 
 enum NinebotDataSourceMode: String, Codable, CaseIterable, Identifiable {
-    case official
     case proxy
     case platform
 
@@ -68,7 +67,6 @@ enum NinebotDataSourceMode: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .official: return "九号官方直连"
         case .proxy: return "ninecli 代理"
         case .platform: return "NinePlus 服务器"
         }
@@ -76,7 +74,6 @@ enum NinebotDataSourceMode: String, Codable, CaseIterable, Identifiable {
 
     var shortTitle: String {
         switch self {
-        case .official: return "官方"
         case .proxy: return "代理"
         case .platform: return "服务器"
         }
@@ -84,7 +81,6 @@ enum NinebotDataSourceMode: String, Codable, CaseIterable, Identifiable {
 
     var endpointPlaceholder: String {
         switch self {
-        case .official: return "无需服务器地址"
         case .proxy: return "http://127.0.0.1:18009"
         case .platform: return "http://服务器IP:19009"
         }
@@ -92,7 +88,6 @@ enum NinebotDataSourceMode: String, Codable, CaseIterable, Identifiable {
 
     var tokenPlaceholder: String {
         switch self {
-        case .official: return "官方直连无需访问口令"
         case .proxy: return "ninecli 设置了 Token 才填写"
         case .platform: return "后台设置了 App Bearer Token 才填写"
         }
@@ -100,7 +95,6 @@ enum NinebotDataSourceMode: String, Codable, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .official: return "network"
         case .proxy: return "server.rack"
         case .platform: return "cloud.fill"
         }

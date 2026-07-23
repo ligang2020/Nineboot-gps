@@ -12,7 +12,6 @@ This project is intended for personal builds. The bundled GitHub Action produces
 - 3D charging energy animation in the app and vehicle-alarm notifications with an actionable “查看车辆” button.
 - Siri Shortcuts and App Intents for vehicle actions.
 - MapKit location and reverse-geocoded address display.
-- Direct Ninebot cloud login: a new install can sign in with a Ninebot account and immediately load vehicle data without configuring a proxy or NinePlus server first.
 - Shared local cache through App Groups for the app and widget extension.
 - Friendly vehicle names: the serial number `2PDAA2525A0414` is shown as **B2轰炸机**. Other vehicles can be renamed in **我的 → 车辆名称 → 编辑**.
 
@@ -82,12 +81,6 @@ The command builds the device `Release` app, verifies the App Icon and widget ex
 4. Refresh the app after binding or renaming a vehicle so the shared App Group cache is populated.
 
 A re-signed / sideloaded build can fail to show widgets if its app and widget extension do not retain the same signing team, bundle identifiers, and App Group entitlement. Verify those three items first if a widget does not appear or cannot list vehicles.
-
-## Direct Ninebot login
-
-The default data source is **Ninebot Official Direct**. Password login calls Ninebot's HTTPS Passport endpoint, stores the returned cloud tokens in the iOS Keychain, and immediately fetches the official device list and dynamic vehicle state. The password is not persisted.
-
-Official Direct currently covers account login and vehicle-state reads. SMS login, archived travel details, APNs server delivery, and remote vehicle controls still require a compatible NinePlus Platform or ninecli proxy; those sources remain available in the connection settings.
 
 ## GitHub Actions unsigned IPA
 

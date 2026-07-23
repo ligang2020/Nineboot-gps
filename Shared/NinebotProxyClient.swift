@@ -345,7 +345,7 @@ struct NinebotProxyClient {
     }
 }
 
-extension NinebotProxyClient {
+private extension NinebotProxyClient {
     static func unwrapEnvelope(_ root: JSONValue) throws -> JSONValue {
         guard let object = root.objectValue, object.keys.contains("ok") else {
             return root
@@ -476,9 +476,6 @@ extension NinebotProxyClient {
         let loc = statusObject["loc"]?.objectValue
         let locationInfo = statusObject["locationInfo"]?.objectValue
         let lockNumber = loc?["lock"]?.intValue ?? statusObject["lock_status"]?.intValue
-        // The official openClaw dynamic endpoint uses status=0 for locked and
-        // status=1 for unlocked, while the legacy proxy uses lock=1 for locked.
-        let officialLockNumber = statusObject["status"]?.intValue
         let rides = travelObject["list"]?.arrayValue ?? []
         let rideRecords = rides.enumerated().compactMap { index, value in
             rideRecord(from: value, index: index)
@@ -487,7 +484,7 @@ extension NinebotProxyClient {
         let dailyMileageRecords = dailyMileageRecords(from: travelObject)
 
         return NinebotVehicleState(
-            battery: firstInt(["dump_energy", "dumpEnergy", "battery"], in: statusObject)
+            battery: firstInt(["dump_energy", "dumpEnergy"], in: statusObject)
                 ?? firstInt(["electricity", "dump_energy", "dumpEnergy"], in: batteryPayloadObject)
                 ?? firstInt(["electricity", "dump_energy", "dumpEnergy"], in: batteryListObject),
             batteryVoltage: normalizedBatteryVoltage(
@@ -546,7 +543,7 @@ extension NinebotProxyClient {
             isCharging: firstBoolLike(["charging", "chargingState"], in: statusObject, trueValue: 1)
                 ?? firstBoolLike(["charging", "chargingState"], in: batteryPayloadObject, trueValue: 1),
             isPoweredOn: firstBoolLike(["pwr", "powerStatus"], in: statusObject, trueValue: 1),
-            isLocked: lockNumber.map { $0 == 1 } ?? officialLockNumber.map { $0 == 0 },
+            isLocked: lockNumber.map { $0 == 1 },
             remainingChargeTime: firstDouble(["remain_charge_time", "remainChargeTime", "remainingChargeTime"], in: statusObject)
                 ?? firstDouble(["remain_charge_time", "remainChargeTime", "remainingChargeTime"], in: batteryPayloadObject),
             locationDescription: firstString(["locationDesc", "desc"], in: locationInfo ?? [:]),

@@ -58,27 +58,6 @@ struct NinebotTimelineProvider: AppIntentTimelineProvider {
             return entry(from: cached, configuration: configuration, errorMessage: nil, store: store)
         }
 
-        // Official credentials remain in the containing App's Keychain. The
-        // widget deliberately renders the shared App snapshot instead of
-        // falling through to an unrelated legacy proxy configuration.
-        if store.loadDataSourceMode() == .official {
-            let fallback = cached ?? .empty
-            store.saveLastWidgetRefreshEvent(NinebotRefreshEvent(
-                source: "Widget",
-                operation: "读取官方直连缓存",
-                startedAt: startedAt,
-                endedAt: Date(),
-                success: !fallback.vehicles.isEmpty,
-                message: fallback.vehicles.isEmpty ? "请先在 App 登录并刷新车辆" : "使用 App 最近同步的数据"
-            ))
-            return entry(
-                from: fallback,
-                configuration: configuration,
-                errorMessage: fallback.vehicles.isEmpty ? "请先在 App 登录" : nil,
-                store: store
-            )
-        }
-
         let proxyConfiguration = store.loadConfiguration() ?? NinebotProxyConfiguration(baseURLString: "", bearerToken: "")
         guard proxyConfiguration.isUsable else {
             let fallback = cached ?? .empty
