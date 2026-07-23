@@ -233,10 +233,13 @@ final class NinebotViewModel: ObservableObject {
         true
     }
 
-    /// Charge status is refreshed every five seconds while the selected vehicle
-    /// is charging so the Live Activity's battery progress remains responsive.
+    /// Riding Live Activity data is refreshed every 15 seconds to keep the
+    /// Lock Screen widget current without causing oversized background churn.
+    /// Charging remains more responsive because battery progress changes fast.
     var foregroundRefreshInterval: TimeInterval {
-        dashboard.primaryVehicle?.state.isCharging == true || activeRideSession != nil ? 5 : 8
+        if activeRideSession != nil { return 15 }
+        if dashboard.primaryVehicle?.state.isCharging == true { return 5 }
+        return 8
     }
 
     func refreshOnLaunchIfPossible() async {

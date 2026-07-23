@@ -44,6 +44,8 @@ struct NinebotRideActivityContentState: Codable, Hashable {
     var speedKmh: Double?
     var distanceMeters: Double?
     var remainingRangeKm: Double?
+    var batteryTemperature: Double?
+    var tripEnergyWh: Double?
     var updatedAt: Date
 }
 

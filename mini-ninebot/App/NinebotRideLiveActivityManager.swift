@@ -51,9 +51,11 @@ private enum NinebotRideActivityController {
                 speedKmh: session.latestSpeedKmh,
                 distanceMeters: session.distanceMeters,
                 remainingRangeKm: snapshot.state.endurance ?? snapshot.state.aiEstimatedMileage,
+                batteryTemperature: snapshot.state.batteryTemperature,
+                tripEnergyWh: tripEnergyWh(state: snapshot.state, distanceMeters: session.distanceMeters),
                 updatedAt: session.updatedAt
             ),
-            staleDate: Date().addingTimeInterval(90)
+            staleDate: Date().addingTimeInterval(15)
         )
 
         for activity in activities where activity.id != matchingActivity?.id {
@@ -71,6 +73,14 @@ private enum NinebotRideActivityController {
                 #endif
             }
         }
+    }
+
+    private static func tripEnergyWh(state: NinebotVehicleState, distanceMeters: Double?) -> Double? {
+        guard let distanceMeters, distanceMeters.isFinite, distanceMeters > 0 else { return nil }
+        let distanceKm = distanceMeters / 1_000
+        let energyPerKm = state.lastEnergyPerKm ?? state.monthEnergyPerKm
+        guard let energyPerKm, energyPerKm.isFinite, energyPerKm > 0 else { return nil }
+        return distanceKm * energyPerKm
     }
 
     private static func endAll() async {
