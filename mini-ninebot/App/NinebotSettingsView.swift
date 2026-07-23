@@ -708,7 +708,7 @@ private struct LoginConnectionSheet: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("连接设置")
                         .font(.title2.weight(.semibold))
-                    Text("接口地址由用户自行填写；后台设置了 App 访问口令时再填口令。")
+                    Text(model.dataSourceMode == .platform ? "NinePlus Platform 需要填写服务器地址和 App Bearer Token。" : "代理模式只需填写 ninecli serve 地址；代理设置了 Token 时再填口令。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -733,7 +733,7 @@ private struct LoginConnectionSheet: View {
                 )
 
                 SettingsInputField(
-                    title: "访问口令（可选）",
+                    title: model.dataSourceMode == .platform ? "App Bearer Token（必填）" : "访问口令（可选）",
                     placeholder: model.dataSourceMode.tokenPlaceholder,
                     systemImage: "key.horizontal.fill",
                     text: $model.bearerToken,
@@ -747,7 +747,7 @@ private struct LoginConnectionSheet: View {
                         SettingsCompactButtonLabel(title: "测试", systemImage: "network")
                     }
                     .buttonStyle(.bordered)
-                    .disabled(model.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!model.isConnectionInputComplete)
 
                     Button {
                         model.saveConfiguration()
@@ -761,7 +761,7 @@ private struct LoginConnectionSheet: View {
                         SettingsCompactButtonLabel(title: "保存", systemImage: "checkmark")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(model.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!model.isConnectionInputComplete)
                 }
 
                 Spacer(minLength: 0)
@@ -1056,17 +1056,30 @@ private struct AccountBindingPanel: View {
                 AccountLoginHero(mode: model.dataSourceMode, hasConfiguration: model.hasConfiguration)
 
                 SettingsInputField(
-                    title: "手机号",
-                    placeholder: "九号账号手机号",
-                    systemImage: "phone.fill",
+                    title: "九号账号",
+                    placeholder: model.dataSourceMode == .platform ? "手机号 / +86 手机号" : "九号账号手机号",
+                    systemImage: "person.crop.circle.fill",
                     text: $model.account,
-                    keyboardType: .phonePad,
+                    keyboardType: .default,
                     textContentType: .username
                 )
 
-                LoginModePicker(selection: $loginMode)
+                if model.dataSourceMode == .platform {
+                    SettingsInputField(
+                        title: "国家区号",
+                        placeholder: "86",
+                        systemImage: "globe.asia.australia.fill",
+                        text: $model.areaCode,
+                        keyboardType: .phonePad,
+                        textContentType: .telephoneNumber
+                    )
 
-                if loginMode == .password {
+                    PlatformPasswordLoginNotice()
+                } else {
+                    LoginModePicker(selection: $loginMode)
+                }
+
+                if model.dataSourceMode == .platform || loginMode == .password {
                     SettingsInputField(
                         title: "密码",
                         placeholder: "九号账号密码",
@@ -1150,7 +1163,7 @@ private struct AccountBindingPanel: View {
     }
 
     private var primaryLoginTitle: String {
-        model.dataSourceMode == .platform ? "绑定账号" : "登录代理"
+        model.dataSourceMode == .platform ? "登录九号官方账号" : "登录代理"
     }
 
     private func collapseIfLoggedIn() {
@@ -1195,17 +1208,47 @@ private struct AccountLoginHero: View {
     }
 
     private var title: String {
-        if !hasConfiguration { return "先保存连接地址" }
-        return mode == .platform ? "九号账号登录" : "代理账号登录"
+        if !hasConfiguration { return mode == .platform ? "先保存地址和 App Token" : "先保存连接地址" }
+        return mode == .platform ? "九号官方账号登录" : "代理账号登录"
     }
 
     private var detail: String {
         if !hasConfiguration {
-            return "在“连接与通知”里保存地址和 Token 后再绑定账号。"
+            return mode == .platform
+                ? "在“连接与通知”里填写 NinePlus Platform 地址和 NINEPLUS_APP_TOKEN。"
+                : "在“连接与通知”里保存代理地址后再登录。"
         }
         return mode == .platform
-            ? "绑定后会自动刷新车辆数据，并持续补齐行程记录。"
+            ? "调用服务器 /accounts/login，通过 ninecli 官方接口完成九号账号密码登录。"
             : "代理模式会直接登录当前 ninecli serve，会替换代理上的单账号会话。"
+    }
+}
+
+private struct PlatformPasswordLoginNotice: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.shield.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.green)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("官方接口账号密码登录")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.teslaPrimaryText)
+                Text("当前 nineplus-platform 移动端开放 /accounts/login；短信验证码仍保留在网页后台。登录成功后 App 会保存服务器签发的 X-NinePlus-Session。")
+                    .font(.caption2)
+                    .foregroundStyle(Color.teslaSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(Color.green.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.green.opacity(0.16), lineWidth: 1)
+        }
     }
 }
 

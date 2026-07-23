@@ -43,14 +43,20 @@ struct NinebotProxyClient {
         return Self.loginResult(from: payload)
     }
 
-    func platformLogin(account: String, password: String) async throws -> NinebotLoginResult {
+    func platformLogin(account: String, password: String, areaCode: String?) async throws -> NinebotLoginResult {
+        var body = [
+            "account": account,
+            "password": password,
+        ]
+        if let areaCode = areaCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !areaCode.isEmpty {
+            body["area_code"] = areaCode.trimmingCharacters(in: CharacterSet(charactersIn: "+"))
+        }
+
         let payload = try await request(
             method: "POST",
             path: ["accounts", "login"],
-            body: [
-                "account": account,
-                "password": password,
-            ]
+            body: body
         )
         return Self.loginResult(from: payload)
     }
@@ -63,11 +69,17 @@ struct NinebotProxyClient {
         )
     }
 
-    func sendPlatformLoginCode(account: String) async throws {
+    func sendPlatformLoginCode(account: String, areaCode: String?) async throws {
+        var body = ["account": account]
+        if let areaCode = areaCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !areaCode.isEmpty {
+            body["area_code"] = areaCode.trimmingCharacters(in: CharacterSet(charactersIn: "+"))
+        }
+
         _ = try await request(
             method: "POST",
             path: ["accounts", "login-code"],
-            body: ["account": account]
+            body: body
         )
     }
 
@@ -83,14 +95,20 @@ struct NinebotProxyClient {
         return Self.loginResult(from: payload)
     }
 
-    func consumePlatformLoginCode(account: String, code: String) async throws -> NinebotLoginResult {
+    func consumePlatformLoginCode(account: String, code: String, areaCode: String?) async throws -> NinebotLoginResult {
+        var body = [
+            "account": account,
+            "code": code,
+        ]
+        if let areaCode = areaCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !areaCode.isEmpty {
+            body["area_code"] = areaCode.trimmingCharacters(in: CharacterSet(charactersIn: "+"))
+        }
+
         let payload = try await request(
             method: "POST",
             path: ["accounts", "login-code", "consume"],
-            body: [
-                "account": account,
-                "code": code,
-            ]
+            body: body
         )
         return Self.loginResult(from: payload)
     }
@@ -378,12 +396,12 @@ private extension NinebotProxyClient {
     static func loginResult(from value: JSONValue) -> NinebotLoginResult {
         let object = value.objectValue ?? [:]
         return NinebotLoginResult(
-            uuid: object["uuid"]?.stringValue,
-            phone: object["phone"]?.stringValue,
-            areaCode: object["area_code"]?.stringValue,
+            uuid: object["uuid"]?.stringValue ?? object["user_id"]?.stringValue ?? object["userId"]?.stringValue ?? object["uid"]?.stringValue,
+            phone: object["phone"]?.stringValue ?? object["username"]?.stringValue ?? object["account"]?.stringValue,
+            areaCode: object["area_code"]?.stringValue ?? object["areaCode"]?.stringValue,
             region: object["region"]?.stringValue,
-            businessUID: object["business_uid"]?.stringValue,
-            accountID: object["account_id"]?.intValue ?? object["id"]?.intValue,
+            businessUID: object["business_uid"]?.stringValue ?? object["businessUid"]?.stringValue ?? object["businessUID"]?.stringValue,
+            accountID: object["account_id"]?.intValue ?? object["accountId"]?.intValue ?? object["id"]?.intValue,
             sessionToken: object["session_token"]?.stringValue ?? object["sessionToken"]?.stringValue
         )
     }

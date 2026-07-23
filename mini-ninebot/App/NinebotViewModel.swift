@@ -9,6 +9,8 @@ enum NinebotInputError: LocalizedError {
     case missingAccount
     case missingPassword
     case missingCode
+    case missingAppToken
+    case platformSMSUnsupported
     case platformOnly
 
     var errorDescription: String? {
@@ -16,11 +18,15 @@ enum NinebotInputError: LocalizedError {
         case .missingProxy:
             return "请先填写代理或 NinePlus 平台地址"
         case .missingAccount:
-            return "请填写手机号"
+            return "请填写九号账号或手机号"
         case .missingPassword:
             return "请填写密码"
         case .missingCode:
             return "请填写验证码"
+        case .missingAppToken:
+            return "NinePlus Platform 需要填写 App Bearer Token"
+        case .platformSMSUnsupported:
+            return "当前 NinePlus Platform 移动端只支持账号密码登录；短信验证码请在网页后台使用"
         case .platformOnly:
             return "请切换到服务器模式后再拉取历史行程"
         }
@@ -136,6 +142,7 @@ final class NinebotViewModel: ObservableObject {
     @Published var baseURLString = ""
     @Published var bearerToken = ""
     @Published var account = ""
+    @Published var areaCode = "86"
     @Published var password = ""
     @Published var smsCode = ""
     @Published var pushDeviceToken: String?
@@ -167,6 +174,7 @@ final class NinebotViewModel: ObservableObject {
         self.bearerToken = configuration?.bearerToken ?? ""
         self.loginResult = loginResult
         self.account = loginResult?.phone ?? ""
+        self.areaCode = Self.normalizedAreaCode(loginResult?.areaCode) ?? "86"
         self.pushDeviceToken = store.loadPushDeviceToken()
         self.dashboard = store.loadDashboard() ?? .empty
         self.errorMessage = store.loadLastError()
@@ -178,7 +186,11 @@ final class NinebotViewModel: ObservableObject {
     }
 
     var hasConfiguration: Bool {
-        currentConfiguration.isUsable
+        currentConfiguration.isUsable && (dataSourceMode != .platform || !bearerToken.trimmed.isEmpty)
+    }
+
+    var isConnectionInputComplete: Bool {
+        !baseURLString.trimmed.isEmpty && (dataSourceMode != .platform || !bearerToken.trimmed.isEmpty)
     }
 
     var dataSourceStatusTitle: String {
@@ -188,9 +200,12 @@ final class NinebotViewModel: ObservableObject {
     var dataSourceStatusDetail: String {
         let value = baseURLString.trimmed
         if !value.isEmpty {
+            if dataSourceMode == .platform, bearerToken.trimmed.isEmpty {
+                return "\(value) · 待填写 App Token"
+            }
             return value
         }
-        return dataSourceMode == .platform ? "填写 NinePlus Platform 地址后读取服务器归档数据" : "填写 ninecli serve 地址后直接读取代理"
+        return dataSourceMode == .platform ? "填写 NinePlus Platform 地址和 App Token 后读取服务器归档数据" : "填写 ninecli serve 地址后直接读取代理"
     }
 
     var hasVehicles: Bool {
@@ -253,6 +268,10 @@ final class NinebotViewModel: ObservableObject {
         let configuration = currentConfiguration
         guard configuration.isUsable else {
             errorMessage = NinebotInputError.missingProxy.localizedDescription
+            return
+        }
+        guard dataSourceMode != .platform || !configuration.bearerToken.trimmed.isEmpty else {
+            errorMessage = NinebotInputError.missingAppToken.localizedDescription
             return
         }
 
@@ -434,7 +453,7 @@ final class NinebotViewModel: ObservableObject {
             saveConfiguration()
             let client = try makeClient()
             if dataSourceMode == .platform {
-                try await client.sendPlatformLoginCode(account: account.trimmed)
+                throw NinebotInputError.platformSMSUnsupported
             } else {
                 try await client.sendLoginCode(account: account.trimmed)
             }
@@ -622,6 +641,9 @@ final class NinebotViewModel: ObservableObject {
         guard configuration.isUsable else {
             throw NinebotInputError.missingProxy
         }
+        guard dataSourceMode != .platform || !configuration.bearerToken.trimmed.isEmpty else {
+            throw NinebotInputError.missingAppToken
+        }
         store.saveDataSourceMode(dataSourceMode)
         store.saveConfiguration(configuration)
         return NinebotProxyClient(configuration: configuration)
@@ -633,14 +655,14 @@ final class NinebotViewModel: ObservableObject {
 
     private func loginWithPassword(client: NinebotProxyClient, account: String, password: String) async throws -> NinebotLoginResult {
         if dataSourceMode == .platform {
-            return try await client.platformLogin(account: account, password: password)
+            return try await client.platformLogin(account: account, password: password, areaCode: Self.normalizedAreaCode(areaCode))
         }
         return try await client.login(account: account, password: password)
     }
 
     private func consumeLoginCode(client: NinebotProxyClient, account: String, code: String) async throws -> NinebotLoginResult {
         if dataSourceMode == .platform {
-            return try await client.consumePlatformLoginCode(account: account, code: code)
+            throw NinebotInputError.platformSMSUnsupported
         }
         return try await client.consumeLoginCode(account: account, code: code)
     }
@@ -831,13 +853,25 @@ final class NinebotViewModel: ObservableObject {
         return sameCoordinate && Date().timeIntervalSince(address.updatedAt) < 15 * 60
     }
 
+    private static func normalizedAreaCode(_ value: String?) -> String? {
+        let clean = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "+"))
+        return clean.isEmpty ? nil : clean
+    }
+
     private func rememberLoginResult(_ result: NinebotLoginResult, fallbackAccount: String) {
         var resolvedResult = result
         if resolvedResult.phone?.trimmed.isEmpty != false {
             resolvedResult.phone = fallbackAccount
         }
+        if resolvedResult.areaCode?.trimmed.isEmpty != false, dataSourceMode == .platform {
+            resolvedResult.areaCode = Self.normalizedAreaCode(areaCode)
+        }
         loginResult = resolvedResult
         account = resolvedResult.phone ?? fallbackAccount
+        if let resolvedAreaCode = Self.normalizedAreaCode(resolvedResult.areaCode) {
+            areaCode = resolvedAreaCode
+        }
         store.saveLoginResult(resolvedResult)
         if dataSourceMode == .platform {
             store.saveConfiguration(currentConfiguration)

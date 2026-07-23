@@ -89,7 +89,7 @@ enum NinebotDataSourceMode: String, Codable, CaseIterable, Identifiable {
     var tokenPlaceholder: String {
         switch self {
         case .proxy: return "ninecli 设置了 Token 才填写"
-        case .platform: return "后台设置了 App Bearer Token 才填写"
+        case .platform: return "粘贴服务器 NINEPLUS_APP_TOKEN"
         }
     }
 
