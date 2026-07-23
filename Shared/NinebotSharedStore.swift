@@ -44,7 +44,7 @@ struct NinebotSharedStore {
     func loadDataSourceMode() -> NinebotDataSourceMode {
         guard let rawValue = defaults.string(forKey: Key.dataSourceMode),
               let mode = NinebotDataSourceMode(rawValue: rawValue) else {
-            return .platform
+            return .official
         }
         return mode
     }

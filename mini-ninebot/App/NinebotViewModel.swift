@@ -10,6 +10,8 @@ enum NinebotInputError: LocalizedError {
     case missingPassword
     case missingCode
     case platformOnly
+    case officialPasswordOnly
+    case officialReadOnly
 
     var errorDescription: String? {
         switch self {
@@ -23,6 +25,10 @@ enum NinebotInputError: LocalizedError {
             return "请填写验证码"
         case .platformOnly:
             return "请切换到服务器模式后再拉取历史行程"
+        case .officialPasswordOnly:
+            return "九号官方直连目前仅支持账号密码登录"
+        case .officialReadOnly:
+            return "九号官方直连目前只开放车况读取，车辆控制请切换到 NinePlus 服务器"
         }
     }
 }
@@ -132,7 +138,7 @@ struct NinebotDiagnosticsSnapshot {
 
 @MainActor
 final class NinebotViewModel: ObservableObject {
-    @Published var dataSourceMode: NinebotDataSourceMode = .platform
+    @Published var dataSourceMode: NinebotDataSourceMode = .official
     @Published var baseURLString = ""
     @Published var bearerToken = ""
     @Published var account = ""
@@ -155,13 +161,15 @@ final class NinebotViewModel: ObservableObject {
     @Published private(set) var syncingTravelMonth: String?
 
     private let store = NinebotSharedStore()
+    private let officialSessionStore = NinebotOfficialSessionStore()
     private var lastAutomaticRefreshAt: Date?
     private var lastWidgetTimelineRefreshAt: Date?
 
     init() {
         let configuration = store.loadConfiguration()
         let loginResult = store.loadLoginResult()
-        self.dataSourceMode = store.loadDataSourceMode()
+        let storedMode = store.loadDataSourceMode()
+        self.dataSourceMode = configuration == nil && storedMode == .platform ? .official : storedMode
         self.baseURLString = configuration?.baseURLString ?? ""
         self.bearerToken = configuration?.bearerToken ?? ""
         self.loginResult = loginResult
@@ -175,7 +183,7 @@ final class NinebotViewModel: ObservableObject {
     }
 
     var hasConfiguration: Bool {
-        currentConfiguration.isUsable
+        dataSourceMode == .official || currentConfiguration.isUsable
     }
 
     var dataSourceStatusTitle: String {
@@ -183,6 +191,9 @@ final class NinebotViewModel: ObservableObject {
     }
 
     var dataSourceStatusDetail: String {
+        if dataSourceMode == .official {
+            return "直接连接九号官方云，无需服务器地址"
+        }
         let value = baseURLString.trimmed
         if !value.isEmpty {
             return value
@@ -201,6 +212,9 @@ final class NinebotViewModel: ObservableObject {
 
     var hasLoginAccount: Bool {
         let hasPhone = !(loginResult?.phone?.trimmed ?? "").isEmpty
+        if dataSourceMode == .official {
+            return hasPhone && officialSessionStore.load()?.isUsable == true
+        }
         if dataSourceMode == .platform {
             return hasPhone && !(loginResult?.sessionToken?.trimmed ?? "").isEmpty
         }
@@ -208,7 +222,7 @@ final class NinebotViewModel: ObservableObject {
     }
 
     var loginAccountCount: Int {
-        dataSourceMode == .platform ? dashboard.vehicles.count : (hasLoginAccount ? 1 : 0)
+        dataSourceMode == .proxy ? (hasLoginAccount ? 1 : 0) : dashboard.vehicles.count
     }
 
     var isAddressGeocodingEnabled: Bool {
@@ -235,6 +249,7 @@ final class NinebotViewModel: ObservableObject {
 
     private func refreshAutomaticallyIfPossible() async {
         guard hasConfiguration else { return }
+        guard dataSourceMode != .official || hasLoginAccount else { return }
         guard !isLoading else { return }
 
         let now = Date()
@@ -247,6 +262,12 @@ final class NinebotViewModel: ObservableObject {
     }
 
     func saveConfiguration() {
+        if dataSourceMode == .official {
+            store.saveDataSourceMode(.official)
+            errorMessage = nil
+            statusMessage = "已切换为九号官方直连"
+            return
+        }
         let configuration = currentConfiguration
         guard configuration.isUsable else {
             errorMessage = NinebotInputError.missingProxy.localizedDescription
@@ -267,8 +288,13 @@ final class NinebotViewModel: ObservableObject {
 
     func testConnection() async {
         await runLoadingOperation(message: "正在测试连接") {
-            let client = try makeClient()
-            try await client.healthCheck()
+            if self.dataSourceMode == .official {
+                let session = try self.requireOfficialSession()
+                try await NinebotOfficialClient().validate(session)
+            } else {
+                let client = try self.makeClient()
+                try await client.healthCheck()
+            }
             self.errorMessage = nil
             self.statusMessage = "\(self.dataSourceMode.shortTitle)连接正常"
         }
@@ -276,8 +302,13 @@ final class NinebotViewModel: ObservableObject {
 
     func refreshLoginToken() async {
         await runLoadingOperation(message: "正在刷新登录状态") {
-            let client = try makeClient()
-            try await client.refreshAccessToken()
+            if self.dataSourceMode == .official {
+                let session = try self.requireOfficialSession()
+                try await NinebotOfficialClient().validate(session)
+            } else {
+                let client = try self.makeClient()
+                try await client.refreshAccessToken()
+            }
             self.errorMessage = nil
             self.statusMessage = "登录状态已刷新"
         }
@@ -285,8 +316,7 @@ final class NinebotViewModel: ObservableObject {
 
     func refreshDashboard() async {
         await runLoadingOperation(message: "正在刷新车况") {
-            let client = try makeClient()
-            let dashboard = try await client.fetchDashboard(selectedSN: self.dashboard.selectedSN)
+            let dashboard = try await self.fetchDashboard(selectedSN: self.dashboard.selectedSN)
             let archivedDashboard = self.saveDashboard(dashboard)
             await self.cacheVehicleImages(for: archivedDashboard)
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
@@ -300,10 +330,10 @@ final class NinebotViewModel: ObservableObject {
     /// overlay, and keeps the last known values when the network has a blip.
     func refreshDashboardSilently() async {
         guard hasConfiguration, !isLoading else { return }
+        guard dataSourceMode != .official || hasLoginAccount else { return }
 
         do {
-            let client = try makeClient()
-            let dashboard = try await client.fetchLiveDashboard(from: self.dashboard)
+            let dashboard = try await fetchLiveDashboard(from: self.dashboard)
             let archivedDashboard = self.saveDashboard(dashboard, reloadWidgets: false)
             lastAutomaticRefreshAt = Date()
 
@@ -338,7 +368,7 @@ final class NinebotViewModel: ObservableObject {
             let page = try await client.syncTravelMonth(sn: vehicleSN, month: month, pageSize: 100)
             self.store.upsertInterfaceRideRecords(page.records, sn: vehicleSN)
 
-            let dashboard = try await client.fetchDashboard(selectedSN: vehicleSN)
+            let dashboard = try await self.fetchDashboard(selectedSN: vehicleSN)
             let archivedDashboard = self.saveDashboard(dashboard)
             await self.cacheVehicleImages(for: archivedDashboard)
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
@@ -408,14 +438,37 @@ final class NinebotViewModel: ObservableObject {
             guard !account.trimmed.isEmpty else { throw NinebotInputError.missingAccount }
             guard !password.isEmpty else { throw NinebotInputError.missingPassword }
 
-            saveConfiguration()
-            let client = try makeClient()
-            let result = try await loginWithPassword(client: client, account: account.trimmed, password: password)
+            let result: NinebotLoginResult
+            if self.dataSourceMode == .official {
+                let session = try await NinebotOfficialClient().login(
+                    account: self.account.trimmed,
+                    password: self.password
+                )
+                try self.officialSessionStore.save(session)
+                result = NinebotLoginResult(
+                    uuid: nil,
+                    phone: self.account.trimmed,
+                    areaCode: "86",
+                    region: "CN",
+                    businessUID: nil,
+                    accountID: nil,
+                    sessionToken: nil
+                )
+                self.store.saveDataSourceMode(.official)
+            } else {
+                self.saveConfiguration()
+                let client = try self.makeClient()
+                result = try await self.loginWithPassword(
+                    client: client,
+                    account: self.account.trimmed,
+                    password: self.password
+                )
+            }
             rememberLoginResult(result, fallbackAccount: account.trimmed)
             password = ""
             await self.syncPushDeviceTokenIfPossible()
 
-            let dashboard = try await makeClient().fetchDashboard(selectedSN: self.dashboard.selectedSN)
+            let dashboard = try await self.fetchDashboard(selectedSN: self.dashboard.selectedSN)
             let archivedDashboard = self.saveDashboard(dashboard)
             await self.cacheVehicleImages(for: archivedDashboard)
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
@@ -427,6 +480,7 @@ final class NinebotViewModel: ObservableObject {
     func sendSMSCode() async {
         await runLoadingOperation(message: "正在发送验证码") {
             guard !account.trimmed.isEmpty else { throw NinebotInputError.missingAccount }
+            guard self.dataSourceMode != .official else { throw NinebotInputError.officialPasswordOnly }
 
             saveConfiguration()
             let client = try makeClient()
@@ -444,6 +498,7 @@ final class NinebotViewModel: ObservableObject {
         await runLoadingOperation(message: "正在验证码登录") {
             guard !account.trimmed.isEmpty else { throw NinebotInputError.missingAccount }
             guard !smsCode.trimmed.isEmpty else { throw NinebotInputError.missingCode }
+            guard self.dataSourceMode != .official else { throw NinebotInputError.officialPasswordOnly }
 
             saveConfiguration()
             let client = try makeClient()
@@ -452,7 +507,7 @@ final class NinebotViewModel: ObservableObject {
             smsCode = ""
             await self.syncPushDeviceTokenIfPossible()
 
-            let dashboard = try await makeClient().fetchDashboard(selectedSN: self.dashboard.selectedSN)
+            let dashboard = try await self.fetchDashboard(selectedSN: self.dashboard.selectedSN)
             let archivedDashboard = self.saveDashboard(dashboard)
             await self.cacheVehicleImages(for: archivedDashboard)
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
@@ -485,6 +540,9 @@ final class NinebotViewModel: ObservableObject {
         }
 
         await runLoadingOperation(message: action.loadingTitle) {
+            guard self.dataSourceMode != .official else {
+                throw NinebotInputError.officialReadOnly
+            }
             let client = try makeClient()
             switch action {
             case .bell:
@@ -500,7 +558,7 @@ final class NinebotViewModel: ObservableObject {
             self.statusMessage = action.resultTitle
             self.errorMessage = nil
 
-            let dashboard = try await client.fetchDashboard(selectedSN: sn)
+            let dashboard = try await self.fetchDashboard(selectedSN: sn)
             let archivedDashboard = self.saveDashboard(dashboard)
             await self.cacheVehicleImages(for: archivedDashboard)
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
@@ -543,6 +601,9 @@ final class NinebotViewModel: ObservableObject {
         }
 
         do {
+            guard dataSourceMode != .official else {
+                throw NinebotInputError.officialReadOnly
+            }
             let client = try makeClient()
             let detail = try await client.fetchTravelDetail(sn: vehicleSN, travelID: rideID)
             rideDetails[key] = detail
@@ -610,10 +671,16 @@ final class NinebotViewModel: ObservableObject {
     }
 
     private var diagnosticsConnectionText: String {
-        baseURLString.trimmed.isEmpty ? "\(dataSourceMode.shortTitle)未配置" : "\(dataSourceMode.shortTitle) · \(baseURLString.trimmed)"
+        if dataSourceMode == .official {
+            return "九号官方直连"
+        }
+        return baseURLString.trimmed.isEmpty ? "\(dataSourceMode.shortTitle)未配置" : "\(dataSourceMode.shortTitle) · \(baseURLString.trimmed)"
     }
 
     private func makeClient() throws -> NinebotProxyClient {
+        guard dataSourceMode != .official else {
+            throw NinebotInputError.officialReadOnly
+        }
         let configuration = currentConfiguration
         guard configuration.isUsable else {
             throw NinebotInputError.missingProxy
@@ -621,6 +688,33 @@ final class NinebotViewModel: ObservableObject {
         store.saveDataSourceMode(dataSourceMode)
         store.saveConfiguration(configuration)
         return NinebotProxyClient(configuration: configuration)
+    }
+
+    private func requireOfficialSession() throws -> NinebotOfficialSession {
+        guard let session = officialSessionStore.load(), session.isUsable else {
+            throw NinebotOfficialError.missingSession
+        }
+        return session
+    }
+
+    private func fetchDashboard(selectedSN: String?) async throws -> NinebotDashboard {
+        if dataSourceMode == .official {
+            return try await NinebotOfficialClient().fetchDashboard(
+                session: requireOfficialSession(),
+                selectedSN: selectedSN
+            )
+        }
+        return try await makeClient().fetchDashboard(selectedSN: selectedSN)
+    }
+
+    private func fetchLiveDashboard(from cached: NinebotDashboard) async throws -> NinebotDashboard {
+        if dataSourceMode == .official {
+            return try await NinebotOfficialClient().fetchLiveDashboard(
+                session: requireOfficialSession(),
+                from: cached
+            )
+        }
+        return try await makeClient().fetchLiveDashboard(from: cached)
     }
 
     private func rideDetailKey(vehicleSN: String, rideID: String) -> String {

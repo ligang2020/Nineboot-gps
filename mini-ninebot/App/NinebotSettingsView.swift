@@ -4,9 +4,8 @@ import UIKit
 struct NinebotSettingsView: View {
     @ObservedObject var model: NinebotViewModel
     @Environment(\.openURL) private var openURL
-    @State private var loginMode: LoginMode = .sms
+    @State private var loginMode: LoginMode = .password
     @State private var isShowingConnectionSettings = false
-    @State private var isBindingAccount = false
 
     var body: some View {
         Group {
@@ -55,63 +54,67 @@ struct NinebotSettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Divider()
 
-                        Toggle(isOn: proxyModeBinding) {
-                            SettingsNavigationRow(
-                                title: "代理模式",
-                                subtitle: model.dataSourceMode == .proxy ? "当前使用 ninecli 代理" : "默认使用 NinePlus 服务器",
-                                systemImage: "server.rack",
-                                tint: model.dataSourceMode == .proxy ? .orange : .green
-                            )
+                        Picker("数据来源", selection: $model.dataSourceMode) {
+                            ForEach(NinebotDataSourceMode.allCases) { mode in
+                                Text(mode.shortTitle).tag(mode)
+                            }
                         }
-                        .tint(.orange)
+                        .pickerStyle(.segmented)
+                        .onChange(of: model.dataSourceMode) { _, _ in
+                            model.saveDataSourceMode()
+                        }
 
-                        SettingsInputField(
-                            title: "\(model.dataSourceMode.shortTitle)地址",
-                            placeholder: model.dataSourceMode.endpointPlaceholder,
-                            systemImage: model.dataSourceMode.systemImage,
-                            text: $model.baseURLString,
-                            keyboardType: .URL,
-                            textContentType: .URL
-                        )
-
-                        SettingsInputField(
-                            title: "访问口令（可选）",
-                            placeholder: model.dataSourceMode.tokenPlaceholder,
-                            systemImage: "key.horizontal.fill",
-                            text: $model.bearerToken,
-                            isSecure: true
-                        )
-
-                        HStack(spacing: 10) {
+                        if model.dataSourceMode == .official {
                             Button {
                                 isShowingConnectionSettings = false
                             } label: {
-                                SettingsCompactButtonLabel(title: "收起", systemImage: "chevron.up")
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button {
-                                Task { await model.testConnection() }
-                            } label: {
-                                SettingsCompactButtonLabel(title: "测试", systemImage: "network")
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(!hasText(model.baseURLString))
-
-                            Button {
-                                saveConnection()
-                            } label: {
-                                SettingsCompactButtonLabel(title: "保存", systemImage: "tray.and.arrow.down.fill")
+                                SettingsCompactButtonLabel(title: "完成", systemImage: "checkmark")
                             }
                             .buttonStyle(.borderedProminent)
-                            .disabled(!hasText(model.baseURLString))
-                        }
-                        .font(.subheadline.weight(.semibold))
+                        } else {
+                            SettingsInputField(
+                                title: "\(model.dataSourceMode.shortTitle)地址",
+                                placeholder: model.dataSourceMode.endpointPlaceholder,
+                                systemImage: model.dataSourceMode.systemImage,
+                                text: $model.baseURLString,
+                                keyboardType: .URL,
+                                textContentType: .URL
+                            )
 
-                        Text(model.dataSourceMode == .platform ? "开启后会登记 APNs，用于充电完成、车辆报警和安全异常提醒；多账号、APNs 和轮询策略在 NinePlus Platform 后台管理。" : "代理模式是单账号直连，适合调试；车辆报警的远程推送需使用 NinePlus Platform 模式。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                            SettingsInputField(
+                                title: "访问口令（可选）",
+                                placeholder: model.dataSourceMode.tokenPlaceholder,
+                                systemImage: "key.horizontal.fill",
+                                text: $model.bearerToken,
+                                isSecure: true
+                            )
+
+                            HStack(spacing: 10) {
+                                Button {
+                                    isShowingConnectionSettings = false
+                                } label: {
+                                    SettingsCompactButtonLabel(title: "收起", systemImage: "chevron.up")
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button {
+                                    Task { await model.testConnection() }
+                                } label: {
+                                    SettingsCompactButtonLabel(title: "测试", systemImage: "network")
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(!hasText(model.baseURLString))
+
+                                Button {
+                                    saveConnection()
+                                } label: {
+                                    SettingsCompactButtonLabel(title: "保存", systemImage: "tray.and.arrow.down.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(!hasText(model.baseURLString))
+                            }
+                            .font(.subheadline.weight(.semibold))
+                        }
 
                         Divider()
 
@@ -211,24 +214,13 @@ struct NinebotSettingsView: View {
     }
 
     private var connectionSummaryText: String {
+        if model.dataSourceMode == .official {
+            return "九号官方直连"
+        }
         if model.hasConfiguration {
             return "\(model.dataSourceMode.shortTitle)已配置 · \(model.pushDeviceToken == nil ? "APNs 未上报" : "APNs 已就绪")"
         }
         return "配置服务器、代理模式和通知上报"
-    }
-
-    private var proxyModeBinding: Binding<Bool> {
-        Binding(
-            get: { model.dataSourceMode == .proxy },
-            set: { isProxyEnabled in
-                model.dataSourceMode = isProxyEnabled ? .proxy : .platform
-                model.saveDataSourceMode()
-                if !isProxyEnabled {
-                    isBindingAccount = false
-                    Task { await model.syncPushDeviceTokenIfPossible() }
-                }
-            }
-        )
     }
 
     private func saveConnection() {
@@ -395,7 +387,9 @@ private struct NinebotLoginPage: View {
                         LoginHeroVisual()
 
                         VStack(spacing: 18) {
-                            LoginSegmentedTabs(selection: $loginMode)
+                            if model.dataSourceMode != .official {
+                                LoginSegmentedTabs(selection: $loginMode)
+                            }
 
                             VStack(spacing: 12) {
                                 LoginInputRow(
@@ -486,6 +480,16 @@ private struct NinebotLoginPage: View {
         }
         .onDisappear {
             countdownTask?.cancel()
+        }
+        .onAppear {
+            if model.dataSourceMode == .official {
+                loginMode = .password
+            }
+        }
+        .onChange(of: model.dataSourceMode) { _, mode in
+            if mode == .official {
+                loginMode = .password
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
             updateKeyboardHeight(from: notification)
@@ -713,55 +717,65 @@ private struct LoginConnectionSheet: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Toggle(isOn: proxyModeBinding) {
-                    SettingsNavigationRow(
-                        title: "代理模式",
-                        subtitle: model.dataSourceMode == .proxy ? "当前使用代理" : "默认连接 NinePlus",
-                        systemImage: "server.rack",
-                        tint: model.dataSourceMode == .proxy ? .orange : .blue
-                    )
-                }
-                .tint(.orange)
-
-                SettingsInputField(
-                    title: "\(model.dataSourceMode.shortTitle)地址",
-                    placeholder: model.dataSourceMode.endpointPlaceholder,
-                    systemImage: model.dataSourceMode.systemImage,
-                    text: $model.baseURLString,
-                    keyboardType: .URL,
-                    textContentType: .URL
-                )
-
-                SettingsInputField(
-                    title: "访问口令（可选）",
-                    placeholder: model.dataSourceMode.tokenPlaceholder,
-                    systemImage: "key.horizontal.fill",
-                    text: $model.bearerToken,
-                    isSecure: true
-                )
-
-                HStack(spacing: 10) {
-                    Button {
-                        Task { await model.testConnection() }
-                    } label: {
-                        SettingsCompactButtonLabel(title: "测试", systemImage: "network")
+                Picker("数据来源", selection: $model.dataSourceMode) {
+                    ForEach(NinebotDataSourceMode.allCases) { mode in
+                        Text(mode.shortTitle).tag(mode)
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(model.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: model.dataSourceMode) { _, _ in
+                    model.saveDataSourceMode()
+                }
 
+                if model.dataSourceMode == .official {
                     Button {
                         model.saveConfiguration()
-                        if model.hasConfiguration {
-                            dismiss()
-                            if model.dataSourceMode == .platform {
-                                Task { await model.syncPushDeviceTokenIfPossible() }
-                            }
-                        }
+                        dismiss()
                     } label: {
-                        SettingsCompactButtonLabel(title: "保存", systemImage: "checkmark")
+                        SettingsButtonLabel(title: "使用九号官方直连", systemImage: "network")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(model.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                } else {
+                    SettingsInputField(
+                        title: "\(model.dataSourceMode.shortTitle)地址",
+                        placeholder: model.dataSourceMode.endpointPlaceholder,
+                        systemImage: model.dataSourceMode.systemImage,
+                        text: $model.baseURLString,
+                        keyboardType: .URL,
+                        textContentType: .URL
+                    )
+
+                    SettingsInputField(
+                        title: "访问口令（可选）",
+                        placeholder: model.dataSourceMode.tokenPlaceholder,
+                        systemImage: "key.horizontal.fill",
+                        text: $model.bearerToken,
+                        isSecure: true
+                    )
+
+                    HStack(spacing: 10) {
+                        Button {
+                            Task { await model.testConnection() }
+                        } label: {
+                            SettingsCompactButtonLabel(title: "测试", systemImage: "network")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                        Button {
+                            model.saveConfiguration()
+                            if model.hasConfiguration {
+                                dismiss()
+                                if model.dataSourceMode == .platform {
+                                    Task { await model.syncPushDeviceTokenIfPossible() }
+                                }
+                            }
+                        } label: {
+                            SettingsCompactButtonLabel(title: "保存", systemImage: "checkmark")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -778,15 +792,6 @@ private struct LoginConnectionSheet: View {
         }
     }
 
-    private var proxyModeBinding: Binding<Bool> {
-        Binding(
-            get: { model.dataSourceMode == .proxy },
-            set: { isProxyEnabled in
-                model.dataSourceMode = isProxyEnabled ? .proxy : .platform
-                model.saveDataSourceMode()
-            }
-        )
-    }
 }
 
 private struct LoginHeroVisual: View {
@@ -1064,9 +1069,11 @@ private struct AccountBindingPanel: View {
                     textContentType: .username
                 )
 
-                LoginModePicker(selection: $loginMode)
+                if model.dataSourceMode != .official {
+                    LoginModePicker(selection: $loginMode)
+                }
 
-                if loginMode == .password {
+                if model.dataSourceMode == .official || loginMode == .password {
                     SettingsInputField(
                         title: "密码",
                         placeholder: "九号账号密码",
@@ -1150,7 +1157,7 @@ private struct AccountBindingPanel: View {
     }
 
     private var primaryLoginTitle: String {
-        model.dataSourceMode == .platform ? "绑定账号" : "登录代理"
+        model.dataSourceMode == .proxy ? "登录代理" : "绑定账号"
     }
 
     private func collapseIfLoggedIn() {
@@ -1169,7 +1176,7 @@ private struct AccountLoginHero: View {
             ZStack {
                 Circle()
                     .fill(tint.opacity(0.14))
-                Image(systemName: mode == .platform ? "cloud.fill" : "server.rack")
+                Image(systemName: mode.systemImage)
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(tint)
             }
@@ -1191,21 +1198,26 @@ private struct AccountLoginHero: View {
     }
 
     private var tint: Color {
-        hasConfiguration ? (mode == .platform ? .green : .orange) : .orange
+        hasConfiguration ? (mode == .proxy ? .orange : .green) : .orange
     }
 
     private var title: String {
         if !hasConfiguration { return "先保存连接地址" }
-        return mode == .platform ? "九号账号登录" : "代理账号登录"
+        return mode == .proxy ? "代理账号登录" : "九号账号登录"
     }
 
     private var detail: String {
         if !hasConfiguration {
             return "在“连接与通知”里保存地址和 Token 后再绑定账号。"
         }
-        return mode == .platform
-            ? "绑定后会自动刷新车辆数据，并持续补齐行程记录。"
-            : "代理模式会直接登录当前 ninecli serve，会替换代理上的单账号会话。"
+        switch mode {
+        case .official:
+            return "登录后直接读取九号官方云车况。"
+        case .platform:
+            return "绑定后会自动刷新车辆数据，并持续补齐行程记录。"
+        case .proxy:
+            return "代理模式会直接登录当前 ninecli serve，会替换代理上的单账号会话。"
+        }
     }
 }
 
@@ -1409,10 +1421,16 @@ private struct SettingsOverviewCard: View {
     }
 
     private var summaryText: String {
-        hasConfiguration ? cleanBaseURL : (dataSourceMode == .platform ? "填写 NinePlus Platform 地址后读取服务器数据" : "填写 ninecli serve 地址后直接读取代理")
+        if dataSourceMode == .official {
+            return "直接连接九号官方云"
+        }
+        return hasConfiguration ? cleanBaseURL : (dataSourceMode == .platform ? "填写 NinePlus Platform 地址后读取服务器数据" : "填写 ninecli serve 地址后直接读取代理")
     }
 
     private var cleanBaseURL: String {
+        if dataSourceMode == .official {
+            return "九号官方云"
+        }
         let value = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? "\(dataSourceMode.shortTitle)地址为空" : value
     }
@@ -1901,7 +1919,7 @@ private struct AccountSummaryRow: View {
         if hasAccount {
             return accountText
         }
-        return dataSourceMode == .platform ? "绑定后自动刷新车辆数据" : "代理模式下直接登录当前代理"
+        return dataSourceMode == .proxy ? "代理模式下直接登录当前代理" : "绑定后自动刷新车辆数据"
     }
 
     private var detailText: String? {

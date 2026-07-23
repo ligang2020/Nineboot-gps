@@ -15,6 +15,7 @@
 		B20000000000000000000005 /* NinebotChargeLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000109 /* NinebotChargeLiveActivityManager.swift */; };
 		B20000000000000000000006 /* NinebotSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010A /* NinebotSettingsView.swift */; };
 		B20000000000000000000007 /* NinebotViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010B /* NinebotViewModel.swift */; };
+		B2000000000000000000000F /* NinebotOfficialClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010C /* NinebotOfficialClient.swift */; };
 		B20000000000000000000008 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000101 /* ContentView.swift */; };
 		B20000000000000000000009 /* mini_ninebotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000102 /* mini_ninebotApp.swift */; };
 		B2000000000000000000000A /* NinebotCoordinateTransform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000201 /* NinebotCoordinateTransform.swift */; };
@@ -71,6 +72,7 @@
 		B100000000000000000000109 /* NinebotChargeLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotChargeLiveActivityManager.swift"; sourceTree = "<group>"; };
 		B10000000000000000000010A /* NinebotSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotSettingsView.swift"; sourceTree = "<group>"; };
 		B10000000000000000000010B /* NinebotViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotViewModel.swift"; sourceTree = "<group>"; };
+		B10000000000000000000010C /* NinebotOfficialClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotOfficialClient.swift"; sourceTree = "<group>"; };
 		B100000000000000000000201 /* NinebotCoordinateTransform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotCoordinateTransform.swift"; sourceTree = "<group>"; };
 		B100000000000000000000202 /* NinebotModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotModels.swift"; sourceTree = "<group>"; };
 		B100000000000000000000203 /* NinebotProxyClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotProxyClient.swift"; sourceTree = "<group>"; };
@@ -137,6 +139,7 @@
 				B100000000000000000000109 /* NinebotChargeLiveActivityManager.swift */,
 				B10000000000000000000010A /* NinebotSettingsView.swift */,
 				B10000000000000000000010B /* NinebotViewModel.swift */,
+				B10000000000000000000010C /* NinebotOfficialClient.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -291,6 +294,7 @@
 				B20000000000000000000005 /* NinebotChargeLiveActivityManager.swift in Sources */,
 				B20000000000000000000006 /* NinebotSettingsView.swift in Sources */,
 				B20000000000000000000007 /* NinebotViewModel.swift in Sources */,
+				B2000000000000000000000F /* NinebotOfficialClient.swift in Sources */,
 				B20000000000000000000008 /* ContentView.swift in Sources */,
 				B20000000000000000000009 /* mini_ninebotApp.swift in Sources */,
 				B2000000000000000000000A /* NinebotCoordinateTransform.swift in Sources */,

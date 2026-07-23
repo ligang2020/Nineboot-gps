@@ -210,9 +210,8 @@ private enum NinebotShortcutRunner {
         let startedAt = Date()
         let store = NinebotSharedStore()
         do {
-            let client = try client(from: store)
             let cached = store.loadDashboard()
-            let dashboard = try await client.fetchDashboard(selectedSN: cached?.selectedSN)
+            let dashboard = try await fetchDashboard(store: store, selectedSN: cached?.selectedSN)
             let archivedDashboard = archiveDashboard(dashboard, in: store)
             recordShortcutEvent(store: store, startedAt: startedAt, operation: "刷新车况", success: true, message: archivedDashboard.primaryVehicle?.vehicle.displayName)
             WidgetCenter.shared.reloadAllTimelines()
@@ -272,6 +271,9 @@ private enum NinebotShortcutRunner {
         let startedAt = Date()
         let store = NinebotSharedStore()
         do {
+            guard store.loadDataSourceMode() != .official else {
+                throw NinebotInputError.officialReadOnly
+            }
             let client = try client(from: store)
             let dashboard = try await dashboardForOperation(store: store, client: client)
             guard let vehicle = dashboard.primaryVehicle?.vehicle else {
@@ -316,6 +318,22 @@ private enum NinebotShortcutRunner {
         return NinebotProxyClient(configuration: configuration)
     }
 
+    private static func fetchDashboard(
+        store: NinebotSharedStore,
+        selectedSN: String?
+    ) async throws -> NinebotDashboard {
+        if store.loadDataSourceMode() == .official {
+            guard let session = NinebotOfficialSessionStore().load(), session.isUsable else {
+                throw NinebotOfficialError.missingSession
+            }
+            return try await NinebotOfficialClient().fetchDashboard(
+                session: session,
+                selectedSN: selectedSN
+            )
+        }
+        return try await client(from: store).fetchDashboard(selectedSN: selectedSN)
+    }
+
     private static func dashboardForOperation(
         store: NinebotSharedStore,
         client: NinebotProxyClient
@@ -333,15 +351,16 @@ private enum NinebotShortcutRunner {
     }
 
     private static func refreshedDashboardIfPossible(store: NinebotSharedStore) async throws -> NinebotDashboard {
-        guard let client = try? client(from: store) else {
-            if let cached = store.loadDashboard(), cached.primaryVehicle != nil {
+        let cached = store.loadDashboard()
+        do {
+            let dashboard = try await fetchDashboard(store: store, selectedSN: cached?.selectedSN)
+            return archiveDashboard(dashboard, in: store)
+        } catch {
+            if let cached, cached.primaryVehicle != nil {
                 return cached
             }
-            throw NinebotShortcutError.missingConfiguration
+            throw error
         }
-        let cached = store.loadDashboard()
-        let dashboard = try await client.fetchDashboard(selectedSN: cached?.selectedSN)
-        return archiveDashboard(dashboard, in: store)
     }
 
     private static func recordShortcutEvent(
