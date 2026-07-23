@@ -1405,7 +1405,11 @@ private struct VehicleMotionScene: View {
                 switch mode {
                 case .charging:
                     TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isAnimating)) { timeline in
-                        chargingScene(in: proxy.size, phase: timeline.date.timeIntervalSinceReferenceDate)
+                        chargingScene(
+                            in: proxy.size,
+                            phase: timeline.date.timeIntervalSinceReferenceDate,
+                            weather: rideWeather.snapshot
+                        )
                     }
                 case .parked:
                     // Keep the parked vehicle and roadway still, while weather
@@ -1470,25 +1474,27 @@ private struct VehicleMotionScene: View {
     }
 
     @ViewBuilder
-    private func chargingScene(in size: CGSize, phase: TimeInterval) -> some View {
+    private func chargingScene(
+        in size: CGSize,
+        phase: TimeInterval,
+        weather: RideWeatherSnapshot
+    ) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.96), Color.teslaGreen.opacity(0.055), Color.black.opacity(0.025)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            // Charging and parked modes share the exact same stationary city,
+            // road and live weather. Only the charging equipment and energy
+            // flow animate above this environment.
+            LiveRideEnvironment(
+                weather: weather,
+                phase: phase,
+                animatesRoadAndCity: false
+            )
 
             Ellipse()
-                .fill(Color.teslaGreen.opacity(0.12))
-                .frame(width: size.width * 0.64, height: size.height * 0.30)
-                .blur(radius: 22)
-                .scaleEffect(1.0 + CGFloat(sin(phase * 1.7)) * 0.06)
-                .offset(x: size.width * 0.13, y: size.height * 0.22)
+                .fill(Color.black.opacity(weather.isNight ? 0.34 : 0.19))
+                .frame(width: size.width * 0.53, height: size.height * 0.065)
+                .blur(radius: 7)
+                .offset(x: size.width * 0.015, y: size.height * 0.30)
 
-            chargingGrid(size: size)
             chargingCable(size: size)
 
             // Energy must travel in the physical charging direction: from the
@@ -1498,8 +1504,8 @@ private struct VehicleMotionScene: View {
             // Always use the selected vehicle artwork from the API. Do not
             // substitute the scooter shown in any visual reference image.
             VehicleImage(urlString: snapshot.vehicle.imageURLString, size: min(size.width * 0.74, 276), showsBackground: false)
-                .shadow(color: .black.opacity(0.18), radius: 17, x: 0, y: 12)
-                .offset(x: -size.width * 0.08, y: size.height * 0.04)
+                .shadow(color: .black.opacity(weather.isNight ? 0.32 : 0.21), radius: 12, x: 0, y: 8)
+                .offset(x: -size.width * 0.045, y: size.height * 0.03)
 
             // Keep the charging pile visually secondary to the customer's
             // vehicle: a slimmer body and compact illuminated face create a
@@ -1514,15 +1520,13 @@ private struct VehicleMotionScene: View {
                 .frame(width: min(size.width * 0.245, 86))
                 .offset(x: size.width * 0.015, y: -size.height * 0.275)
 
-            Capsule()
-                .fill(LinearGradient(colors: [.clear, Color.teslaGreen.opacity(0.88), .white.opacity(0.88), Color.teslaGreen.opacity(0.88), .clear], startPoint: .leading, endPoint: .trailing))
-                .frame(width: size.width * 0.26, height: 2)
-                .offset(
-                    x: (CGFloat((phase * 0.64).truncatingRemainder(dividingBy: 1.0)) * 1.43 - 0.49) * size.width,
-                    y: size.height * 0.39
-                )
-                .blur(radius: 0.45)
-                .shadow(color: Color.teslaGreen.opacity(0.68), radius: 4)
+            Circle()
+                .stroke(Color.teslaGreen.opacity(0.74), lineWidth: 1.4)
+                .frame(width: 12, height: 12)
+                .scaleEffect(0.72 + CGFloat((phase * 1.25).truncatingRemainder(dividingBy: 1.0)) * 1.15)
+                .opacity(1 - (phase * 1.25).truncatingRemainder(dividingBy: 1.0))
+                .shadow(color: Color.teslaGreen.opacity(0.74), radius: 5)
+                .position(x: size.width * 0.57, y: size.height * 0.66)
         }
         .frame(width: size.width, height: size.height)
         .clipped()
@@ -1636,26 +1640,6 @@ private struct VehicleMotionScene: View {
         let minutes = (elapsed % 3_600) / 60
         let seconds = elapsed % 60
         return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
-    }
-
-    private func chargingGrid(size: CGSize) -> some View {
-        ZStack {
-            ForEach(0..<4, id: \.self) { row in
-                Rectangle()
-                    .fill(Color.black.opacity(0.045))
-                    .frame(height: 0.7)
-                    .offset(y: CGFloat(row - 1) * 26 + size.height * 0.28)
-                    .rotation3DEffect(.degrees(61), axis: (x: 1, y: 0, z: 0), perspective: 0.65)
-            }
-            ForEach(0..<6, id: \.self) { column in
-                Rectangle()
-                    .fill(Color.teslaGreen.opacity(0.07))
-                    .frame(width: 0.7, height: size.height * 0.66)
-                    .rotationEffect(.degrees(35))
-                    .offset(x: CGFloat(column - 2) * 42, y: size.height * 0.22)
-            }
-        }
-        .mask(RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private func chargingCable(size: CGSize) -> some View {
@@ -2012,7 +1996,7 @@ private struct LiveRideEnvironment: View {
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            let cloudDrift = CGFloat((phase * 0.010).truncatingRemainder(dividingBy: 1.0)) * size.width
+            let cloudDrift = CGFloat(sin(phase * 0.035)) * size.width * 0.10
             let precipitationDrift = CGFloat((phase * (weather.isBlizzard ? 1.42 : 0.82)).truncatingRemainder(dividingBy: 1.0))
             let lightningFlash = weather.hasLightning
                 ? pow(max(0, sin(phase * 1.9) + sin(phase * 0.47 + 1.8) - 1.42) / 0.58, 2)
@@ -2029,7 +2013,7 @@ private struct LiveRideEnvironment: View {
 
                 citySkyline(size: size, phase: animatesRoadAndCity ? phase : 0)
                 road(size: size, phase: animatesRoadAndCity ? phase : 0)
-                streetLights(size: size)
+                streetLights(size: size, phase: animatesRoadAndCity ? phase : 0)
 
                 if weather.hasRain {
                     rain(size: size, drift: precipitationDrift, phase: phase)
@@ -2112,7 +2096,12 @@ private struct LiveRideEnvironment: View {
                 let x = (CGFloat((index * 37) % 100) / 100 - 0.5) * size.width
                 let y = (CGFloat((index * 19) % 54) / 100 - 0.41) * size.height
                 Circle()
-                    .fill(Color.white.opacity(0.32 + 0.24 * sin(phase * 1.7 + Double(index))))
+                    .fill(
+                        Color.white.opacity(
+                            (weather.condition == .cloudy ? 0.13 : 0.32)
+                                + (weather.condition == .cloudy ? 0.10 : 0.24) * sin(phase * 1.7 + Double(index))
+                        )
+                    )
                     .frame(width: index.isMultiple(of: 3) ? 1.6 : 1.0, height: index.isMultiple(of: 3) ? 1.6 : 1.0)
                     .offset(x: x, y: y)
             }
@@ -2122,10 +2111,14 @@ private struct LiveRideEnvironment: View {
                 .frame(width: size.width * 0.082, height: size.width * 0.082)
                 .shadow(color: Color.white.opacity(0.36), radius: 9)
                 .offset(x: size.width * 0.30, y: -size.height * 0.29)
-        } else {
-            nightCloud(width: size.width * 0.45, height: size.height * 0.18, opacity: 0.52, phase: phase, variant: 0)
+                .opacity(weather.condition == .cloudy ? 0.52 : 1)
+        }
+
+        if weather.condition != .clear {
+            let cloudOpacity = weather.condition == .cloudy ? 0.44 : 0.58
+            nightCloud(width: size.width * 0.45, height: size.height * 0.18, opacity: cloudOpacity, phase: phase, variant: 0)
                 .offset(x: -size.width * 0.24 + cloudDrift * 0.16, y: -size.height * 0.29)
-            nightCloud(width: size.width * 0.52, height: size.height * 0.20, opacity: 0.58, phase: phase, variant: 1)
+            nightCloud(width: size.width * 0.52, height: size.height * 0.20, opacity: cloudOpacity + 0.06, phase: phase, variant: 1)
                 .offset(x: size.width * 0.26 - cloudDrift * 0.13, y: -size.height * 0.20)
         }
     }
@@ -2138,61 +2131,27 @@ private struct LiveRideEnvironment: View {
         variant: Int
     ) -> some View {
         let denseWeather = weather.condition == .rain || weather.condition == .storm || weather.condition == .snow
-        let breath = 1 + CGFloat(sin(phase * 0.22 + Double(variant) * 1.7)) * 0.018
         let topColor = denseWeather
             ? Color(red: 0.80, green: 0.84, blue: 0.86)
             : Color(red: 0.99, green: 0.995, blue: 1.0)
+        let middleColor = denseWeather
+            ? Color(red: 0.62, green: 0.68, blue: 0.71)
+            : Color(red: 0.85, green: 0.90, blue: 0.93)
         let underside = denseWeather
             ? Color(red: 0.42, green: 0.50, blue: 0.55)
             : Color(red: 0.68, green: 0.76, blue: 0.81)
 
-        return ZStack {
-            Ellipse()
-                .fill(underside.opacity(opacity * 0.34))
-                .frame(width: width * 0.82, height: height * 0.38)
-                .blur(radius: 3.8)
-                .offset(y: height * 0.16)
-
-            Ellipse()
-                .fill(
-                    LinearGradient(
-                        colors: [topColor.opacity(opacity * 0.88), underside.opacity(opacity * 0.72)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(width: width * 0.78, height: height * 0.46)
-                .offset(y: height * 0.07)
-
-            ForEach(0..<8, id: \.self) { index in
-                let seed = index + variant * 5
-                let lobeWidth = height * (0.52 + CGFloat((seed * 7) % 5) * 0.10)
-                let lobeHeight = height * (0.54 + CGFloat((seed * 3) % 4) * 0.11)
-                let x = width * (-0.31 + CGFloat(index) * 0.088)
-                let y = height * (-0.10 + CGFloat((seed * 11) % 5) * 0.035)
-
-                Ellipse()
-                    .fill(
-                        RadialGradient(
-                            colors: [topColor.opacity(opacity), topColor.opacity(opacity * 0.74), underside.opacity(opacity * 0.35)],
-                            center: .topLeading,
-                            startRadius: 0,
-                            endRadius: max(lobeWidth, lobeHeight) * 0.62
-                        )
-                    )
-                    .frame(width: lobeWidth, height: lobeHeight)
-                    .offset(x: x, y: y)
-            }
-
-            Ellipse()
-                .fill(Color.white.opacity(denseWeather ? opacity * 0.13 : opacity * 0.27))
-                .frame(width: width * 0.50, height: height * 0.16)
-                .blur(radius: 2.2)
-                .offset(x: -width * 0.08, y: -height * 0.20)
-        }
-        .scaleEffect(x: breath, y: 1 / breath)
-        .blur(radius: 0.45)
-        .drawingGroup()
+        return AtmosphericCloudLayer(
+            width: width,
+            height: height,
+            opacity: opacity,
+            phase: phase,
+            variant: variant,
+            highlight: topColor,
+            midtone: middleColor,
+            shadow: underside,
+            isDense: denseWeather
+        )
     }
 
     // Rain and snow should not look like white daytime clouds over a night city.
@@ -2203,50 +2162,31 @@ private struct LiveRideEnvironment: View {
         phase: TimeInterval,
         variant: Int
     ) -> some View {
-        let breath = 1 + CGFloat(sin(phase * 0.18 + Double(variant) * 2.1)) * 0.015
         let moonlit = Color(red: 0.30, green: 0.38, blue: 0.48)
+        let middle = Color(red: 0.15, green: 0.21, blue: 0.29)
         let shadow = Color(red: 0.055, green: 0.08, blue: 0.13)
 
-        return ZStack {
-            Ellipse()
-                .fill(Color.black.opacity(opacity * 0.34))
-                .frame(width: width * 0.84, height: height * 0.38)
-                .blur(radius: 4.2)
-                .offset(y: height * 0.17)
-
-            Ellipse()
-                .fill(LinearGradient(colors: [moonlit.opacity(opacity * 0.66), shadow.opacity(opacity)], startPoint: .top, endPoint: .bottom))
-                .frame(width: width * 0.80, height: height * 0.45)
-                .offset(y: height * 0.07)
-
-            ForEach(0..<8, id: \.self) { index in
-                let seed = index + variant * 7
-                let lobeWidth = height * (0.54 + CGFloat((seed * 5) % 5) * 0.10)
-                let lobeHeight = height * (0.56 + CGFloat((seed * 9) % 4) * 0.11)
-
-                Ellipse()
-                    .fill(
-                        RadialGradient(
-                            colors: [moonlit.opacity(opacity * 0.76), shadow.opacity(opacity * 0.82)],
-                            center: .topLeading,
-                            startRadius: 0,
-                            endRadius: max(lobeWidth, lobeHeight) * 0.62
-                        )
-                    )
-                    .frame(width: lobeWidth, height: lobeHeight)
-                    .offset(
-                        x: width * (-0.31 + CGFloat(index) * 0.088),
-                        y: height * (-0.09 + CGFloat((seed * 13) % 5) * 0.035)
-                    )
-            }
-        }
-        .scaleEffect(x: breath, y: 1 / breath)
-        .blur(radius: 0.65)
-        .drawingGroup()
+        return AtmosphericCloudLayer(
+            width: width,
+            height: height,
+            opacity: opacity,
+            phase: phase,
+            variant: variant,
+            highlight: moonlit,
+            midtone: middle,
+            shadow: shadow,
+            isDense: true
+        )
     }
 
     private func citySkyline(size: CGSize, phase: TimeInterval) -> some View {
-        let drift = CGFloat(sin(phase * 0.10)) * size.width * 0.008
+        let frontProgress = CGFloat((phase * 0.060).truncatingRemainder(dividingBy: 1.0))
+        let rearProgress = CGFloat((phase * 0.034).truncatingRemainder(dividingBy: 1.0))
+        let frontSpacing = size.width * 0.086
+        let rearSpacing = size.width * 0.27
+        let frontScroll = frontProgress * frontSpacing * 12
+        let rearScroll = rearProgress * rearSpacing * 4
+
         return ZStack(alignment: .bottom) {
             // Atmospheric distance and a continuous street-level silhouette give
             // the skyline a believable depth instead of a row of floating cards.
@@ -2260,26 +2200,34 @@ private struct LiveRideEnvironment: View {
             .frame(height: size.height * 0.40)
             .offset(y: size.height * 0.08)
 
-            ForEach(0..<4, id: \.self) { index in
+            ForEach(0..<8, id: \.self) { index in
+                let pattern = index % 4
                 officeTower(
-                    index: index + 20,
-                    width: size.width * (0.13 + CGFloat(index % 2) * 0.025),
-                    height: size.height * (0.27 + CGFloat(index) * 0.055),
+                    index: pattern + 20,
+                    width: size.width * (0.13 + CGFloat(pattern % 2) * 0.025),
+                    height: size.height * (0.46 + CGFloat(pattern) * 0.065),
                     isRearTower: true,
                     size: size
                 )
-                .offset(x: size.width * (-0.40 + CGFloat(index) * 0.27), y: size.height * 0.11)
+                .offset(
+                    x: -size.width * 0.43 + CGFloat(index) * rearSpacing - rearScroll,
+                    y: size.height * 0.035
+                )
             }
 
-            ForEach(0..<12, id: \.self) { index in
+            ForEach(0..<24, id: \.self) { index in
+                let pattern = index % 12
                 officeTower(
-                    index: index,
-                    width: size.width * (0.075 + CGFloat((index * 5) % 4) * 0.014),
-                    height: size.height * (0.25 + CGFloat((index * 7) % 7) * 0.052),
+                    index: pattern,
+                    width: size.width * (0.075 + CGFloat((pattern * 5) % 4) * 0.014),
+                    height: size.height * (0.54 + CGFloat((pattern * 7) % 7) * 0.048),
                     isRearTower: false,
                     size: size
                 )
-                .offset(x: size.width * (-0.47 + CGFloat(index) * 0.086) + drift, y: size.height * 0.15)
+                .offset(
+                    x: -size.width * 0.47 + CGFloat(index) * frontSpacing - frontScroll,
+                    y: size.height * 0.025
+                )
             }
 
             Rectangle()
@@ -2392,103 +2340,108 @@ private struct LiveRideEnvironment: View {
     }
 
     private func road(size: CGSize, phase: TimeInterval) -> some View {
-        let travel = CGFloat((phase * 0.95).truncatingRemainder(dividingBy: 1.0))
-        let roadTop = size.height * 0.63
-        return ZStack {
-            // Sidewalks sit outside the asphalt and converge at the same
-            // vanishing point, which makes the road read as a real street.
-            Path { path in
-                path.move(to: CGPoint(x: 0, y: roadTop - 1))
-                path.addLine(to: CGPoint(x: size.width * 0.13, y: roadTop))
-                path.addLine(to: CGPoint(x: -size.width * 0.12, y: size.height))
-                path.addLine(to: CGPoint(x: 0, y: size.height))
-                path.closeSubpath()
-            }
-            .fill(Color(red: 0.31, green: 0.34, blue: 0.34).opacity(weather.isNight ? 0.55 : 0.66))
-            Path { path in
-                path.move(to: CGPoint(x: size.width, y: roadTop - 1))
-                path.addLine(to: CGPoint(x: size.width * 0.87, y: roadTop))
-                path.addLine(to: CGPoint(x: size.width * 1.12, y: size.height))
-                path.addLine(to: CGPoint(x: size.width, y: size.height))
-                path.closeSubpath()
-            }
-            .fill(Color(red: 0.31, green: 0.34, blue: 0.34).opacity(weather.isNight ? 0.55 : 0.66))
+        let travel = CGFloat((phase * 0.92).truncatingRemainder(dividingBy: 1.0))
+        let roadTop = size.height * 0.62
+        let roadHeight = size.height - roadTop
+        let dashSpacing = size.width * 0.245
+        let dashShift = travel * dashSpacing
 
+        return ZStack {
             Path { path in
-                path.move(to: CGPoint(x: size.width * 0.13, y: roadTop))
-                path.addLine(to: CGPoint(x: size.width * 0.87, y: roadTop))
-                path.addLine(to: CGPoint(x: size.width * 1.12, y: size.height))
-                path.addLine(to: CGPoint(x: -size.width * 0.12, y: size.height))
+                path.move(to: CGPoint(x: 0, y: roadTop))
+                path.addLine(to: CGPoint(x: size.width, y: roadTop))
+                path.addLine(to: CGPoint(x: size.width, y: size.height))
+                path.addLine(to: CGPoint(x: 0, y: size.height))
                 path.closeSubpath()
             }
             .fill(
                 LinearGradient(
                     colors: weather.isNight
-                        ? [Color(red: 0.055, green: 0.075, blue: 0.095), Color(red: 0.12, green: 0.15, blue: 0.18)]
-                        : [Color(red: 0.19, green: 0.25, blue: 0.28), Color(red: 0.10, green: 0.14, blue: 0.16)],
+                        ? [Color(red: 0.065, green: 0.08, blue: 0.095), Color(red: 0.12, green: 0.14, blue: 0.16)]
+                        : [Color(red: 0.22, green: 0.25, blue: 0.26), Color(red: 0.11, green: 0.13, blue: 0.14)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
             )
 
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: roadTop - size.height * 0.035))
+                path.addLine(to: CGPoint(x: size.width, y: roadTop - size.height * 0.035))
+                path.addLine(to: CGPoint(x: size.width, y: roadTop + size.height * 0.018))
+                path.addLine(to: CGPoint(x: 0, y: roadTop + size.height * 0.018))
+                path.closeSubpath()
+            }
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.52, green: 0.54, blue: 0.53).opacity(weather.isNight ? 0.62 : 0.82),
+                        Color(red: 0.25, green: 0.27, blue: 0.27).opacity(weather.isNight ? 0.74 : 0.88)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+
+            // Fixed-width lane dashes move only along the x-axis. This matches
+            // the side profile of the vehicle instead of appearing to rush
+            // toward the viewer along a perspective road.
             ForEach(0..<7, id: \.self) { index in
-                let progression = (CGFloat(index) + travel) / 7
-                let y = roadTop + size.height * 0.37 * progression
-                let halfWidth = size.width * (0.015 + progression * 0.18)
-                let dashHeight = max(1.5, size.height * (0.008 + progression * 0.018))
-                ForEach([-1.0, 1.0], id: \.self) { side in
-                    Capsule()
-                        .fill(Color.white.opacity(weather.isNight ? 0.64 : 0.72))
-                        .frame(width: halfWidth * 0.28, height: dashHeight)
-                        .offset(x: CGFloat(side) * halfWidth, y: y - size.height * 0.50)
-                }
+                Capsule()
+                    .fill(Color.white.opacity(weather.isNight ? 0.74 : 0.82))
+                    .frame(width: size.width * 0.135, height: max(2.5, size.height * 0.017))
+                    .position(
+                        x: -dashSpacing * 0.45 + CGFloat(index) * dashSpacing - dashShift,
+                        y: roadTop + roadHeight * 0.58
+                    )
             }
 
-            // A broken center line and subtle wet reflections add scale and
-            // motion without competing with the vehicle in the foreground.
-            ForEach(0..<6, id: \.self) { index in
-                let progression = (CGFloat(index) + travel * 0.8) / 6
-                let y = roadTop + size.height * 0.37 * progression
+            ForEach(0..<12, id: \.self) { index in
+                let textureSpacing = size.width * 0.16
+                let textureShift = travel * textureSpacing * 3
                 Capsule()
-                    .fill(Color.yellow.opacity(weather.isNight ? 0.78 : 0.56))
-                    .frame(width: size.width * (0.012 + progression * 0.035), height: max(1.2, progression * 3.2))
-                    .offset(y: y - size.height * 0.50)
+                    .fill(Color.white.opacity(weather.isNight ? 0.055 : 0.075))
+                    .frame(width: size.width * (0.07 + CGFloat(index % 3) * 0.018), height: 0.8)
+                    .position(
+                        x: -textureSpacing * 0.4 + CGFloat(index) * textureSpacing - textureShift,
+                        y: roadTop + roadHeight * (0.22 + CGFloat(index % 3) * 0.24)
+                    )
             }
 
             if weather.hasRain || weather.isNight {
-                ForEach(0..<5, id: \.self) { index in
-                    let x = size.width * (-0.34 + CGFloat(index) * 0.17)
-                    Rectangle()
+                ForEach(0..<8, id: \.self) { index in
+                    let reflectionSpacing = size.width * 0.22
+                    Capsule()
                         .fill((weather.isNight ? Color.orange : Color.white).opacity(weather.isNight ? 0.11 : 0.07))
-                        .frame(width: size.width * 0.018, height: size.height * 0.25)
+                        .frame(width: size.width * 0.11, height: 2)
                         .blur(radius: 2.5)
-                        .offset(x: x, y: size.height * 0.29)
+                        .position(
+                            x: -reflectionSpacing * 0.35 + CGFloat(index) * reflectionSpacing - travel * reflectionSpacing * 2,
+                            y: roadTop + roadHeight * (0.28 + CGFloat(index % 2) * 0.38)
+                        )
                 }
             }
 
             Path { path in
-                path.move(to: CGPoint(x: 0, y: roadTop + 4))
-                path.addLine(to: CGPoint(x: size.width, y: roadTop + 4))
+                path.move(to: CGPoint(x: 0, y: roadTop + size.height * 0.02))
+                path.addLine(to: CGPoint(x: size.width, y: roadTop + size.height * 0.02))
             }
-            .stroke(Color.white.opacity(0.42), lineWidth: 1)
-
-            Path { path in
-                path.move(to: CGPoint(x: size.width * 0.13, y: roadTop))
-                path.addLine(to: CGPoint(x: -size.width * 0.12, y: size.height))
-                path.move(to: CGPoint(x: size.width * 0.87, y: roadTop))
-                path.addLine(to: CGPoint(x: size.width * 1.12, y: size.height))
-            }
-            .stroke(Color.white.opacity(weather.isNight ? 0.62 : 0.78), lineWidth: 2)
+            .stroke(Color.white.opacity(weather.isNight ? 0.48 : 0.62), lineWidth: 1.2)
         }
     }
 
-    private func streetLights(size: CGSize) -> some View {
+    private func streetLights(size: CGSize, phase: TimeInterval) -> some View {
+        let travel = CGFloat((phase * 0.15).truncatingRemainder(dividingBy: 1.0))
+        let spacing = size.width * 0.55
+
         ZStack {
-            streetLamp(height: size.height * 0.43, glow: weather.isNight ? 0.96 : 0.16)
-                .offset(x: -size.width * 0.35, y: size.height * 0.09)
-            streetLamp(height: size.height * 0.36, glow: weather.isNight ? 0.82 : 0.13)
-                .scaleEffect(0.76)
-                .offset(x: size.width * 0.34, y: size.height * 0.13)
+            ForEach(0..<4, id: \.self) { index in
+                streetLamp(height: size.height * 0.43, glow: weather.isNight ? 0.96 : 0.16)
+                    .scaleEffect(0.82)
+                    .offset(
+                        x: -size.width * 0.48 + CGFloat(index) * spacing - travel * spacing,
+                        y: size.height * 0.11
+                    )
+            }
         }
     }
 
@@ -2641,6 +2594,127 @@ private struct LiveRideEnvironment: View {
     }
 }
 
+private struct AtmosphericCloudLayer: View {
+    var width: CGFloat
+    var height: CGFloat
+    var opacity: Double
+    var phase: TimeInterval
+    var variant: Int
+    var highlight: Color
+    var midtone: Color
+    var shadow: Color
+    var isDense: Bool
+
+    var body: some View {
+        let breath = 1 + CGFloat(sin(phase * 0.16 + Double(variant) * 1.9)) * 0.009
+        let shadowStrength = isDense ? 0.92 : 0.68
+
+        ZStack {
+            AtmosphericCloudShape(variant: variant)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            highlight.opacity(opacity * (isDense ? 0.82 : 0.94)),
+                            midtone.opacity(opacity * 0.94),
+                            shadow.opacity(opacity * shadowStrength)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            AtmosphericCloudShape(variant: variant + 1)
+                .fill(shadow.opacity(opacity * (isDense ? 0.44 : 0.28)))
+                .scaleEffect(x: 0.93, y: 0.54, anchor: .bottom)
+                .offset(y: height * 0.13)
+                .blur(radius: max(2.5, height * 0.055))
+
+            ZStack {
+                ForEach(0..<5, id: \.self) { index in
+                    let seed = index + variant * 3
+                    let glowWidth = width * (0.18 + CGFloat((seed * 7) % 4) * 0.035)
+                    let glowHeight = height * (0.34 + CGFloat((seed * 5) % 3) * 0.08)
+                    Ellipse()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    highlight.opacity(opacity * (isDense ? 0.22 : 0.38)),
+                                    midtone.opacity(opacity * 0.12),
+                                    .clear
+                                ],
+                                center: .topLeading,
+                                startRadius: 0,
+                                endRadius: max(glowWidth, glowHeight) * 0.62
+                            )
+                        )
+                        .frame(width: glowWidth, height: glowHeight)
+                        .offset(
+                            x: width * (-0.29 + CGFloat(index) * 0.145),
+                            y: height * (-0.10 + CGFloat((seed * 11) % 4) * 0.045)
+                        )
+                        .blur(radius: max(1.8, height * 0.035))
+                }
+
+                Capsule()
+                    .fill(highlight.opacity(opacity * (isDense ? 0.10 : 0.20)))
+                    .frame(width: width * 0.58, height: height * 0.11)
+                    .blur(radius: max(2, height * 0.045))
+                    .offset(x: -width * 0.08, y: -height * 0.18)
+            }
+            .mask(AtmosphericCloudShape(variant: variant))
+
+            Capsule()
+                .fill(shadow.opacity(opacity * 0.16))
+                .frame(width: width * 0.70, height: height * 0.10)
+                .blur(radius: max(3, height * 0.08))
+                .offset(x: width * 0.04, y: height * 0.30)
+        }
+        .frame(width: width, height: height)
+        .compositingGroup()
+        .shadow(color: shadow.opacity(opacity * 0.18), radius: max(3, height * 0.09), y: height * 0.08)
+        .scaleEffect(x: breath, y: 1 / breath)
+        .drawingGroup()
+    }
+}
+
+/// One continuous, asymmetric silhouette avoids the repeated circular lobes
+/// that make compact procedural clouds look like icons rather than atmosphere.
+private struct AtmosphericCloudShape: Shape {
+    var variant: Int
+
+    func path(in rect: CGRect) -> Path {
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + rect.width * x, y: rect.minY + rect.height * y)
+        }
+
+        var path = Path()
+        path.move(to: point(0.015, 0.70))
+
+        if variant.isMultiple(of: 2) {
+            path.addCurve(to: point(0.17, 0.49), control1: point(0.04, 0.60), control2: point(0.09, 0.48))
+            path.addCurve(to: point(0.33, 0.43), control1: point(0.21, 0.44), control2: point(0.27, 0.47))
+            path.addCurve(to: point(0.48, 0.16), control1: point(0.36, 0.29), control2: point(0.40, 0.15))
+            path.addCurve(to: point(0.65, 0.29), control1: point(0.55, 0.14), control2: point(0.60, 0.22))
+            path.addCurve(to: point(0.78, 0.34), control1: point(0.69, 0.24), control2: point(0.75, 0.27))
+            path.addCurve(to: point(0.975, 0.61), control1: point(0.89, 0.34), control2: point(0.95, 0.48))
+        } else {
+            path.addCurve(to: point(0.18, 0.55), control1: point(0.06, 0.59), control2: point(0.10, 0.50))
+            path.addCurve(to: point(0.35, 0.30), control1: point(0.24, 0.51), control2: point(0.25, 0.34))
+            path.addCurve(to: point(0.50, 0.35), control1: point(0.40, 0.23), control2: point(0.46, 0.25))
+            path.addCurve(to: point(0.66, 0.18), control1: point(0.54, 0.24), control2: point(0.59, 0.16))
+            path.addCurve(to: point(0.81, 0.39), control1: point(0.73, 0.17), control2: point(0.75, 0.31))
+            path.addCurve(to: point(0.975, 0.61), control1: point(0.90, 0.37), control2: point(0.95, 0.49))
+        }
+
+        path.addCurve(to: point(0.88, 0.75), control1: point(0.99, 0.69), control2: point(0.95, 0.75))
+        path.addCurve(to: point(0.61, 0.80), control1: point(0.79, 0.77), control2: point(0.70, 0.78))
+        path.addCurve(to: point(0.33, 0.77), control1: point(0.51, 0.83), control2: point(0.42, 0.77))
+        path.addCurve(to: point(0.015, 0.70), control1: point(0.19, 0.81), control2: point(0.07, 0.78))
+        path.closeSubpath()
+        return path
+    }
+}
+
 private struct CityEnvironmentReadout: View {
     var weather: RideWeatherSnapshot
     var rideDurationText: String?
@@ -2653,7 +2727,7 @@ private struct CityEnvironmentReadout: View {
         let foreground = weather.isNight ? Color.white.opacity(0.92) : Color.black.opacity(0.70)
         let secondary = weather.isNight ? Color.white.opacity(0.72) : Color.black.opacity(0.52)
         let labelSize = min(max(size.width * 0.023, 8), 9.5)
-        let timeSize = min(max(size.width * 0.028, 9), 10.5)
+        let timeSize = min(max(size.width * 0.039, 13), 16)
         let topInset = min(max(size.height * 0.075, 18), 24)
         let horizontalInset = min(max(size.width * 0.055, 18), 26)
         let metricsWidth = min(max(size.width * 0.34, 112), 142)
@@ -2667,7 +2741,7 @@ private struct CityEnvironmentReadout: View {
                     Text("骑行 \(rideDurationText)")
                         .monospacedDigit()
                 }
-                .font(.system(size: timeSize, weight: .semibold, design: .rounded))
+                .font(.system(size: timeSize, weight: .bold, design: .rounded))
                 .foregroundStyle(foreground)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
@@ -2951,7 +3025,7 @@ private struct RideMotionStreaks: View {
                         .fill(Color.white.opacity(0.53 - Double(index) * 0.065))
                         .frame(width: proxy.size.width * (0.12 + CGFloat(index) * 0.026), height: 1.3)
                         .offset(
-                            x: (progress * 1.52 - 0.48) * proxy.size.width,
+                            x: (1.04 - progress * 1.52) * proxy.size.width,
                             y: proxy.size.height * (0.49 + CGFloat(index) * 0.071)
                         )
                 }
