@@ -29,58 +29,9 @@ private enum NinebotRideActivityController {
         session: NinebotActiveRideSession?,
         snapshot: NinebotVehicleSnapshot?
     ) async {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled,
-              let session,
-              let snapshot,
-              snapshot.vehicle.sn == session.vehicleSN else {
-            await endAll()
-            return
-        }
-
-        let activities = Activity<NinebotRideActivityAttributes>.activities
-        let matchingActivity = activities.first { $0.attributes.vehicleSN == session.vehicleSN }
-        let attributes = NinebotRideActivityAttributes(
-            vehicleSN: session.vehicleSN,
-            vehicleName: session.vehicleName,
-            vehicleModel: session.vehicleModel,
-            startedAt: session.startedAt
-        )
-        let content = ActivityContent(
-            state: NinebotRideActivityContentState(
-                battery: snapshot.state.battery,
-                speedKmh: session.latestSpeedKmh,
-                distanceMeters: session.distanceMeters,
-                remainingRangeKm: snapshot.state.endurance ?? snapshot.state.aiEstimatedMileage,
-                batteryTemperature: snapshot.state.batteryTemperature,
-                tripEnergyWh: tripEnergyWh(state: snapshot.state, distanceMeters: session.distanceMeters),
-                updatedAt: session.updatedAt
-            ),
-            staleDate: Date().addingTimeInterval(15)
-        )
-
-        for activity in activities where activity.id != matchingActivity?.id {
-            await activity.end(nil, dismissalPolicy: .immediate)
-        }
-
-        if let matchingActivity {
-            await matchingActivity.update(content)
-        } else {
-            do {
-                _ = try Activity.request(attributes: attributes, content: content, pushType: nil)
-            } catch {
-                #if DEBUG
-                print("Failed to start NineBot ride Live Activity: \(error)")
-                #endif
-            }
-        }
-    }
-
-    private static func tripEnergyWh(state: NinebotVehicleState, distanceMeters: Double?) -> Double? {
-        guard let distanceMeters, distanceMeters.isFinite, distanceMeters > 0 else { return nil }
-        let distanceKm = distanceMeters / 1_000
-        let energyPerKm = state.lastEnergyPerKm ?? state.monthEnergyPerKm
-        guard let energyPerKm, energyPerKm.isFinite, energyPerKm > 0 else { return nil }
-        return distanceKm * energyPerKm
+        // The riding Lock Screen Live Activity has been removed from the app.
+        // End any previously-started riding activities and never create a new one.
+        await endAll()
     }
 
     private static func endAll() async {
@@ -89,4 +40,5 @@ private enum NinebotRideActivityController {
         }
     }
 }
+
 #endif

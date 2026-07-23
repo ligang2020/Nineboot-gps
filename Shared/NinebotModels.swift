@@ -67,15 +67,15 @@ enum NinebotDataSourceMode: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .proxy: return "ninecli 代理"
-        case .platform: return "hasscc/ninecli 直连"
+        case .proxy: return "工程版代理"
+        case .platform: return "工程版平台"
         }
     }
 
     var shortTitle: String {
         switch self {
         case .proxy: return "代理"
-        case .platform: return "直连"
+        case .platform: return "工程版"
         }
     }
 
@@ -89,14 +89,14 @@ enum NinebotDataSourceMode: String, Codable, CaseIterable, Identifiable {
     var tokenPlaceholder: String {
         switch self {
         case .proxy: return "ninecli 设置了 Token 才填写"
-        case .platform: return "本机/局域网可不填；公网必须信任并填 Token"
+        case .platform: return "工程版服务端 Bearer Token（如开启鉴权）"
         }
     }
 
     var systemImage: String {
         switch self {
         case .proxy: return "server.rack"
-        case .platform: return "bolt.horizontal.circle.fill"
+        case .platform: return "shippingbox.fill"
         }
     }
 }

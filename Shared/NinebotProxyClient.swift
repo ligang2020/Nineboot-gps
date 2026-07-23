@@ -44,56 +44,22 @@ struct NinebotProxyClient {
     }
 
     func platformLogin(account: String, password: String, areaCode: String?) async throws -> NinebotLoginResult {
-        try assertTrustedCredentialEndpoint()
-
-        let normalizedAccount = Self.normalizedLoginAccount(account, areaCode: areaCode)
-        var directBody = [
-            "username": normalizedAccount,
-            "account": normalizedAccount,
+        // 工程版平台登录：交给项目服务端处理账号密码，不在 App 内做官方 Passport 直连。
+        var body = [
+            "account": account,
             "password": password,
         ]
-        if let directAreaCode = Self.normalizedAreaCode(areaCode) {
-            directBody["areaCode"] = directAreaCode
-            directBody["area_code"] = directAreaCode
+        if let areaCode = areaCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !areaCode.isEmpty {
+            body["area_code"] = areaCode.trimmingCharacters(in: CharacterSet(charactersIn: "+"))
         }
 
-        // hasscc/ninebot delegates official Passport login to ninecli. Its
-        // plaintext REST surface is /auth/login and it stores the official
-        // encrypted Passport tokens locally, so the App no longer needs a
-        // separate NinePlus backend just to log in with phone + password.
-        do {
-            let payload = try await request(
-                method: "POST",
-                path: ["auth", "login"],
-                body: directBody
-            )
-            return Self.loginResult(from: payload)
-        } catch {
-            guard Self.shouldTryLegacyPlatformFallback(after: error) else {
-                throw error
-            }
-            // Keep compatibility with the older NinePlus Platform server which
-            // exposed /accounts/login and expects area_code.
-            var platformBody = [
-                "account": account,
-                "password": password,
-            ]
-            if let areaCode = areaCode?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !areaCode.isEmpty {
-                platformBody["area_code"] = areaCode.trimmingCharacters(in: CharacterSet(charactersIn: "+"))
-            }
-
-            do {
-                let payload = try await request(
-                    method: "POST",
-                    path: ["accounts", "login"],
-                    body: platformBody
-                )
-                return Self.loginResult(from: payload)
-            } catch {
-                throw error
-            }
-        }
+        let payload = try await request(
+            method: "POST",
+            path: ["accounts", "login"],
+            body: body
+        )
+        return Self.loginResult(from: payload)
     }
 
     func sendLoginCode(account: String) async throws {
@@ -105,40 +71,17 @@ struct NinebotProxyClient {
     }
 
     func sendPlatformLoginCode(account: String, areaCode: String?) async throws {
-        try assertTrustedCredentialEndpoint()
-
-        let normalizedAccount = Self.normalizedLoginAccount(account, areaCode: areaCode)
-        var directBody = [
-            "phone": normalizedAccount,
-            "account": normalizedAccount,
-            "username": normalizedAccount,
-        ]
-        if let directAreaCode = Self.normalizedAreaCode(areaCode) {
-            directBody["areaCode"] = directAreaCode
-            directBody["area_code"] = directAreaCode
+        var body = ["account": account]
+        if let areaCode = areaCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !areaCode.isEmpty {
+            body["area_code"] = areaCode.trimmingCharacters(in: CharacterSet(charactersIn: "+"))
         }
-        do {
-            _ = try await request(
-                method: "POST",
-                path: ["auth", "login-code"],
-                body: directBody
-            )
-        } catch {
-            guard Self.shouldTryLegacyPlatformFallback(after: error) else {
-                throw error
-            }
-            var body = ["account": account]
-            if let areaCode = areaCode?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !areaCode.isEmpty {
-                body["area_code"] = areaCode.trimmingCharacters(in: CharacterSet(charactersIn: "+"))
-            }
 
-            _ = try await request(
-                method: "POST",
-                path: ["accounts", "login-code"],
-                body: body
-            )
-        }
+        _ = try await request(
+            method: "POST",
+            path: ["accounts", "login-code"],
+            body: body
+        )
     }
 
     func consumeLoginCode(account: String, code: String) async throws -> NinebotLoginResult {
@@ -313,7 +256,7 @@ struct NinebotProxyClient {
             guard Self.shouldTryLegacyPlatformFallback(after: error) else {
                 throw error
             }
-            // ninecli / hasscc direct mode exposes the official travel API as a
+            // 工程版平台 exposes the travel API as a
             // read-only GET endpoint instead of the Platform archive sync API.
             let payload = try await fetchTravel(sn: sn, month: month)
             return Self.travelPage(from: payload, fallbackMonth: month)
@@ -371,7 +314,7 @@ struct NinebotProxyClient {
         let token = configuration.bearerToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard token.isEmpty else { return }
         guard let url = configuration.baseURL, Self.isLocalOrPrivateNetwork(url) else {
-            throw NinebotProxyError.server("为保护九号账号密码，未填写 Bearer Token 时只允许连接你自己的本机/局域网 ninecli/hasscc 地址；公网地址请确认可信并填写 Token")
+            throw NinebotProxyError.server("未填写 Bearer Token 时请确认工程版服务地址可信；公网服务建议开启鉴权并填写 Token")
         }
     }
 

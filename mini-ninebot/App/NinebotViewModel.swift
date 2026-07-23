@@ -16,7 +16,7 @@ enum NinebotInputError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingProxy:
-            return "请先填写 hasscc/ninecli 直连或代理地址"
+            return "请先填写工程版服务地址"
         case .missingAccount:
             return "请填写九号账号或手机号"
         case .missingPassword:
@@ -26,9 +26,9 @@ enum NinebotInputError: LocalizedError {
         case .missingAppToken:
             return "App Bearer Token 仅在你的服务端开启鉴权时才需要填写"
         case .platformSMSUnsupported:
-            return "hasscc/ninecli 直连当前优先支持手机号密码登录；短信验证码请切换代理模式使用"
+            return "工程版平台当前使用手机号密码登录；短信验证码请切换代理模式使用"
         case .platformOnly:
-            return "请切换到 hasscc/ninecli 直连后再拉取历史行程"
+            return "请切换到工程版平台后再拉取历史行程"
         }
     }
 }
@@ -138,7 +138,7 @@ struct NinebotDiagnosticsSnapshot {
 
 @MainActor
 final class NinebotViewModel: ObservableObject {
-    @Published var dataSourceMode: NinebotDataSourceMode = .platform
+    @Published var dataSourceMode: NinebotDataSourceMode = .proxy
     @Published var baseURLString = ""
     @Published var bearerToken = ""
     @Published var account = ""
@@ -201,11 +201,11 @@ final class NinebotViewModel: ObservableObject {
         let value = baseURLString.trimmed
         if !value.isEmpty {
             if dataSourceMode == .platform, bearerToken.trimmed.isEmpty {
-                return "\(value) · 手机号密码连接你自己的 ninecli/hasscc 服务"
+                return "\(value) · 连接工程版服务"
             }
             return value
         }
-        return dataSourceMode == .platform ? "填写你自己的 ninecli / hasscc 地址后可用手机号密码登录，无需 NinePlus 后端" : "填写 ninecli serve 地址后直接读取代理"
+        return dataSourceMode == .platform ? "填写工程版服务地址后读取车辆数据" : "填写工程版代理地址后读取车辆数据"
     }
 
     var hasVehicles: Bool {
@@ -230,11 +230,10 @@ final class NinebotViewModel: ObservableObject {
         true
     }
 
-    /// Riding Live Activity data is refreshed every 15 seconds to keep the
-    /// Lock Screen widget current without causing oversized background churn.
-    /// Charging remains more responsive because battery progress changes fast.
+    /// Foreground dashboard refresh cadence. Riding Lock Screen Live Activity
+    /// updates are disabled; charging remains more responsive because battery
+    /// progress changes fast.
     var foregroundRefreshInterval: TimeInterval {
-        if activeRideSession != nil { return 15 }
         if dashboard.primaryVehicle?.state.isCharging == true { return 5 }
         return 8
     }
@@ -312,7 +311,7 @@ final class NinebotViewModel: ObservableObject {
         }
     }
 
-    /// Foreground-only fast refresh for the dashboard and Live Activity.
+    /// Foreground-only fast refresh for the dashboard.
     /// It fetches status and battery endpoints only, does not show a loading
     /// overlay, and keeps the last known values when the network has a blip.
     func refreshDashboardSilently() async {

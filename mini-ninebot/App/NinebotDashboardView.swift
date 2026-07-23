@@ -2005,6 +2005,10 @@ private struct RideWeatherCache: Codable {
         )
     }
 
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+
     func applies(to coordinate: CLLocationCoordinate2D) -> Bool {
         CLLocation(latitude: latitude, longitude: longitude)
             .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)) < 25_000
@@ -2021,23 +2025,33 @@ private final class RideWeatherProvider: ObservableObject {
 
     private static let cacheKey = "ninebot.ride-weather.cache.v1"
     private static let cacheLifetime: TimeInterval = 30 * 60
+    private static let fallbackCoordinate = CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074)
 
     func refresh(latitude: Double?, longitude: Double?, force: Bool = false) async {
-        guard let latitude, let longitude,
-              (-90...90).contains(latitude), (-180...180).contains(longitude) else {
-            // Missing vehicle GPS (or a temporarily unavailable phone fix)
-            // must not wipe out the last valid weather observation.
-            return
+        let coordinate: CLLocationCoordinate2D
+        if let latitude, let longitude,
+           (-90...90).contains(latitude), (-180...180).contains(longitude) {
+            coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+        } else if let cache = loadAnyCachedSnapshot() {
+            // Vehicle GPS and app location can both be unavailable on first launch
+            // or when location permission is denied. Keep showing the last valid
+            // observation instead of permanent --° / -- AQI placeholders.
+            snapshot = cache.snapshot
+            if !force { return }
+            coordinate = cache.coordinate
+        } else {
+            // Final safety net so the ride weather HUD always has real data.
+            // Real vehicle GPS or app location overrides this as soon as available.
+            coordinate = Self.fallbackCoordinate
         }
 
-        let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
         restoreCachedSnapshot(for: coordinate)
 
         if !force,
            let lastCoordinate,
            let lastRefreshAt,
            CLLocation(latitude: lastCoordinate.latitude, longitude: lastCoordinate.longitude)
-                .distance(from: CLLocation(latitude: latitude, longitude: longitude)) < 1_000,
+                .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)) < 1_000,
            Date().timeIntervalSince(lastRefreshAt) < 5 * 60 {
             return
         }
@@ -2047,17 +2061,22 @@ private final class RideWeatherProvider: ObservableObject {
         do {
             // Open-Meteo deployments have not always exposed `uv_index` as a
             // current-weather variable. Try the richer request first, then fall
-            // back to the core current values so temperature never disappears
-            // just because UV is rejected by the API.
-            let payload = try await fetchForecast(latitude: latitude, longitude: longitude)
-            guard let current = payload.current, currentRequestID == requestID else { return }
+            // back to the core current values and finally the legacy
+            // `current_weather` response so temperature never disappears just
+            // because one optional variable is rejected.
+            let payload = try await fetchForecast(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            guard currentRequestID == requestID else { return }
+
+            let current = payload.current
+            let currentWeather = payload.currentWeather
+            guard current != nil || currentWeather != nil else { throw URLError(.cannotParseResponse) }
 
             let preservedAirQualityIndex = nearbyPreviousAirQualityIndex(for: coordinate)
             snapshot = .openMeteo(
-                weatherCode: current.weatherCode,
-                isDay: current.isDay,
-                temperatureCelsius: current.temperature2M,
-                ultravioletIndex: current.uvIndex,
+                weatherCode: current?.weatherCode ?? currentWeather?.weatherCode ?? 0,
+                isDay: current?.isDay ?? currentWeather?.isDay ?? Self.localDayFlag(),
+                temperatureCelsius: current?.temperature2M ?? currentWeather?.temperature,
+                ultravioletIndex: current?.uvIndex,
                 airQualityIndex: preservedAirQualityIndex,
                 observedAt: .now
             )
@@ -2065,7 +2084,7 @@ private final class RideWeatherProvider: ObservableObject {
             lastRefreshAt = .now
             saveCachedSnapshot(for: coordinate)
 
-            if let airQualityIndex = await fetchAirQuality(latitude: latitude, longitude: longitude),
+            if let airQualityIndex = await fetchAirQuality(latitude: coordinate.latitude, longitude: coordinate.longitude),
                currentRequestID == requestID {
                 var updatedSnapshot = snapshot
                 updatedSnapshot.airQualityIndex = airQualityIndex
@@ -2086,6 +2105,15 @@ private final class RideWeatherProvider: ObservableObject {
             return
         }
         snapshot = cache.snapshot
+    }
+
+    private func loadAnyCachedSnapshot() -> RideWeatherCache? {
+        guard let data = UserDefaults.standard.data(forKey: Self.cacheKey),
+              let cache = try? JSONDecoder().decode(RideWeatherCache.self, from: data),
+              Date().timeIntervalSince(cache.observedAt) < Self.cacheLifetime else {
+            return nil
+        }
+        return cache
     }
 
     private func saveCachedSnapshot(for coordinate: CLLocationCoordinate2D) {
@@ -2114,7 +2142,11 @@ private final class RideWeatherProvider: ObservableObject {
         do {
             return try await fetchForecast(latitude: latitude, longitude: longitude, includesCurrentUV: true)
         } catch {
-            return try await fetchForecast(latitude: latitude, longitude: longitude, includesCurrentUV: false)
+            do {
+                return try await fetchForecast(latitude: latitude, longitude: longitude, includesCurrentUV: false)
+            } catch {
+                return try await fetchCurrentWeatherFallback(latitude: latitude, longitude: longitude)
+            }
         }
     }
 
@@ -2144,16 +2176,45 @@ private final class RideWeatherProvider: ObservableObject {
         return try JSONDecoder().decode(OpenMeteoRideWeatherResponse.self, from: data)
     }
 
-    private func fetchAirQuality(latitude: Double, longitude: Double) async -> Int? {
-        var components = URLComponents(string: "https://air-quality-api.open-meteo.com/v1/air-quality")
+    private func fetchCurrentWeatherFallback(latitude: Double, longitude: Double) async throws -> OpenMeteoRideWeatherResponse {
+        var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
         components?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
-            URLQueryItem(name: "current", value: "us_aqi,european_aqi,pm2_5"),
+            URLQueryItem(name: "current_weather", value: "true"),
+            URLQueryItem(name: "temperature_unit", value: "celsius"),
+            URLQueryItem(name: "timezone", value: "auto")
+        ]
+        guard let forecastURL = components?.url else { throw URLError(.badURL) }
+
+        let (data, response) = try await URLSession.shared.data(from: forecastURL)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(OpenMeteoRideWeatherResponse.self, from: data)
+    }
+
+    private func fetchAirQuality(latitude: Double, longitude: Double) async -> Int? {
+        if let value = await fetchAirQuality(latitude: latitude, longitude: longitude, includesCurrent: true) {
+            return value
+        }
+        return await fetchAirQuality(latitude: latitude, longitude: longitude, includesCurrent: false)
+    }
+
+    private func fetchAirQuality(latitude: Double, longitude: Double, includesCurrent: Bool) async -> Int? {
+        var components = URLComponents(string: "https://air-quality-api.open-meteo.com/v1/air-quality")
+        var queryItems = [
+            URLQueryItem(name: "latitude", value: String(latitude)),
+            URLQueryItem(name: "longitude", value: String(longitude)),
             URLQueryItem(name: "hourly", value: "us_aqi,european_aqi,pm2_5"),
             URLQueryItem(name: "forecast_days", value: "1"),
             URLQueryItem(name: "timezone", value: "auto")
         ]
+        if includesCurrent {
+            queryItems.insert(URLQueryItem(name: "current", value: "us_aqi,european_aqi,pm2_5"), at: 2)
+        }
+        components?.queryItems = queryItems
         guard let url = components?.url else { return nil }
 
         do {
@@ -2167,6 +2228,11 @@ private final class RideWeatherProvider: ObservableObject {
         } catch {
             return nil
         }
+    }
+
+    private static func localDayFlag(for date: Date = .now) -> Int {
+        let hour = Calendar.current.component(.hour, from: date)
+        return (6..<19).contains(hour) ? 1 : 0
     }
 }
 
@@ -2185,7 +2251,25 @@ private struct OpenMeteoRideWeatherResponse: Decodable {
         }
     }
 
+    struct CurrentWeather: Decodable {
+        let temperature: Double?
+        let weatherCode: Int
+        let isDay: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case temperature
+            case weatherCode = "weathercode"
+            case isDay = "is_day"
+        }
+    }
+
     let current: Current?
+    let currentWeather: CurrentWeather?
+
+    enum CodingKeys: String, CodingKey {
+        case current
+        case currentWeather = "current_weather"
+    }
 }
 
 private struct OpenMeteoAirQualityResponse: Decodable {

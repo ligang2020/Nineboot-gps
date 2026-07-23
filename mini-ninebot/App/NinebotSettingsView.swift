@@ -58,7 +58,7 @@ struct NinebotSettingsView: View {
                         Toggle(isOn: proxyModeBinding) {
                             SettingsNavigationRow(
                                 title: "代理模式",
-                                subtitle: model.dataSourceMode == .proxy ? "当前使用 ninecli 代理" : "默认使用 hasscc/ninecli 直连",
+                                subtitle: model.dataSourceMode == .proxy ? "当前使用工程版代理" : "当前使用工程版平台",
                                 systemImage: "server.rack",
                                 tint: model.dataSourceMode == .proxy ? .orange : .green
                             )
@@ -108,7 +108,7 @@ struct NinebotSettingsView: View {
                         }
                         .font(.subheadline.weight(.semibold))
 
-                        Text(model.dataSourceMode == .platform ? "开启后会登记 APNs；只有填写带推送能力的服务端 Bearer Token 时才会上报。本机/局域网 ninecli 直连不需要 NinePlus 后端。" : "代理模式是单账号直连，适合调试；车辆报警的远程推送需填写带推送能力的服务端 Token。")
+                        Text(model.dataSourceMode == .platform ? "开启后会登记 APNs；只有工程版服务端开启推送鉴权时才需要 Bearer Token。" : "代理模式连接工程版代理，适合调试；车辆报警的远程推送需填写带推送能力的服务端 Token。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -708,7 +708,7 @@ private struct LoginConnectionSheet: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("连接设置")
                         .font(.title2.weight(.semibold))
-                    Text(model.dataSourceMode == .platform ? "接入 hasscc/ninebot 使用的 ninecli 接口；请填写你自己的本机/局域网 ninecli serve / hasscc 地址，公网地址必须信任并配置 Token。" : "代理模式只需填写 ninecli serve 地址；代理设置了 Token 时再填口令。")
+                    Text(model.dataSourceMode == .platform ? "接入项目工程版服务；请填写工程版服务地址，服务端开启鉴权时再配置 Bearer Token。" : "代理模式填写工程版代理地址；代理设置了 Token 时再填口令。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -716,7 +716,7 @@ private struct LoginConnectionSheet: View {
                 Toggle(isOn: proxyModeBinding) {
                     SettingsNavigationRow(
                         title: "代理模式",
-                        subtitle: model.dataSourceMode == .proxy ? "当前使用代理" : "默认 hasscc/ninecli 直连",
+                        subtitle: model.dataSourceMode == .proxy ? "当前使用代理" : "工程版平台",
                         systemImage: "server.rack",
                         tint: model.dataSourceMode == .proxy ? .orange : .blue
                     )
@@ -733,7 +733,7 @@ private struct LoginConnectionSheet: View {
                 )
 
                 SettingsInputField(
-                    title: model.dataSourceMode == .platform ? "Bearer Token（本机可选）" : "访问口令（可选）",
+                    title: model.dataSourceMode == .platform ? "Bearer Token（可选）" : "访问口令（可选）",
                     placeholder: model.dataSourceMode.tokenPlaceholder,
                     systemImage: "key.horizontal.fill",
                     text: $model.bearerToken,
@@ -1057,7 +1057,7 @@ private struct AccountBindingPanel: View {
 
                 SettingsInputField(
                     title: "九号账号",
-                    placeholder: model.dataSourceMode == .platform ? "手机号 / +86 手机号" : "九号账号手机号",
+                    placeholder: model.dataSourceMode == .platform ? "九号账号手机号" : "九号账号手机号",
                     systemImage: "person.crop.circle.fill",
                     text: $model.account,
                     keyboardType: .default,
@@ -1209,18 +1209,18 @@ private struct AccountLoginHero: View {
 
     private var title: String {
         if !hasConfiguration { return mode == .platform ? "先保存连接地址" : "先保存连接地址" }
-        return mode == .platform ? "九号ninecli账号登录" : "代理账号登录"
+        return mode == .platform ? "工程版账号登录" : "代理账号登录"
     }
 
     private var detail: String {
         if !hasConfiguration {
             return mode == .platform
-                ? "在“连接与通知”里填写你自己的 ninecli serve / hasscc 地址；本机/局域网 Token 可不填。"
+                ? "在“连接与通知”里填写工程版服务地址；服务端开启鉴权时再填写 Token。"
                 : "在“连接与通知”里保存代理地址后再登录。"
         }
         return mode == .platform
-            ? "优先调用 ninecli serve 的 /auth/login，提交 username/password 完成九号手机号密码登录。"
-            : "代理模式会直接登录当前 ninecli serve，会替换代理上的单账号会话。"
+            ? "调用工程版服务端 /accounts/login，由工程版服务处理手机号密码登录。"
+            : "代理模式会登录当前工程版代理，会替换代理上的单账号会话。"
     }
 }
 
@@ -1233,10 +1233,10 @@ private struct PlatformPasswordLoginNotice: View {
                 .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("ninecli serve 手机号密码登录")
+                Text("工程版服务手机号密码登录")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.teslaPrimaryText)
-                Text("已按 hasscc/ninebot 的 ninecli 方式接入：优先调用 /auth/login（username/password），用手机号和密码登录。为保护密码，未填写 Token 时只允许本机/局域网地址；中国手机号会自动去掉 +86/86 前缀。")
+                Text("已切回项目工程版登录：App 调用工程版服务端 /accounts/login，不再做官方直连；中国手机号区号仍可填写。")
                     .font(.caption2)
                     .foregroundStyle(Color.teslaSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1440,7 +1440,7 @@ private struct SettingsOverviewCard: View {
 
             HStack(spacing: 10) {
                 SettingsInfoPill(title: "车辆", value: "\(vehicleCount)", systemImage: "bolt.car.fill")
-                SettingsInfoPill(title: dataSourceMode == .platform ? "ninecli" : "账号", value: dataSourceMode == .platform ? "直连" : "\(accountCount)", systemImage: dataSourceMode == .platform ? "bolt.horizontal.circle.fill" : "person.fill")
+                SettingsInfoPill(title: dataSourceMode == .platform ? "工程版" : "账号", value: dataSourceMode == .platform ? "平台" : "\(accountCount)", systemImage: dataSourceMode == .platform ? "shippingbox.fill" : "person.fill")
                 SettingsInfoPill(title: "快捷指令", value: "7 个", systemImage: "sparkles")
             }
         }
@@ -1452,7 +1452,7 @@ private struct SettingsOverviewCard: View {
     }
 
     private var summaryText: String {
-        hasConfiguration ? cleanBaseURL : (dataSourceMode == .platform ? "填写你自己的 ninecli / hasscc 地址后读取车辆数据" : "填写 ninecli serve 地址后直接读取代理")
+        hasConfiguration ? cleanBaseURL : (dataSourceMode == .platform ? "填写工程版服务地址后读取车辆数据" : "填写工程版代理地址后读取车辆数据")
     }
 
     private var cleanBaseURL: String {
@@ -1574,7 +1574,7 @@ private struct PushDeviceTokenRow: View {
 
     private var detailText: String {
         guard let token, !token.isEmpty else {
-            return hasConfiguration ? "点“检查权限并上报”，会重新注册 APNs；仅在填写带推送能力的 Bearer Token 时同步到服务端。" : "先保存你自己的 ninecli / hasscc 地址；本机/局域网 Token 可不填。"
+            return hasConfiguration ? "点“检查权限并上报”，会重新注册 APNs；仅在填写带推送能力的 Bearer Token 时同步到服务端。" : "先保存工程版服务地址；服务端开启鉴权时再填 Token。"
         }
         let prefix = token.prefix(8)
         let suffix = token.suffix(6)
