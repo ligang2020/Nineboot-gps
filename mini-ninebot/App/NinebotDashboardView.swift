@@ -2433,7 +2433,7 @@ private struct LiveRideEnvironment: View {
         let travel = CGFloat((phase * 0.15).truncatingRemainder(dividingBy: 1.0))
         let spacing = size.width * 0.55
 
-        ZStack {
+        return ZStack {
             ForEach(0..<4, id: \.self) { index in
                 streetLamp(height: size.height * 0.43, glow: weather.isNight ? 0.96 : 0.16)
                     .scaleEffect(0.82)
