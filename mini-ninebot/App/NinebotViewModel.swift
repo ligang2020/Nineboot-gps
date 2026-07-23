@@ -16,7 +16,7 @@ enum NinebotInputError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingProxy:
-            return "请先填写代理或 NinePlus 平台地址"
+            return "请先填写 hasscc/ninecli 直连或代理地址"
         case .missingAccount:
             return "请填写九号账号或手机号"
         case .missingPassword:
@@ -24,11 +24,11 @@ enum NinebotInputError: LocalizedError {
         case .missingCode:
             return "请填写验证码"
         case .missingAppToken:
-            return "NinePlus Platform 需要填写 App Bearer Token"
+            return "App Bearer Token 仅在你的服务端开启鉴权时才需要填写"
         case .platformSMSUnsupported:
-            return "当前 NinePlus Platform 移动端只支持账号密码登录；短信验证码请在网页后台使用"
+            return "hasscc/ninecli 直连当前优先支持手机号密码登录；短信验证码请切换代理模式使用"
         case .platformOnly:
-            return "请切换到服务器模式后再拉取历史行程"
+            return "请切换到 hasscc/ninecli 直连后再拉取历史行程"
         }
     }
 }
@@ -186,11 +186,11 @@ final class NinebotViewModel: ObservableObject {
     }
 
     var hasConfiguration: Bool {
-        currentConfiguration.isUsable && (dataSourceMode != .platform || !bearerToken.trimmed.isEmpty)
+        currentConfiguration.isUsable
     }
 
     var isConnectionInputComplete: Bool {
-        !baseURLString.trimmed.isEmpty && (dataSourceMode != .platform || !bearerToken.trimmed.isEmpty)
+        !baseURLString.trimmed.isEmpty
     }
 
     var dataSourceStatusTitle: String {
@@ -201,11 +201,11 @@ final class NinebotViewModel: ObservableObject {
         let value = baseURLString.trimmed
         if !value.isEmpty {
             if dataSourceMode == .platform, bearerToken.trimmed.isEmpty {
-                return "\(value) · 待填写 App Token"
+                return "\(value) · 手机号密码连接你自己的 ninecli/hasscc 服务"
             }
             return value
         }
-        return dataSourceMode == .platform ? "填写 NinePlus Platform 地址和 App Token 后读取服务器归档数据" : "填写 ninecli serve 地址后直接读取代理"
+        return dataSourceMode == .platform ? "填写你自己的 ninecli / hasscc 地址后可用手机号密码登录，无需 NinePlus 后端" : "填写 ninecli serve 地址后直接读取代理"
     }
 
     var hasVehicles: Bool {
@@ -219,9 +219,6 @@ final class NinebotViewModel: ObservableObject {
 
     var hasLoginAccount: Bool {
         let hasPhone = !(loginResult?.phone?.trimmed ?? "").isEmpty
-        if dataSourceMode == .platform {
-            return hasPhone && !(loginResult?.sessionToken?.trimmed ?? "").isEmpty
-        }
         return hasPhone
     }
 
@@ -273,11 +270,6 @@ final class NinebotViewModel: ObservableObject {
             errorMessage = NinebotInputError.missingProxy.localizedDescription
             return
         }
-        guard dataSourceMode != .platform || !configuration.bearerToken.trimmed.isEmpty else {
-            errorMessage = NinebotInputError.missingAppToken.localizedDescription
-            return
-        }
-
         store.saveDataSourceMode(dataSourceMode)
         store.saveConfiguration(configuration)
         errorMessage = nil
@@ -387,8 +379,8 @@ final class NinebotViewModel: ObservableObject {
 
     func enableVehicleNotifications() async {
         await runLoadingOperation(message: "正在开启车辆通知") {
-            guard self.dataSourceMode == .platform else {
-                throw NinebotPushError.missingServer
+            guard self.dataSourceMode == .platform, !self.bearerToken.trimmed.isEmpty else {
+                throw NinebotInputError.missingAppToken
             }
             _ = try await NinebotPushManager.shared.requestAuthorizationRegisterAndWaitForToken()
             self.pushDeviceToken = self.store.loadPushDeviceToken()
@@ -404,8 +396,8 @@ final class NinebotViewModel: ObservableObject {
 
     func syncPushDeviceToken() async {
         await runLoadingOperation(message: "正在上报设备 Token") {
-            guard self.dataSourceMode == .platform else {
-                throw NinebotPushError.missingServer
+            guard self.dataSourceMode == .platform, !self.bearerToken.trimmed.isEmpty else {
+                throw NinebotInputError.missingAppToken
             }
             _ = try await NinebotPushManager.shared.requestAuthorizationRegisterAndWaitForToken()
             self.pushDeviceToken = self.store.loadPushDeviceToken()
@@ -416,7 +408,7 @@ final class NinebotViewModel: ObservableObject {
     }
 
     func syncPushDeviceTokenIfPossible() async {
-        guard dataSourceMode == .platform, hasConfiguration else { return }
+        guard dataSourceMode == .platform, hasConfiguration, !bearerToken.trimmed.isEmpty else { return }
         do {
             _ = try await NinebotPushManager.shared.requestAuthorizationRegisterAndWaitForToken()
             pushDeviceToken = store.loadPushDeviceToken()
@@ -643,9 +635,6 @@ final class NinebotViewModel: ObservableObject {
         let configuration = currentConfiguration
         guard configuration.isUsable else {
             throw NinebotInputError.missingProxy
-        }
-        guard dataSourceMode != .platform || !configuration.bearerToken.trimmed.isEmpty else {
-            throw NinebotInputError.missingAppToken
         }
         store.saveDataSourceMode(dataSourceMode)
         store.saveConfiguration(configuration)

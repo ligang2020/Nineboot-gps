@@ -8,3 +8,7 @@ xcuserdata/
 # Locally generated artifacts
 *.ipa
 *.ipa.sha256
+.tmp/
+tmp/
+.build-home/
+homebridge-ninebot/

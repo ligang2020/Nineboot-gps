@@ -44,21 +44,56 @@ struct NinebotProxyClient {
     }
 
     func platformLogin(account: String, password: String, areaCode: String?) async throws -> NinebotLoginResult {
-        var body = [
-            "account": account,
+        try assertTrustedCredentialEndpoint()
+
+        let normalizedAccount = Self.normalizedLoginAccount(account, areaCode: areaCode)
+        var directBody = [
+            "username": normalizedAccount,
+            "account": normalizedAccount,
             "password": password,
         ]
-        if let areaCode = areaCode?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !areaCode.isEmpty {
-            body["area_code"] = areaCode.trimmingCharacters(in: CharacterSet(charactersIn: "+"))
+        if let directAreaCode = Self.normalizedAreaCode(areaCode) {
+            directBody["areaCode"] = directAreaCode
+            directBody["area_code"] = directAreaCode
         }
 
-        let payload = try await request(
-            method: "POST",
-            path: ["accounts", "login"],
-            body: body
-        )
-        return Self.loginResult(from: payload)
+        // hasscc/ninebot delegates official Passport login to ninecli. Its
+        // plaintext REST surface is /auth/login and it stores the official
+        // encrypted Passport tokens locally, so the App no longer needs a
+        // separate NinePlus backend just to log in with phone + password.
+        do {
+            let payload = try await request(
+                method: "POST",
+                path: ["auth", "login"],
+                body: directBody
+            )
+            return Self.loginResult(from: payload)
+        } catch {
+            guard Self.shouldTryLegacyPlatformFallback(after: error) else {
+                throw error
+            }
+            // Keep compatibility with the older NinePlus Platform server which
+            // exposed /accounts/login and expects area_code.
+            var platformBody = [
+                "account": account,
+                "password": password,
+            ]
+            if let areaCode = areaCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !areaCode.isEmpty {
+                platformBody["area_code"] = areaCode.trimmingCharacters(in: CharacterSet(charactersIn: "+"))
+            }
+
+            do {
+                let payload = try await request(
+                    method: "POST",
+                    path: ["accounts", "login"],
+                    body: platformBody
+                )
+                return Self.loginResult(from: payload)
+            } catch {
+                throw error
+            }
+        }
     }
 
     func sendLoginCode(account: String) async throws {
@@ -70,17 +105,40 @@ struct NinebotProxyClient {
     }
 
     func sendPlatformLoginCode(account: String, areaCode: String?) async throws {
-        var body = ["account": account]
-        if let areaCode = areaCode?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !areaCode.isEmpty {
-            body["area_code"] = areaCode.trimmingCharacters(in: CharacterSet(charactersIn: "+"))
-        }
+        try assertTrustedCredentialEndpoint()
 
-        _ = try await request(
-            method: "POST",
-            path: ["accounts", "login-code"],
-            body: body
-        )
+        let normalizedAccount = Self.normalizedLoginAccount(account, areaCode: areaCode)
+        var directBody = [
+            "phone": normalizedAccount,
+            "account": normalizedAccount,
+            "username": normalizedAccount,
+        ]
+        if let directAreaCode = Self.normalizedAreaCode(areaCode) {
+            directBody["areaCode"] = directAreaCode
+            directBody["area_code"] = directAreaCode
+        }
+        do {
+            _ = try await request(
+                method: "POST",
+                path: ["auth", "login-code"],
+                body: directBody
+            )
+        } catch {
+            guard Self.shouldTryLegacyPlatformFallback(after: error) else {
+                throw error
+            }
+            var body = ["account": account]
+            if let areaCode = areaCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !areaCode.isEmpty {
+                body["area_code"] = areaCode.trimmingCharacters(in: CharacterSet(charactersIn: "+"))
+            }
+
+            _ = try await request(
+                method: "POST",
+                path: ["accounts", "login-code"],
+                body: body
+            )
+        }
     }
 
     func consumeLoginCode(account: String, code: String) async throws -> NinebotLoginResult {
@@ -241,15 +299,25 @@ struct NinebotProxyClient {
     }
 
     func syncTravelMonth(sn: String, month: String, pageSize: Int = 20) async throws -> NinebotTravelPage {
-        let payload = try await request(
-            method: "POST",
-            path: ["vehicles", sn, "travel-sync"],
-            queryItems: [
-                URLQueryItem(name: "month", value: month),
-                URLQueryItem(name: "page_size", value: "\(pageSize)")
-            ]
-        )
-        return Self.travelPage(from: payload, fallbackMonth: month)
+        do {
+            let payload = try await request(
+                method: "POST",
+                path: ["vehicles", sn, "travel-sync"],
+                queryItems: [
+                    URLQueryItem(name: "month", value: month),
+                    URLQueryItem(name: "page_size", value: "\(pageSize)")
+                ]
+            )
+            return Self.travelPage(from: payload, fallbackMonth: month)
+        } catch {
+            guard Self.shouldTryLegacyPlatformFallback(after: error) else {
+                throw error
+            }
+            // ninecli / hasscc direct mode exposes the official travel API as a
+            // read-only GET endpoint instead of the Platform archive sync API.
+            let payload = try await fetchTravel(sn: sn, month: month)
+            return Self.travelPage(from: payload, fallbackMonth: month)
+        }
     }
 
     private func fetchTravel(sn: String, month: String) async throws -> JSONValue {
@@ -297,6 +365,14 @@ struct NinebotProxyClient {
                 "environment": environment,
             ]
         )
+    }
+
+    private func assertTrustedCredentialEndpoint() throws {
+        let token = configuration.bearerToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard token.isEmpty else { return }
+        guard let url = configuration.baseURL, Self.isLocalOrPrivateNetwork(url) else {
+            throw NinebotProxyError.server("为保护九号账号密码，未填写 Bearer Token 时只允许连接你自己的本机/局域网 ninecli/hasscc 地址；公网地址请确认可信并填写 Token")
+        }
     }
 
     private func request(
@@ -364,6 +440,50 @@ struct NinebotProxyClient {
 }
 
 private extension NinebotProxyClient {
+    static func normalizedLoginAccount(_ account: String, areaCode: String?) -> String {
+        let trimmed = account.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanArea = (areaCode ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "+"))
+        let digits = trimmed.filter(\.isNumber)
+
+        guard cleanArea == "86" else { return trimmed }
+        if trimmed.hasPrefix("+86"), digits.count == 13, digits.hasPrefix("86") {
+            return String(digits.dropFirst(2))
+        }
+        if trimmed.hasPrefix("86"), digits.count == 13, digits.hasPrefix("86") {
+            return String(digits.dropFirst(2))
+        }
+        return trimmed
+    }
+
+    static func normalizedAreaCode(_ areaCode: String?) -> String? {
+        let cleanArea = (areaCode ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "+"))
+        return cleanArea.isEmpty ? nil : cleanArea
+    }
+
+    static func isLocalOrPrivateNetwork(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased(), !host.isEmpty else { return false }
+        if host == "localhost" || host.hasSuffix(".local") || host == "::1" { return true }
+        if host.hasPrefix("127.") || host.hasPrefix("10.") || host.hasPrefix("192.168.") { return true }
+
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        if parts.count == 4, parts[0] == 172, (16...31).contains(parts[1]) {
+            return true
+        }
+        if host.hasPrefix("fe80:") || host.hasPrefix("fd") { return true }
+        return false
+    }
+
+    static func shouldTryLegacyPlatformFallback(after error: Error) -> Bool {
+        if case NinebotProxyError.httpStatus(let statusCode, _) = error {
+            return [404, 405, 501].contains(statusCode)
+        }
+        return false
+    }
+
     static func unwrapEnvelope(_ root: JSONValue) throws -> JSONValue {
         guard let object = root.objectValue, object.keys.contains("ok") else {
             return root
@@ -402,7 +522,10 @@ private extension NinebotProxyClient {
             region: object["region"]?.stringValue,
             businessUID: object["business_uid"]?.stringValue ?? object["businessUid"]?.stringValue ?? object["businessUID"]?.stringValue,
             accountID: object["account_id"]?.intValue ?? object["accountId"]?.intValue ?? object["id"]?.intValue,
-            sessionToken: object["session_token"]?.stringValue ?? object["sessionToken"]?.stringValue
+            sessionToken: object["session_token"]?.stringValue
+                ?? object["sessionToken"]?.stringValue
+                ?? object["access_token"]?.stringValue
+                ?? object["accessToken"]?.stringValue
         )
     }
 
@@ -430,16 +553,16 @@ private extension NinebotProxyClient {
             return nil
         }
 
-        var model = firstString(["vehicle_name_en", "vehicle_name", "model", "vehicleModel"], in: object) ?? sn
+        var model = firstString(["vehicle_name_en", "vehicle_name", "model", "vehicleModel", "model_name", "modelName"], in: object) ?? sn
         if let vehicleType = object["vehicle_type"]?.stringValue, !vehicleType.isEmpty {
             model = "\(model) (\(vehicleType))"
         }
 
         return NinebotVehicleInfo(
             sn: sn,
-            name: firstString(["device_name", "deviceName", "ble_name"], in: object) ?? sn,
+            name: firstString(["device_name", "deviceName", "ble_name", "name", "vehicleName", "vehicle_name"], in: object) ?? sn,
             model: model,
-            imageURLString: firstString(["v6_light_img_url", "img_url", "img"], in: object),
+            imageURLString: firstString(["v6_light_img_url", "img_url", "img", "image_url", "imageUrl"], in: object),
             raw: object
         )
     }
@@ -512,9 +635,9 @@ private extension NinebotProxyClient {
         let dailyMileageRecords = dailyMileageRecords(from: travelObject)
 
         return NinebotVehicleState(
-            battery: firstInt(["dump_energy", "dumpEnergy"], in: statusObject)
-                ?? firstInt(["electricity", "dump_energy", "dumpEnergy"], in: batteryPayloadObject)
-                ?? firstInt(["electricity", "dump_energy", "dumpEnergy"], in: batteryListObject),
+            battery: firstInt(["dump_energy", "dumpEnergy", "battery", "batteryLevel"], in: statusObject)
+                ?? firstInt(["electricity", "dump_energy", "dumpEnergy", "battery", "batteryLevel"], in: batteryPayloadObject)
+                ?? firstInt(["electricity", "dump_energy", "dumpEnergy", "battery", "batteryLevel"], in: batteryListObject),
             batteryVoltage: normalizedBatteryVoltage(
                 firstDouble(
                     [
@@ -563,15 +686,15 @@ private extension NinebotProxyClient {
                     in: batterySources
                 )
             ),
-            batteryCycleCount: firstInt(["bms_cycle", "bmsCycle", "cycle", "cycles"], in: batteryListObject)
-                ?? firstInt(["bms_cycle", "bmsCycle", "cycle", "cycles"], in: batteryPayloadObject),
+            batteryCycleCount: firstInt(["bms_cycle", "bmsCycle", "bms_cycles", "bmsCycles", "cycle", "cycles"], in: batteryListObject)
+                ?? firstInt(["bms_cycle", "bmsCycle", "bms_cycles", "bmsCycles", "cycle", "cycles"], in: batteryPayloadObject),
             chargingPower: firstDouble(["charging_power", "chargingPower", "charge_power", "chargePower"], in: batteryPayloadObject),
-            endurance: firstDouble(["precise_estimate_mileage", "preciseEstimateMileage", "estimate_mileage", "estimateMileage"], in: statusObject),
+            endurance: firstDouble(["precise_estimate_mileage", "preciseEstimateMileage", "estimate_mileage", "estimateMileage", "endurance", "range"], in: statusObject),
             aiEstimatedMileage: firstDouble(["ai_estimate_mileage", "aiEstimateMileage", "ai_estimated_mileage", "aiEstimatedMileage"], in: statusObject),
             isCharging: firstBoolLike(["charging", "chargingState"], in: statusObject, trueValue: 1)
                 ?? firstBoolLike(["charging", "chargingState"], in: batteryPayloadObject, trueValue: 1),
-            isPoweredOn: firstBoolLike(["pwr", "powerStatus"], in: statusObject, trueValue: 1),
-            isLocked: lockNumber.map { $0 == 1 },
+            isPoweredOn: firstBoolLike(["pwr", "power", "powerStatus"], in: statusObject, trueValue: 1),
+            isLocked: (lockNumber ?? statusObject["lock"]?.intValue).map { $0 == 1 },
             remainingChargeTime: firstDouble(["remain_charge_time", "remainChargeTime", "remainingChargeTime"], in: statusObject)
                 ?? firstDouble(["remain_charge_time", "remainChargeTime", "remainingChargeTime"], in: batteryPayloadObject),
             locationDescription: firstString(["locationDesc", "desc", "address", "addressDesc"], in: locationInfo ?? [:]),
@@ -585,18 +708,18 @@ private extension NinebotProxyClient {
             ),
             totalMileage: firstDouble(["total_mileage", "totalMileage", "total_mileages"], in: statusObject)
                 ?? firstDouble(["total_mileage", "totalMileage"], in: travelObject),
-            monthMileage: firstDouble(["total_mileages", "monthMileage"], in: travelObject),
+            monthMileage: firstDouble(["total_mileages", "monthMileage", "month_mileage"], in: travelObject),
             monthEnergy: firstDouble([
                 "ec", "monthEnergy", "month_energy", "monthElectricity",
                 "electricity", "energy", "consume_electricity", "consumeElectricity"
             ], in: travelObject),
             monthUsedElectricity: firstDouble([
                 "used_electricity", "usedElectricity", "used_electric", "usedElectric",
-                "electricity_used", "electricityUsed", "power_consumption", "powerConsumption"
+                "electricity_used", "electricityUsed", "power_consumption", "powerConsumption", "month_used_electricity"
             ], in: travelObject),
-            lastMileage: lastRide?.mileage,
-            lastEnergy: lastRide?.energy,
-            lastUsedElectricity: lastRide?.usedElectricity,
+            lastMileage: lastRide?.mileage ?? firstDouble(["last_mileage", "lastMileage"], in: travelObject),
+            lastEnergy: lastRide?.energy ?? firstDouble(["last_energy", "lastEnergy"], in: travelObject),
+            lastUsedElectricity: lastRide?.usedElectricity ?? firstDouble(["last_used_electricity", "lastUsedElectricity"], in: travelObject),
             rideRecords: rideRecords.isEmpty ? nil : rideRecords,
             dailyMileageRecords: dailyMileageRecords.isEmpty ? nil : dailyMileageRecords,
             updatedAt: updatedAt,
