@@ -14,6 +14,7 @@ struct NinebotSharedStore {
         static let interfaceRidePrefix = "ninebot.vehicle.interface.rides."
         static let vehicleImagePrefix = "ninebot.vehicle.image."
         static let recordedRides = "ninebot.recorded.rides"
+        static let activeRideSession = "ninebot.active.ride.session"
         static let pushDeviceToken = "ninebot.push.device.token"
     }
 
@@ -110,6 +111,20 @@ struct NinebotSharedStore {
             return []
         }
         return points.sorted { $0.date < $1.date }
+    }
+
+    func loadActiveRideSession() -> NinebotActiveRideSession? {
+        guard let data = defaults.data(forKey: Key.activeRideSession) else { return nil }
+        return try? decoder.decode(NinebotActiveRideSession.self, from: data)
+    }
+
+    func saveActiveRideSession(_ session: NinebotActiveRideSession) {
+        guard let data = try? encoder.encode(session) else { return }
+        defaults.set(data, forKey: Key.activeRideSession)
+    }
+
+    func clearActiveRideSession() {
+        defaults.removeObject(forKey: Key.activeRideSession)
     }
 
     func loadRecordedRides() -> [NinebotRecordedRide] {

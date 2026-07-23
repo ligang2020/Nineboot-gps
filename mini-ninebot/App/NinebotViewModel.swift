@@ -150,6 +150,7 @@ final class NinebotViewModel: ObservableObject {
     @Published private(set) var history: [String: [NinebotVehicleHistoryPoint]] = [:]
     @Published private(set) var resolvedAddresses: [String: NinebotResolvedAddress] = [:]
     @Published private(set) var recordedRides: [NinebotRecordedRide] = []
+    @Published private(set) var activeRideSession: NinebotActiveRideSession?
     @Published private(set) var rideDetails: [String: NinebotRideDetail] = [:]
     @Published private(set) var loadingRideDetailKeys: Set<String> = []
     @Published private(set) var syncingTravelMonth: String?
@@ -172,6 +173,8 @@ final class NinebotViewModel: ObservableObject {
         self.history = Self.historyMap(for: self.dashboard, store: store)
         self.resolvedAddresses = store.loadResolvedAddresses().filter { $0.value.source == Self.addressGeocodingSource }
         self.recordedRides = store.loadRecordedRides()
+        self.activeRideSession = store.loadActiveRideSession()
+        reconcileRideSession(with: self.dashboard)
     }
 
     var hasConfiguration: Bool {
@@ -218,7 +221,7 @@ final class NinebotViewModel: ObservableObject {
     /// Charge status is refreshed every five seconds while the selected vehicle
     /// is charging so the Live Activity's battery progress remains responsive.
     var foregroundRefreshInterval: TimeInterval {
-        dashboard.primaryVehicle?.state.isCharging == true ? 5 : 8
+        dashboard.primaryVehicle?.state.isCharging == true || activeRideSession != nil ? 5 : 8
     }
 
     func refreshOnLaunchIfPossible() async {
@@ -471,6 +474,7 @@ final class NinebotViewModel: ObservableObject {
     func saveVehicleDisplayName(_ name: String, for sn: String) {
         NinebotVehicleNameResolver.saveAlias(name, for: sn)
         objectWillChange.send()
+        reconcileRideSession(with: dashboard)
         NinebotChargeLiveActivityManager.sync(with: dashboard)
         WidgetCenter.shared.reloadAllTimelines()
         statusMessage = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "已恢复车辆默认名称" : "车辆名称已更新"
@@ -641,11 +645,65 @@ final class NinebotViewModel: ObservableObject {
         return try await client.consumeLoginCode(account: account, code: code)
     }
 
+    /// Reconciles the persisted riding session from the same remote state that
+    /// drives the dashboard scene. Reusing the existing session's `startedAt`
+    /// is what prevents the ride clock from resetting after an app relaunch.
+    private func reconcileRideSession(with dashboard: NinebotDashboard) {
+        guard let snapshot = dashboard.primaryVehicle, isRiding(snapshot) else {
+            if activeRideSession != nil {
+                store.clearActiveRideSession()
+                activeRideSession = nil
+            }
+            NinebotRideLiveActivityManager.sync(session: nil, snapshot: nil)
+            return
+        }
+
+        let previous = activeRideSession ?? store.loadActiveRideSession()
+        let startedAt = previous?.vehicleSN == snapshot.vehicle.sn ? previous!.startedAt : Date()
+        let session = NinebotActiveRideSession(
+            vehicleSN: snapshot.vehicle.sn,
+            vehicleName: snapshot.vehicle.displayName,
+            vehicleModel: snapshot.vehicle.model,
+            startedAt: startedAt,
+            latestSpeedKmh: liveSpeedKmh(from: snapshot.state) ?? previous?.latestSpeedKmh,
+            distanceMeters: previous?.vehicleSN == snapshot.vehicle.sn ? previous?.distanceMeters : nil,
+            updatedAt: snapshot.state.updatedAt
+        )
+        store.saveActiveRideSession(session)
+        activeRideSession = session
+        NinebotRideLiveActivityManager.sync(session: session, snapshot: snapshot)
+    }
+
+    private func isRiding(_ snapshot: NinebotVehicleSnapshot) -> Bool {
+        guard snapshot.state.isCharging != true || snapshot.state.isFullyCharged == true else {
+            return false
+        }
+        let movementKeys = ["isRiding", "riding", "isMoving", "moving", "inMotion", "driving"]
+        if movementKeys.contains(where: { snapshot.state.rawStatus?[$0]?.boolValue == true }) {
+            return true
+        }
+        return snapshot.state.isPoweredOn == true && snapshot.state.isLocked != true
+    }
+
+    private func liveSpeedKmh(from state: NinebotVehicleState) -> Double? {
+        let keys = ["speed", "currentSpeed", "current_speed", "speedKmh", "speed_kmh", "velocity"]
+        for key in keys {
+            guard let value = state.rawStatus?[key]?.doubleValue,
+                  value.isFinite,
+                  (0...180).contains(value) else {
+                continue
+            }
+            return value
+        }
+        return nil
+    }
+
     @discardableResult
     private func saveDashboard(_ dashboard: NinebotDashboard, reloadWidgets: Bool = true) -> NinebotDashboard {
         let archivedDashboard = store.saveDashboard(dashboard)
         self.dashboard = archivedDashboard
         history = Self.historyMap(for: archivedDashboard, store: store)
+        reconcileRideSession(with: archivedDashboard)
         NinebotChargeLiveActivityManager.sync(with: archivedDashboard)
         NinebotPushManager.shared.syncVehicleAlarmNotifications(with: archivedDashboard)
 

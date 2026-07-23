@@ -1391,7 +1391,14 @@ private struct VehicleMotionScene: View {
 
     private func updateRideTimer(for newMode: VehicleMotionSceneMode) {
         if newMode == .riding {
-            if rideStartedAt == nil {
+            // The session is written to the App Group by the view model. Read
+            // it here rather than creating a fresh local start date so the HUD
+            // retains its original duration after the app is reopened.
+            let restoredStart = NinebotSharedStore().loadActiveRideSession()
+                .flatMap { $0.vehicleSN == snapshot.vehicle.sn ? $0.startedAt : nil }
+            if let restoredStart {
+                rideStartedAt = restoredStart
+            } else if rideStartedAt == nil {
                 rideStartedAt = .now
             }
         } else {
@@ -2501,7 +2508,7 @@ private struct LiveRideEnvironment: View {
                     .fill(Color.white.opacity(weather.isNight ? 0.74 : 0.82))
                     .frame(width: size.width * 0.135, height: max(2.5, size.height * 0.017))
                     .position(
-                        x: -dashSpacing * 0.45 + CGFloat(index) * dashSpacing - dashShift,
+                        x: -dashSpacing * 0.45 + CGFloat(index) * dashSpacing + dashShift,
                         y: roadTop + roadHeight * 0.58
                     )
             }
@@ -2513,7 +2520,7 @@ private struct LiveRideEnvironment: View {
                     .fill(Color.white.opacity(weather.isNight ? 0.055 : 0.075))
                     .frame(width: size.width * (0.07 + CGFloat(index % 3) * 0.018), height: 0.8)
                     .position(
-                        x: -textureSpacing * 0.4 + CGFloat(index) * textureSpacing - textureShift,
+                        x: -textureSpacing * 0.4 + CGFloat(index) * textureSpacing + textureShift,
                         y: roadTop + roadHeight * (0.22 + CGFloat(index % 3) * 0.24)
                     )
             }
@@ -2526,7 +2533,7 @@ private struct LiveRideEnvironment: View {
                         .frame(width: size.width * 0.11, height: 2)
                         .blur(radius: 2.5)
                         .position(
-                            x: -reflectionSpacing * 0.35 + CGFloat(index) * reflectionSpacing - travel * reflectionSpacing * 2,
+                            x: -reflectionSpacing * 0.35 + CGFloat(index) * reflectionSpacing + travel * reflectionSpacing * 2,
                             y: roadTop + roadHeight * (0.28 + CGFloat(index % 2) * 0.38)
                         )
                 }
