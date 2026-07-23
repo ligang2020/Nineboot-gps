@@ -1365,6 +1365,7 @@ private struct VehicleMotionScene: View {
     @State private var isAnimating = false
     @State private var rideStartedAt: Date?
     @StateObject private var rideWeather = RideWeatherProvider()
+    @StateObject private var weatherLocation = RideWeatherLocationProvider()
 
     /// The Ninebot status endpoint used by this app often exposes no live
     /// speed/movement fields. In that payload the reliable active-ride signal
@@ -1451,6 +1452,10 @@ private struct VehicleMotionScene: View {
         .onAppear {
             isAnimating = true
             updateRideTimer(for: mode)
+            // The vehicle API does not always include its latest GPS reading.
+            // Fall back to the phone's one-shot location so weather data can
+            // still be shown instead of permanently rendering placeholders.
+            weatherLocation.requestCurrentLocation()
         }
         .onChange(of: mode) { newMode in
             updateRideTimer(for: newMode)
@@ -1458,26 +1463,36 @@ private struct VehicleMotionScene: View {
         .onDisappear { isAnimating = false }
         .task(id: weatherRequestID) {
             await rideWeather.refresh(
-                latitude: snapshot.state.latitude,
-                longitude: snapshot.state.longitude
+                latitude: weatherCoordinate?.latitude,
+                longitude: weatherCoordinate?.longitude
             )
         }
-        .onReceive(Timer.publish(every: 900, on: .main, in: .common).autoconnect()) { _ in
+        // Weather observations are refreshed independently of vehicle-state
+        // polling. Five minutes keeps the UI current without creating an
+        // unnecessary request for every animation frame.
+        .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in
             Task {
                 await rideWeather.refresh(
-                    latitude: snapshot.state.latitude,
-                    longitude: snapshot.state.longitude,
+                    latitude: weatherCoordinate?.latitude,
+                    longitude: weatherCoordinate?.longitude,
                     force: true
                 )
             }
         }
     }
 
-    private var weatherRequestID: String {
-        guard let latitude = snapshot.state.latitude, let longitude = snapshot.state.longitude else {
-            return "weather-fallback"
+    private var weatherCoordinate: CLLocationCoordinate2D? {
+        if let latitude = snapshot.state.latitude,
+           let longitude = snapshot.state.longitude,
+           CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: latitude, longitude: longitude)) {
+            return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
         }
-        return String(format: "%.3f,%.3f", latitude, longitude)
+        return weatherLocation.coordinate
+    }
+
+    private var weatherRequestID: String {
+        guard let coordinate = weatherCoordinate else { return "weather-awaiting-location" }
+        return String(format: "%.3f,%.3f", coordinate.latitude, coordinate.longitude)
     }
 
     @ViewBuilder
@@ -1536,6 +1551,13 @@ private struct VehicleMotionScene: View {
                 .position(x: size.width * 0.57, y: size.height * 0.66)
         }
         .frame(width: size.width, height: size.height)
+        .overlay(alignment: .topLeading) {
+            CityEnvironmentReadout(
+                weather: weather,
+                rideDurationText: nil,
+                sceneSize: size
+            )
+        }
         .clipped()
     }
 
@@ -1877,16 +1899,68 @@ private struct RideWeatherSnapshot: Equatable {
 }
 
 @MainActor
+private final class RideWeatherLocationProvider: NSObject, ObservableObject, CLLocationManagerDelegate {
+    @Published private(set) var coordinate: CLLocationCoordinate2D?
+
+    private let locationManager = CLLocationManager()
+
+    override init() {
+        super.init()
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
+        locationManager.distanceFilter = 1_000
+    }
+
+    /// Requests only a single coarse location fix. Vehicle GPS remains the
+    /// preferred source; this is solely the fallback for API responses that
+    /// omit location fields.
+    func requestCurrentLocation() {
+        switch locationManager.authorizationStatus {
+        case .notDetermined:
+            locationManager.requestWhenInUseAuthorization()
+        case .authorizedAlways, .authorizedWhenInUse:
+            locationManager.requestLocation()
+        case .denied, .restricted:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus == .authorizedAlways || manager.authorizationStatus == .authorizedWhenInUse {
+            manager.requestLocation()
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last,
+              location.horizontalAccuracy >= 0,
+              CLLocationCoordinate2DIsValid(location.coordinate) else {
+            return
+        }
+        coordinate = location.coordinate
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // The weather card retains the last successful observation. A failed
+        // one-shot location request must not erase data that is already shown.
+    }
+}
+
+@MainActor
 private final class RideWeatherProvider: ObservableObject {
     @Published private(set) var snapshot = RideWeatherSnapshot.fallback()
 
     private var lastCoordinate: CLLocationCoordinate2D?
     private var lastRefreshAt: Date?
+    private var currentRequestID = UUID()
 
     func refresh(latitude: Double?, longitude: Double?, force: Bool = false) async {
         guard let latitude, let longitude,
               (-90...90).contains(latitude), (-180...180).contains(longitude) else {
-            snapshot = .fallback()
+            // Missing vehicle GPS (or a temporarily unavailable phone fix)
+            // must not wipe out the last valid weather observation.
             return
         }
 
@@ -1896,10 +1970,12 @@ private final class RideWeatherProvider: ObservableObject {
            let lastRefreshAt,
            CLLocation(latitude: lastCoordinate.latitude, longitude: lastCoordinate.longitude)
                 .distance(from: CLLocation(latitude: latitude, longitude: longitude)) < 1_000,
-           Date().timeIntervalSince(lastRefreshAt) < 12 * 60 {
+           Date().timeIntervalSince(lastRefreshAt) < 5 * 60 {
             return
         }
 
+        let requestID = UUID()
+        currentRequestID = requestID
         var forecastComponents = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
         forecastComponents?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
@@ -1920,19 +1996,25 @@ private final class RideWeatherProvider: ObservableObject {
                 return
             }
             let payload = try JSONDecoder().decode(OpenMeteoRideWeatherResponse.self, from: data)
-            guard let current = payload.current else { return }
+            guard let current = payload.current, currentRequestID == requestID else { return }
 
-            let airQualityIndex = await fetchAirQuality(latitude: latitude, longitude: longitude)
+            // Publish temperature and UV immediately. The air-quality service
+            // is independent and can occasionally take longer; previously its
+            // failure or delay prevented every weather value from appearing.
             snapshot = .openMeteo(
                 weatherCode: current.weatherCode,
                 isDay: current.isDay,
                 temperatureCelsius: current.temperature2M,
                 ultravioletIndex: current.uvIndex,
-                airQualityIndex: airQualityIndex,
+                airQualityIndex: nil,
                 observedAt: .now
             )
             lastCoordinate = coordinate
             lastRefreshAt = .now
+
+            let airQualityIndex = await fetchAirQuality(latitude: latitude, longitude: longitude)
+            guard currentRequestID == requestID else { return }
+            snapshot.airQualityIndex = airQualityIndex
         } catch {
             // Preserve the last known conditions. The view still falls back to
             // a local day/night city scene before the first successful request.
@@ -2852,11 +2934,11 @@ private struct CityEnvironmentReadout: View {
         let size = sceneSize
         let foreground = weather.isNight ? Color.white.opacity(0.92) : Color.black.opacity(0.70)
         let secondary = weather.isNight ? Color.white.opacity(0.72) : Color.black.opacity(0.52)
-        let labelSize = min(max(size.width * 0.023, 8), 9.5)
+        let labelSize = min(max(size.width * 0.027, 10), 12)
         let timeSize = min(max(size.width * 0.039, 13), 16)
         let topInset = min(max(size.height * 0.075, 18), 24)
         let horizontalInset = min(max(size.width * 0.055, 18), 26)
-        let metricsWidth = min(max(size.width * 0.34, 112), 142)
+        let metricsWidth = min(max(size.width * 0.39, 130), 158)
         let rideTimeWidth = max(96, size.width - metricsWidth - horizontalInset * 3)
         let metricsX = max(horizontalInset, size.width - metricsWidth - horizontalInset)
 
@@ -2881,6 +2963,9 @@ private struct CityEnvironmentReadout: View {
                 metric(icon: "sun.max", title: "紫外线", value: weather.ultravioletText, foreground: foreground, secondary: secondary, fontSize: labelSize)
                 metric(icon: "aqi.medium", title: "空气质量", value: weather.airQualityText, foreground: foreground, secondary: secondary, fontSize: labelSize)
             }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 6)
+            .background(.black.opacity(weather.isNight ? 0.28 : 0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .frame(width: metricsWidth, alignment: .trailing)
             .offset(x: metricsX, y: topInset)
         }

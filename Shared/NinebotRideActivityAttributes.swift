@@ -10,6 +10,9 @@ struct NinebotActiveRideSession: Codable, Hashable {
     var startedAt: Date
     var latestSpeedKmh: Double?
     var distanceMeters: Double?
+    /// Odometer reading captured at the beginning of this live ride. It lets
+    /// the Live Activity calculate the current-trip distance from App data.
+    var startedTotalMileageKm: Double?
     var updatedAt: Date
 
     init(
@@ -19,6 +22,7 @@ struct NinebotActiveRideSession: Codable, Hashable {
         startedAt: Date,
         latestSpeedKmh: Double? = nil,
         distanceMeters: Double? = nil,
+        startedTotalMileageKm: Double? = nil,
         updatedAt: Date = .now
     ) {
         self.vehicleSN = vehicleSN
@@ -27,6 +31,7 @@ struct NinebotActiveRideSession: Codable, Hashable {
         self.startedAt = startedAt
         self.latestSpeedKmh = latestSpeedKmh
         self.distanceMeters = distanceMeters
+        self.startedTotalMileageKm = startedTotalMileageKm
         self.updatedAt = updatedAt
     }
 }
@@ -38,6 +43,7 @@ struct NinebotRideActivityContentState: Codable, Hashable {
     var battery: Int?
     var speedKmh: Double?
     var distanceMeters: Double?
+    var remainingRangeKm: Double?
     var updatedAt: Date
 }
 

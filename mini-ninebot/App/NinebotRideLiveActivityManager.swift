@@ -50,6 +50,7 @@ private enum NinebotRideActivityController {
                 battery: snapshot.state.battery,
                 speedKmh: session.latestSpeedKmh,
                 distanceMeters: session.distanceMeters,
+                remainingRangeKm: snapshot.state.endurance ?? snapshot.state.aiEstimatedMileage,
                 updatedAt: session.updatedAt
             ),
             staleDate: Date().addingTimeInterval(90)

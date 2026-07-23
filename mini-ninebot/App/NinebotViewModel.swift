@@ -659,14 +659,23 @@ final class NinebotViewModel: ObservableObject {
         }
 
         let previous = activeRideSession ?? store.loadActiveRideSession()
-        let startedAt = previous?.vehicleSN == snapshot.vehicle.sn ? previous!.startedAt : Date()
+        let isSameVehicle = previous?.vehicleSN == snapshot.vehicle.sn
+        let startedAt = isSameVehicle ? previous!.startedAt : Date()
+        let startedTotalMileageKm = isSameVehicle
+            ? previous?.startedTotalMileageKm
+            : snapshot.state.totalMileage
+        let liveDistanceMeters = rideDistanceMeters(
+            state: snapshot.state,
+            startedTotalMileageKm: startedTotalMileageKm
+        )
         let session = NinebotActiveRideSession(
             vehicleSN: snapshot.vehicle.sn,
             vehicleName: snapshot.vehicle.displayName,
             vehicleModel: snapshot.vehicle.model,
             startedAt: startedAt,
             latestSpeedKmh: liveSpeedKmh(from: snapshot.state) ?? previous?.latestSpeedKmh,
-            distanceMeters: previous?.vehicleSN == snapshot.vehicle.sn ? previous?.distanceMeters : nil,
+            distanceMeters: liveDistanceMeters ?? (isSameVehicle ? previous?.distanceMeters : nil),
+            startedTotalMileageKm: startedTotalMileageKm,
             updatedAt: snapshot.state.updatedAt
         )
         store.saveActiveRideSession(session)
@@ -683,6 +692,23 @@ final class NinebotViewModel: ObservableObject {
             return true
         }
         return snapshot.state.isPoweredOn == true && snapshot.state.isLocked != true
+    }
+
+    /// Calculates the in-progress trip distance from the odometer values the
+    /// App already refreshes during a ride. The persisted start reading keeps
+    /// the value continuous when the App is relaunched.
+    private func rideDistanceMeters(
+        state: NinebotVehicleState,
+        startedTotalMileageKm: Double?
+    ) -> Double? {
+        guard let startedTotalMileageKm,
+              let totalMileageKm = state.totalMileage,
+              totalMileageKm.isFinite,
+              startedTotalMileageKm.isFinite,
+              totalMileageKm >= startedTotalMileageKm else {
+            return nil
+        }
+        return (totalMileageKm - startedTotalMileageKm) * 1_000
     }
 
     private func liveSpeedKmh(from state: NinebotVehicleState) -> Double? {

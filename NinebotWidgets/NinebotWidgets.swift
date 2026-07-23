@@ -543,7 +543,7 @@ struct NinebotRideLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack(spacing: 8) {
                         RideIslandMetric(title: "速度", value: rideSpeedText(context.state.speedKmh))
-                        RideIslandMetric(title: "电量", value: rideBatteryText(context.state.battery))
+                        RideIslandMetric(title: "续航", value: rideRangeText(context.state.remainingRangeKm))
                         RideIslandMetric(title: "距离", value: rideDistanceText(context.state.distanceMeters))
                     }
                     .padding(.horizontal, 7)
@@ -598,20 +598,22 @@ private struct RideLiveActivityCard: View {
                 .offset(x: 138, y: -64)
 
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 8) {
+                HStack(alignment: .center, spacing: 9) {
+                    RideActivityVehicleArtwork()
+
                     VStack(alignment: .leading, spacing: 2) {
                         Text(attributes.vehicleName)
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .minimumScaleFactor(0.72)
-                        Label("正在骑行", systemImage: "scooter")
+                        Label("骑行中", systemImage: "scooter")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(WidgetTheme.green)
                     }
-                    Spacer(minLength: 8)
+                    Spacer(minLength: 6)
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("骑行时间")
+                        Text("已骑行")
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(.white.opacity(0.56))
                         Text(attributes.startedAt, style: .timer)
@@ -636,8 +638,8 @@ private struct RideLiveActivityCard: View {
                 }
 
                 HStack(spacing: 7) {
+                    RideActivityMetric(value: rideRangeText(state.remainingRangeKm), title: "剩余里程", icon: "road.lanes")
                     RideActivityMetric(value: rideDistanceText(state.distanceMeters), title: "本次距离", icon: "point.3.connected.trianglepath.dotted")
-                    RideActivityMetric(value: rideBatteryText(state.battery), title: "当前电量", icon: "battery.75percent")
                     RideActivityMetric(value: "实时", title: "数据状态", icon: "dot.radiowaves.left.and.right")
                 }
             }
@@ -646,6 +648,22 @@ private struct RideLiveActivityCard: View {
             .padding(.bottom, 11)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+    }
+}
+
+@available(iOS 16.1, *)
+private struct RideActivityVehicleArtwork: View {
+    var body: some View {
+        Image("RideScooter")
+            .resizable()
+            .scaledToFill()
+            .frame(width: 62, height: 62)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(.white.opacity(0.24), lineWidth: 0.8)
+            }
+            .shadow(color: WidgetTheme.green.opacity(0.26), radius: 8)
     }
 }
 
@@ -674,17 +692,29 @@ private struct RideActivityRoad: View {
 private struct RideBatteryBadge: View {
     var battery: Int?
 
+    private var fraction: Double {
+        Double(min(max(battery ?? 0, 0), 100)) / 100
+    }
+
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "battery.75percent")
-            Text(rideBatteryText(battery))
-                .monospacedDigit()
+        ZStack {
+            Circle()
+                .stroke(.white.opacity(0.16), lineWidth: 5)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(WidgetTheme.green, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .shadow(color: WidgetTheme.green.opacity(0.55), radius: 4)
+            VStack(spacing: 0) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 9, weight: .bold))
+                Text(rideBatteryText(battery))
+                    .font(.caption2.monospacedDigit().weight(.bold))
+            }
+            .foregroundStyle(WidgetTheme.green)
         }
-        .font(.caption.weight(.bold))
-        .foregroundStyle(WidgetTheme.green)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(WidgetTheme.green.opacity(0.13), in: Capsule())
+        .frame(width: 51, height: 51)
+        .accessibilityLabel("电量 \(rideBatteryText(battery))")
     }
 }
 
@@ -748,6 +778,12 @@ private func rideSpeedText(_ speed: Double?) -> String {
 private func rideBatteryText(_ battery: Int?) -> String {
     guard let battery else { return "--%" }
     return "\(min(max(battery, 0), 100))%"
+}
+
+@available(iOS 16.1, *)
+private func rideRangeText(_ rangeKilometers: Double?) -> String {
+    guard let rangeKilometers, rangeKilometers.isFinite, rangeKilometers >= 0 else { return "-- km" }
+    return String(format: "%.0f km", rangeKilometers)
 }
 
 @available(iOS 16.1, *)

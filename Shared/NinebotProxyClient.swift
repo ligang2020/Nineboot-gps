@@ -475,6 +475,16 @@ private extension NinebotProxyClient {
         let batterySources = [statusObject, batteryObject, batteryPayloadObject, batteryListObject, batteryMainObject]
         let loc = statusObject["loc"]?.objectValue
         let locationInfo = statusObject["locationInfo"]?.objectValue
+        // Different Ninebot endpoints use different wrappers and longitude
+        // keys for the same GPS value. Keep all supported location objects in
+        // one source list so weather, map, and address services receive the
+        // coordinates already returned by the App API.
+        let locationSources = [
+            statusObject,
+            loc,
+            locationInfo,
+            firstObject(["location", "gps", "coordinate", "coordinates", "point"], in: statusObject)
+        ].compactMap { $0 }
         let lockNumber = loc?["lock"]?.intValue ?? statusObject["lock_status"]?.intValue
         let rides = travelObject["list"]?.arrayValue ?? []
         let rideRecords = rides.enumerated().compactMap { index, value in
@@ -546,13 +556,13 @@ private extension NinebotProxyClient {
             isLocked: lockNumber.map { $0 == 1 },
             remainingChargeTime: firstDouble(["remain_charge_time", "remainChargeTime", "remainingChargeTime"], in: statusObject)
                 ?? firstDouble(["remain_charge_time", "remainChargeTime", "remainingChargeTime"], in: batteryPayloadObject),
-            locationDescription: firstString(["locationDesc", "desc"], in: locationInfo ?? [:]),
+            locationDescription: firstString(["locationDesc", "desc", "address", "addressDesc"], in: locationInfo ?? [:]),
             latitude: normalizedCoordinate(
-                loc?["lat"]?.doubleValue ?? locationInfo?["lat"]?.doubleValue,
+                firstDouble(["lat", "latitude", "gcj_lat", "gcjLat", "wgs_lat", "wgsLat", "y"], in: locationSources),
                 limit: 90
             ),
             longitude: normalizedCoordinate(
-                loc?["lon"]?.doubleValue ?? locationInfo?["lon"]?.doubleValue,
+                firstDouble(["lon", "lng", "longitude", "gcj_lng", "gcjLng", "wgs_lng", "wgsLng", "x"], in: locationSources),
                 limit: 180
             ),
             totalMileage: firstDouble(["total_mileage", "totalMileage", "total_mileages"], in: statusObject)
