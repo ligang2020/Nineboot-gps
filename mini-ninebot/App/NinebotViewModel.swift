@@ -816,6 +816,7 @@ final class NinebotViewModel: ObservableObject {
         reconcileRideSession(with: archivedDashboard)
         NinebotChargeLiveActivityManager.sync(with: archivedDashboard)
         NinebotPushManager.shared.syncVehicleAlarmNotifications(with: archivedDashboard)
+        syncDashboardVehicleLocations(for: archivedDashboard)
 
         // The App is the single writer for the App Group snapshot. Explicit
         // refreshes reload WidgetKit after saving; the five-second foreground
@@ -824,6 +825,35 @@ final class NinebotViewModel: ObservableObject {
             WidgetCenter.shared.reloadAllTimelines()
         }
         return archivedDashboard
+    }
+
+    /// 车况接口本身已包含经纬度；即使 BLE 的 security.location 还未上报，
+    /// 安全页、围栏和导航也应使用这份已存在的车辆定位。
+    private func syncDashboardVehicleLocations(for dashboard: NinebotDashboard) {
+        for snapshot in dashboard.vehicles {
+            let state = snapshot.state
+            guard let latitude = state.latitude,
+                  let longitude = state.longitude,
+                  (-90...90).contains(latitude),
+                  (-180...180).contains(longitude) else {
+                continue
+            }
+            let location = NinebotVehicleLocation(
+                latitude: latitude,
+                longitude: longitude,
+                updatedAt: state.updatedAt
+            )
+            NinebotVehicleLocationManager.shared.ingest(
+                location,
+                vehicleSN: snapshot.vehicle.sn,
+                isRiding: isRiding(snapshot)
+            )
+            NinebotGeofenceManager.shared.ingestVehicleLocation(
+                location,
+                vehicleSN: snapshot.vehicle.sn,
+                vehicleName: snapshot.vehicle.displayName
+            )
+        }
     }
 
     private func refreshResolvedAddressesIfNeeded(for dashboard: NinebotDashboard) async {

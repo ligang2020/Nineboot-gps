@@ -573,19 +573,21 @@ private struct RideLockScreenLiveActivityView: View {
     var state: NinebotRideActivityContentState
 
     var body: some View {
-        VStack(spacing: 7) {
+        // 锁屏实际可用高度会因设备、锁屏控件和系统边距而变化；保持紧凑行高，
+        // 避免「今日骑行」和「骑行时间」在较小的实时活动容器中被裁切。
+        VStack(spacing: 5) {
             // 第一行：速度为最强视觉锚点。
             HStack(alignment: .lastTextBaseline, spacing: 5) {
                 Text(rideSpeedValue(state.speedKmh))
-                    .font(.system(size: 54, weight: .bold, design: .rounded))
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .contentTransition(.numericText(value: state.speedKmh))
                     .minimumScaleFactor(0.72)
                     .accessibilityLabel("当前速度 \(rideSpeedValue(state.speedKmh)) 公里每小时")
                 Text("km/h")
-                    .font(.headline.weight(.medium))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 7)
             }
             .frame(maxWidth: .infinity)
             .animation(.smooth(duration: 0.35), value: state.speedKmh)
@@ -596,10 +598,9 @@ private struct RideLockScreenLiveActivityView: View {
                 .animation(.easeInOut(duration: 0.2), value: state.mode)
 
             Divider()
-                .padding(.top, 1)
 
-            // 第三、四行：四个二级指标使用统一栅格和留白，不再使用独立矩形卡片。
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
+            // 第三、四行：值与图标保持单行，避免窄高 Live Activity 裁切第二行内容。
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 7) {
                 RideMetricCell(title: "剩余电量", value: "\(state.batteryPercent)%", symbol: RideActivityTheme.batterySymbol(for: state.batteryPercent), tint: RideActivityTheme.batteryColor(for: state.batteryPercent))
                 RideMetricCell(title: "剩余续航", value: rideDistanceText(state.remainingRangeKm), symbol: "location.fill", tint: .secondary)
                 RideMetricCell(title: "今日骑行", value: rideDistanceText(state.todayDistanceKm), symbol: "bicycle", tint: .secondary)
@@ -607,7 +608,7 @@ private struct RideLockScreenLiveActivityView: View {
             }
         }
         .padding(.horizontal, 18)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
         .widgetURL(URL(string: "ninebot://ride"))
     }
@@ -636,22 +637,20 @@ private struct RideMetricCell: View {
     var tint: Color
 
     var body: some View {
-        HStack(spacing: 7) {
+        // 次级指标在锁屏中只显示 SF Symbol + 数值；语义通过无障碍标签完整保留。
+        HStack(spacing: 6) {
             Image(systemName: symbol)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(tint)
-                .frame(width: 15)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.subheadline.monospacedDigit().weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
+                .frame(width: 14)
+            Text(value)
+                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title) \(value)")
     }
 }
 
@@ -660,22 +659,19 @@ private struct RideTimerMetricCell: View {
     var startedAt: Date
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             Image(systemName: "timer")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 15)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("骑行时间")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text(startedAt, style: .timer)
-                    .font(.subheadline.monospacedDigit().weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
+                .frame(width: 14)
+            Text(startedAt, style: .timer)
+                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("骑行时间")
     }
 }
 
@@ -703,46 +699,51 @@ private struct RideIslandSummary: View {
     var state: NinebotRideActivityContentState
 
     var body: some View {
-        VStack(spacing: 9) {
+        // Expanded Bottom 区域高度有限。模式独占一行，四项指标压缩为单行图标+数值，
+        // 不使用标题或分隔线，以防 iPhone 15 / 16 的灵动岛底部被系统裁切。
+        VStack(spacing: 6) {
             RideModeBadge(mode: state.mode)
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.2), value: state.mode)
 
-            Divider()
-
-            HStack(spacing: 0) {
-                RideIslandMetric(value: "\(state.batteryPercent)%", title: "电量", symbol: RideActivityTheme.batterySymbol(for: state.batteryPercent), tint: RideActivityTheme.batteryColor(for: state.batteryPercent))
-                RideIslandMetric(value: rideDistanceText(state.remainingRangeKm), title: "续航", symbol: "location.fill", tint: .secondary)
-                RideIslandMetric(value: rideDistanceText(state.todayDistanceKm), title: "今日", symbol: "bicycle", tint: .secondary)
+            HStack(spacing: 5) {
+                RideIslandMetric(
+                    title: "剩余电量",
+                    value: "\(state.batteryPercent)%",
+                    symbol: RideActivityTheme.batterySymbol(for: state.batteryPercent),
+                    tint: RideActivityTheme.batteryColor(for: state.batteryPercent)
+                )
+                RideIslandMetric(title: "剩余续航", value: rideDistanceText(state.remainingRangeKm), symbol: "location.fill", tint: .secondary)
+                RideIslandMetric(title: "今日骑行", value: rideDistanceText(state.todayDistanceKm), symbol: "bicycle", tint: .secondary)
                 RideIslandTimer(start: attributes.startedAt)
             }
         }
-        .padding(.horizontal, 5)
-        .padding(.top, 5)
+        .padding(.horizontal, 3)
+        .padding(.top, 2)
+        .padding(.bottom, 1)
     }
 }
 
 @available(iOS 18.0, *)
 private struct RideIslandMetric: View {
-    var value: String
     var title: String
+    var value: String
     var symbol: String
     var tint: Color
 
     var body: some View {
-        VStack(spacing: 3) {
+        HStack(spacing: 3) {
             Image(systemName: symbol)
-                .font(.caption.weight(.semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(tint)
             Text(value)
-                .font(.caption.monospacedDigit().weight(.semibold))
+                .font(.caption2.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .minimumScaleFactor(0.58)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title) \(value)")
     }
 }
 
@@ -751,19 +752,18 @@ private struct RideIslandTimer: View {
     var start: Date
 
     var body: some View {
-        VStack(spacing: 3) {
+        HStack(spacing: 3) {
             Image(systemName: "timer")
-                .font(.caption.weight(.semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
             Text(start, style: .timer)
-                .font(.caption.monospacedDigit().weight(.semibold))
+                .font(.caption2.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
-                .minimumScaleFactor(0.65)
-            Text("时间")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .minimumScaleFactor(0.55)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("骑行时间")
     }
 }
 

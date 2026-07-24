@@ -19,8 +19,26 @@ struct NinebotAntiTheftView: View {
     private var vehicleName: String { snapshot?.vehicle.displayName ?? "我的车辆" }
     private var location: NinebotVehicleLocation? {
         guard let vehicleSN else { return nil }
+        // 优先用实时 BLE / 服务端安全帧；仪表盘已有 GPS 时立即回退到仪表盘坐标，
+        // 防止安全页错误显示「暂无车辆定位」。
         return locationManager.latestLocations[vehicleSN]
             ?? alarmManager.activeAlarm?.location
+            ?? dashboardLocation
+    }
+
+    private var dashboardLocation: NinebotVehicleLocation? {
+        guard let state = snapshot?.state,
+              let latitude = state.latitude,
+              let longitude = state.longitude,
+              (-90...90).contains(latitude),
+              (-180...180).contains(longitude) else {
+            return nil
+        }
+        return NinebotVehicleLocation(
+            latitude: latitude,
+            longitude: longitude,
+            updatedAt: state.updatedAt
+        )
     }
     private var fence: NinebotGeofence? {
         guard let vehicleSN else { return nil }
