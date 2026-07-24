@@ -27,15 +27,25 @@ permissions:
 jobs:
   build-ipa:
     name: Build iOS IPA
-    runs-on: macos-latest
+    # 固定 macOS 15 + Xcode 16.4：该镜像包含 iOS 18 SDK，和项目的 iOS 18
+    # 最低部署版本一致，避免 macos-latest 切换默认 Xcode 后产生不可复现的 IPA。
+    runs-on: macos-15
     timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      EXPECTED_VERSION: 1.2.38
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - name: Verify Xcode and app version
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          test -d "$DEVELOPER_DIR"
+          grep -q "MARKETING_VERSION = $EXPECTED_VERSION;" mini-ninebot.xcodeproj/project.pbxproj
+          grep -q "CURRENT_PROJECT_VERSION = 38;" mini-ninebot.xcodeproj/project.pbxproj
 
       - name: Build and package unsigned IPA
         id: package

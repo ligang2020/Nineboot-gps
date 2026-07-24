@@ -165,6 +165,9 @@ final class NinebotViewModel: ObservableObject {
     private let store = NinebotSharedStore()
     private var lastAutomaticRefreshAt: Date?
     private var lastWidgetTimelineRefreshAt: Date?
+    /// 最近一帧 BLE 遥测；仅用于避免网络轮询覆盖正在进行的本地骑行。
+    private var latestBLETelemetry: NinebotBLETelemetry?
+    private var lastBLERideSessionPersistenceAt: Date = .distantPast
 
     init() {
         let configuration = store.loadConfiguration()
@@ -658,11 +661,67 @@ final class NinebotViewModel: ObservableObject {
         return try await client.consumeLoginCode(account: account, code: code)
     }
 
+    /// BLE 层每秒解析一帧后调用此方法。该方法是 BLE 与 Live Activity 之间的
+    /// 唯一桥接点：不依赖某一个车辆型号的 GATT UUID，便于后续替换协议解析器。
+    ///
+    /// 例：`bleService.onTelemetry = { [weak model] frame in
+    ///     Task { @MainActor in model?.ingestBLETelemetry(frame) }
+    /// }`
+    func ingestBLETelemetry(_ telemetry: NinebotBLETelemetry) {
+        latestBLETelemetry = telemetry
+
+        guard telemetry.isRiding, !telemetry.isCharging else {
+            if activeRideSession?.vehicleSN == telemetry.vehicleSN {
+                store.clearActiveRideSession()
+                activeRideSession = nil
+            }
+            NinebotRideLiveActivityManager.sync(session: nil, telemetry: telemetry)
+            return
+        }
+
+        let snapshot = dashboard.vehicles.first { $0.vehicle.sn == telemetry.vehicleSN }
+        let previous = activeRideSession?.vehicleSN == telemetry.vehicleSN
+            ? activeRideSession
+            : store.loadActiveRideSession().flatMap { $0.vehicleSN == telemetry.vehicleSN ? $0 : nil }
+        let startedAt = previous?.startedAt ?? telemetry.receivedAt
+        let vehicleName = snapshot?.vehicle.displayName ?? "Ninebot 电动车"
+        let vehicleModel = snapshot?.vehicle.model ?? "电动车"
+        let session = NinebotActiveRideSession(
+            vehicleSN: telemetry.vehicleSN,
+            vehicleName: vehicleName,
+            vehicleModel: vehicleModel,
+            startedAt: startedAt,
+            latestSpeedKmh: telemetry.speedKmh,
+            distanceMeters: telemetry.rideDistanceKm * 1_000,
+            startedTotalMileageKm: previous?.startedTotalMileageKm ?? max(telemetry.totalDistanceKm - telemetry.rideDistanceKm, 0),
+            updatedAt: telemetry.receivedAt
+        )
+
+        activeRideSession = session
+        // App Group 写入会触发磁盘 I/O；每 15 秒持久化一次已足够覆盖异常退出，
+        // 首帧仍会立即写入，结束骑行则立即清除。
+        if previous == nil || telemetry.receivedAt.timeIntervalSince(lastBLERideSessionPersistenceAt) >= 15 {
+            store.saveActiveRideSession(session)
+            lastBLERideSessionPersistenceAt = telemetry.receivedAt
+        }
+        NinebotRideLiveActivityManager.sync(session: session, telemetry: telemetry)
+    }
+
     /// Reconciles the persisted riding session from the same remote state that
     /// drives the dashboard scene. Reusing the existing session's `startedAt`
     /// is what prevents the ride clock from resetting after an app relaunch.
     private func reconcileRideSession(with dashboard: NinebotDashboard) {
-        guard let snapshot = dashboard.primaryVehicle, isRiding(snapshot) else {
+        let freshBLETelemetry: NinebotBLETelemetry? = latestBLETelemetry.flatMap { telemetry in
+            guard telemetry.isRiding,
+                  !telemetry.isCharging,
+                  Date().timeIntervalSince(telemetry.receivedAt) < 5 else {
+                return nil
+            }
+            return telemetry
+        }
+
+        guard let snapshot = dashboard.primaryVehicle,
+              isRiding(snapshot) || freshBLETelemetry?.vehicleSN == snapshot.vehicle.sn else {
             if activeRideSession != nil {
                 store.clearActiveRideSession()
                 activeRideSession = nil
@@ -686,14 +745,18 @@ final class NinebotViewModel: ObservableObject {
             vehicleName: snapshot.vehicle.displayName,
             vehicleModel: snapshot.vehicle.model,
             startedAt: startedAt,
-            latestSpeedKmh: liveSpeedKmh(from: snapshot.state) ?? previous?.latestSpeedKmh,
-            distanceMeters: liveDistanceMeters ?? (isSameVehicle ? previous?.distanceMeters : nil),
+            latestSpeedKmh: freshBLETelemetry?.speedKmh ?? liveSpeedKmh(from: snapshot.state) ?? previous?.latestSpeedKmh,
+            distanceMeters: freshBLETelemetry.map { $0.rideDistanceKm * 1_000 } ?? liveDistanceMeters ?? (isSameVehicle ? previous?.distanceMeters : nil),
             startedTotalMileageKm: startedTotalMileageKm,
-            updatedAt: snapshot.state.updatedAt
+            updatedAt: freshBLETelemetry?.receivedAt ?? snapshot.state.updatedAt
         )
         store.saveActiveRideSession(session)
         activeRideSession = session
-        NinebotRideLiveActivityManager.sync(session: session, snapshot: snapshot)
+        if let freshBLETelemetry {
+            NinebotRideLiveActivityManager.sync(session: session, telemetry: freshBLETelemetry)
+        } else {
+            NinebotRideLiveActivityManager.sync(session: session, snapshot: snapshot)
+        }
     }
 
     private func isRiding(_ snapshot: NinebotVehicleSnapshot) -> Bool {
