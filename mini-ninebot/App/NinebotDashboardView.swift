@@ -1754,23 +1754,13 @@ enum RoadAnimalKind: CaseIterable {
     case giraffe
     case elephant
 
-    var emoji: String {
-        switch self {
-        case .dogs: return "🐕"
-        case .cats: return "🐈"
-        case .ducks: return "🦆"
-        case .pandas: return "🐼"
-        case .giraffe: return "🦒"
-        case .elephant: return "🐘"
-        }
-    }
 }
 
 /// 单只动物在道路上的一次经过参数。所有随机值只在冷启动时生成一次，
 /// TimelineView 的每一帧都读取相同计划，因此不会出现闪烁或跳变。
 struct RoadAnimalWalker: Identifiable {
     let id = UUID()
-    let emoji: String
+    let kind: RoadAnimalKind
     let direction: RoadAnimalDirection
     let delay: TimeInterval
     let duration: TimeInterval
@@ -1817,7 +1807,7 @@ struct RoadAnimalEncounterPlan {
             lane: CGFloat? = nil
         ) -> RoadAnimalWalker {
             RoadAnimalWalker(
-                emoji: kind.emoji,
+                kind: kind,
                 direction: direction,
                 delay: delay,
                 duration: Double.random(in: 6.6...8.6, using: &generator),
@@ -1948,14 +1938,17 @@ private struct RoadAnimalEncounterOverlay: View {
                     .scaleEffect(x: 1.0 - stepLift / max(baseSize, 1) * 0.28, y: 1)
                     .offset(y: baseSize * 0.44)
 
-                // 使用系统高分辨率彩色动物字形，并结合步态、轻微躯干起伏和接地阴影。
-                // 这样无需网络下载素材，也可在深浅色模式中保持原生清晰度。
-                Text(walker.emoji)
-                    .font(.system(size: baseSize))
-                    .shadow(color: .black.opacity(isNight ? 0.48 : 0.26), radius: max(1.4, baseSize * 0.055), x: 0, y: max(1, baseSize * 0.055))
-                    .scaleEffect(x: horizontalScale, y: 1)
-                    .rotationEffect(.degrees(sway))
-                    .offset(y: -stepLift)
+                // 纯 SwiftUI 骨骼步态：四足动物采用对角步（左前+右后、右前+左后），
+                // 鸭子采用左右脚交替；躯干、头颈、尾部均有独立且略滞后的运动。
+                RoadAnimalWalkCycle(
+                    kind: walker.kind,
+                    phase: walkPhase,
+                    isNight: isNight
+                )
+                .frame(width: baseSize * 1.34, height: baseSize * 1.02)
+                .scaleEffect(x: horizontalScale, y: 1)
+                .rotationEffect(.degrees(sway * 0.24))
+                .offset(y: -stepLift)
             }
             .position(x: x, y: y)
             .opacity(visibility)
@@ -1968,6 +1961,237 @@ private struct RoadAnimalEncounterOverlay: View {
         if progress < fadeLength { return progress / fadeLength }
         if progress > 1 - fadeLength { return (1 - progress) / fadeLength }
         return 1
+    }
+}
+
+
+/// 使用 Canvas 绘制的原生动物行走骨骼。
+/// 重点不是整体图标位移，而是让脚掌、膝关节、躯干重心与头尾遵循各自的步态相位。
+/// 后续如加入有授权的写实 Sprite，可在不改变道路调度逻辑的前提下替换此视图。
+private struct RoadAnimalWalkCycle: View {
+    let kind: RoadAnimalKind
+    let phase: Double
+    let isNight: Bool
+
+    var body: some View {
+        Canvas { context, size in
+            let scale = min(size.width / 100, size.height / 76)
+            let horizontalInset = (size.width - 100 * scale) * 0.5
+            let verticalInset = (size.height - 76 * scale) * 0.5
+
+            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                CGPoint(x: horizontalInset + x * scale, y: verticalInset + y * scale)
+            }
+
+            func rect(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) -> CGRect {
+                CGRect(
+                    x: horizontalInset + x * scale,
+                    y: verticalInset + y * scale,
+                    width: width * scale,
+                    height: height * scale
+                )
+            }
+
+            func fillEllipse(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat, color: Color) {
+                context.fill(Path(ellipseIn: rect(x, y, width, height)), with: .color(color))
+            }
+
+            func fillPath(_ build: (inout Path) -> Void, color: Color) {
+                var path = Path()
+                build(&path)
+                context.fill(path, with: .color(color))
+            }
+
+            func strokePath(_ build: (inout Path) -> Void, color: Color, width: CGFloat) {
+                var path = Path()
+                build(&path)
+                context.stroke(
+                    path,
+                    with: .color(color),
+                    style: StrokeStyle(lineWidth: width * scale, lineCap: .round, lineJoin: .round)
+                )
+            }
+
+            // 对角步态：前左+后右同步，前右+后左反相。抬脚时足端向前，落脚时向后，
+            // 使脚掌在道路上具有连续而非机械摆动的自然步态。
+            func quadrupedLeg(
+                hipX: CGFloat,
+                hipY: CGFloat,
+                phaseOffset: Double,
+                color: Color,
+                thickness: CGFloat,
+                length: CGFloat = 22
+            ) {
+                let gait = phase + phaseOffset
+                let swing = CGFloat(sin(gait))
+                let lift = max(0, CGFloat(cos(gait)))
+                let hip = point(hipX, hipY)
+                let knee = point(hipX + swing * 3.6, hipY + length * 0.48 - lift * 1.8)
+                let paw = point(hipX - swing * 7.2, hipY + length - lift * 5.3)
+                strokePath({ path in
+                    path.move(to: hip)
+                    path.addLine(to: knee)
+                    path.addLine(to: paw)
+                }, color: color, width: thickness)
+                strokePath({ path in
+                    path.move(to: paw)
+                    path.addLine(to: point(hipX - swing * 7.2 + 3.4, hipY + length - lift * 5.3))
+                }, color: color.opacity(0.86), width: max(1.25, thickness * 0.52))
+            }
+
+            func duckLeg(hipX: CGFloat, phaseOffset: Double) {
+                let gait = phase * 1.16 + phaseOffset
+                let swing = CGFloat(sin(gait))
+                let lift = max(0, CGFloat(cos(gait)))
+                let hip = point(hipX, 53)
+                let ankle = point(hipX + swing * 2.3, 64 - lift * 1.6)
+                let foot = point(hipX - swing * 4.4, 70 - lift * 4.4)
+                strokePath({ path in
+                    path.move(to: hip)
+                    path.addLine(to: ankle)
+                    path.addLine(to: foot)
+                }, color: Color(red: 0.92, green: 0.47, blue: 0.09), width: 2.5)
+                strokePath({ path in
+                    path.move(to: foot)
+                    path.addLine(to: point(hipX - swing * 4.4 + 4.1, 70 - lift * 4.4))
+                }, color: Color(red: 0.92, green: 0.47, blue: 0.09), width: 1.35)
+            }
+
+            let bodyBob = abs(CGFloat(sin(phase))) * 1.15
+
+            switch kind {
+            case .dogs:
+                let fur = Color(red: 0.68, green: 0.40, blue: 0.20)
+                let lightFur = Color(red: 0.89, green: 0.67, blue: 0.42)
+                quadrupedLeg(hipX: 37, hipY: 49 + bodyBob, phaseOffset: 0, color: fur, thickness: 4.2)
+                quadrupedLeg(hipX: 66, hipY: 49 + bodyBob, phaseOffset: .pi, color: fur, thickness: 4.2)
+                quadrupedLeg(hipX: 43, hipY: 50 + bodyBob, phaseOffset: .pi, color: lightFur, thickness: 3.6)
+                quadrupedLeg(hipX: 70, hipY: 50 + bodyBob, phaseOffset: 0, color: lightFur, thickness: 3.6)
+                fillEllipse(28, 31 + bodyBob, 47, 22, color: fur)
+                fillEllipse(66, 27 + bodyBob, 20, 19, color: lightFur)
+                fillEllipse(78, 34 + bodyBob, 3.2, 3.2, color: .black)
+                fillPath({ path in
+                    path.move(to: point(68, 30 + bodyBob))
+                    path.addLine(to: point(72, 20 + bodyBob))
+                    path.addLine(to: point(76, 31 + bodyBob))
+                    path.closeSubpath()
+                }, color: fur)
+                strokePath({ path in
+                    path.move(to: point(30, 39 + bodyBob))
+                    path.addCurve(to: point(16, 27 + bodyBob), control1: point(19, 37 + bodyBob), control2: point(16, 33 + bodyBob))
+                }, color: fur, width: 3.8)
+                fillEllipse(46, 44 + bodyBob, 12, 7, color: Color.white.opacity(0.56))
+
+            case .cats:
+                let fur = Color(red: 0.47, green: 0.49, blue: 0.53)
+                let highlight = Color(red: 0.79, green: 0.76, blue: 0.66)
+                quadrupedLeg(hipX: 38, hipY: 49 + bodyBob, phaseOffset: 0, color: fur, thickness: 3.55, length: 21)
+                quadrupedLeg(hipX: 67, hipY: 49 + bodyBob, phaseOffset: .pi, color: fur, thickness: 3.55, length: 21)
+                quadrupedLeg(hipX: 43, hipY: 50 + bodyBob, phaseOffset: .pi, color: highlight, thickness: 3.0, length: 21)
+                quadrupedLeg(hipX: 71, hipY: 50 + bodyBob, phaseOffset: 0, color: highlight, thickness: 3.0, length: 21)
+                fillEllipse(27, 33 + bodyBob, 48, 19, color: fur)
+                fillEllipse(66, 28 + bodyBob, 18, 17, color: fur)
+                fillPath({ path in
+                    path.move(to: point(68, 31 + bodyBob))
+                    path.addLine(to: point(70, 20 + bodyBob))
+                    path.addLine(to: point(75, 30 + bodyBob))
+                    path.closeSubpath()
+                    path.move(to: point(78, 30 + bodyBob))
+                    path.addLine(to: point(82, 21 + bodyBob))
+                    path.addLine(to: point(84, 34 + bodyBob))
+                    path.closeSubpath()
+                }, color: fur)
+                fillEllipse(78.5, 34.5 + bodyBob, 2.2, 2.2, color: Color(red: 0.91, green: 0.78, blue: 0.26))
+                strokePath({ path in
+                    path.move(to: point(29, 40 + bodyBob))
+                    path.addCurve(to: point(17, 15 + bodyBob), control1: point(15, 42 + bodyBob), control2: point(15, 24 + bodyBob))
+                }, color: fur, width: 3.0)
+
+            case .ducks:
+                let waddle = CGFloat(sin(phase * 1.16)) * 1.6
+                duckLeg(hipX: 44, phaseOffset: 0)
+                duckLeg(hipX: 55, phaseOffset: .pi)
+                fillEllipse(26, 38 + waddle, 39, 20, color: Color(red: 0.30, green: 0.45, blue: 0.28))
+                fillEllipse(54, 28 + waddle, 18, 17, color: Color(red: 0.18, green: 0.50, blue: 0.38))
+                fillEllipse(66, 33 + waddle, 12, 6, color: Color(red: 0.94, green: 0.64, blue: 0.16))
+                fillEllipse(60, 33 + waddle, 2.3, 2.3, color: .black)
+                fillPath({ path in
+                    path.move(to: point(28, 45 + waddle))
+                    path.addLine(to: point(13, 39 + waddle))
+                    path.addLine(to: point(28, 54 + waddle))
+                    path.closeSubpath()
+                }, color: Color(red: 0.33, green: 0.45, blue: 0.32))
+                strokePath({ path in
+                    path.move(to: point(42, 42 + waddle))
+                    path.addQuadCurve(to: point(55, 56 + waddle), control: point(50, 56 + waddle))
+                }, color: Color.white.opacity(0.72), width: 3.4)
+
+            case .pandas:
+                let black = Color(red: 0.10, green: 0.11, blue: 0.12)
+                let white = Color(red: 0.93, green: 0.91, blue: 0.84)
+                quadrupedLeg(hipX: 38, hipY: 51 + bodyBob, phaseOffset: 0, color: black, thickness: 5.4, length: 20)
+                quadrupedLeg(hipX: 67, hipY: 51 + bodyBob, phaseOffset: .pi, color: black, thickness: 5.4, length: 20)
+                quadrupedLeg(hipX: 44, hipY: 52 + bodyBob, phaseOffset: .pi, color: black.opacity(0.78), thickness: 4.6, length: 20)
+                quadrupedLeg(hipX: 71, hipY: 52 + bodyBob, phaseOffset: 0, color: black.opacity(0.78), thickness: 4.6, length: 20)
+                fillEllipse(27, 31 + bodyBob, 47, 25, color: white)
+                fillEllipse(64, 27 + bodyBob, 23, 23, color: white)
+                fillEllipse(65, 25 + bodyBob, 7, 7, color: black)
+                fillEllipse(80, 25 + bodyBob, 7, 7, color: black)
+                fillEllipse(69, 34 + bodyBob, 7, 8, color: black)
+                fillEllipse(78, 34 + bodyBob, 7, 8, color: black)
+                fillEllipse(78, 39 + bodyBob, 4, 3, color: black)
+                fillEllipse(29, 35 + bodyBob, 9, 17, color: black)
+
+            case .giraffe:
+                let gold = Color(red: 0.87, green: 0.57, blue: 0.17)
+                let patch = Color(red: 0.47, green: 0.25, blue: 0.09)
+                quadrupedLeg(hipX: 35, hipY: 50 + bodyBob, phaseOffset: 0, color: gold, thickness: 3.6, length: 25)
+                quadrupedLeg(hipX: 61, hipY: 50 + bodyBob, phaseOffset: .pi, color: gold, thickness: 3.6, length: 25)
+                quadrupedLeg(hipX: 40, hipY: 51 + bodyBob, phaseOffset: .pi, color: gold.opacity(0.86), thickness: 3.1, length: 25)
+                quadrupedLeg(hipX: 65, hipY: 51 + bodyBob, phaseOffset: 0, color: gold.opacity(0.86), thickness: 3.1, length: 25)
+                fillEllipse(22, 35 + bodyBob, 44, 18, color: gold)
+                fillEllipse(55, 8 + bodyBob * 0.32, 10, 34, color: gold)
+                fillEllipse(59, 7 + bodyBob * 0.32, 20, 12, color: gold)
+                fillEllipse(72, 11 + bodyBob * 0.32, 2.5, 2.5, color: .black)
+                for x in stride(from: CGFloat(29), through: 58, by: 11) {
+                    fillEllipse(x, 40 + bodyBob, 6, 5, color: patch.opacity(0.82))
+                }
+                fillEllipse(58, 22 + bodyBob * 0.32, 5, 6, color: patch.opacity(0.82))
+                fillEllipse(63, 12 + bodyBob * 0.32, 4, 4, color: patch.opacity(0.82))
+                strokePath({ path in
+                    path.move(to: point(23, 40 + bodyBob))
+                    path.addCurve(to: point(12, 31 + bodyBob), control1: point(15, 40 + bodyBob), control2: point(12, 36 + bodyBob))
+                }, color: gold, width: 2.5)
+
+            case .elephant:
+                let gray = Color(red: 0.43, green: 0.46, blue: 0.48)
+                let lightGray = Color(red: 0.59, green: 0.61, blue: 0.62)
+                quadrupedLeg(hipX: 35, hipY: 50 + bodyBob, phaseOffset: 0, color: gray, thickness: 6.9, length: 22)
+                quadrupedLeg(hipX: 65, hipY: 50 + bodyBob, phaseOffset: .pi, color: gray, thickness: 6.9, length: 22)
+                quadrupedLeg(hipX: 42, hipY: 51 + bodyBob, phaseOffset: .pi, color: lightGray, thickness: 5.8, length: 22)
+                quadrupedLeg(hipX: 70, hipY: 51 + bodyBob, phaseOffset: 0, color: lightGray, thickness: 5.8, length: 22)
+                fillEllipse(20, 29 + bodyBob, 52, 29, color: gray)
+                fillEllipse(61, 27 + bodyBob, 26, 27, color: gray)
+                fillEllipse(56, 30 + bodyBob, 22, 22, color: lightGray.opacity(0.72))
+                fillEllipse(78, 34 + bodyBob, 2.8, 2.8, color: .black)
+                strokePath({ path in
+                    let trunkSwing = CGFloat(sin(phase * 0.56)) * 3
+                    path.move(to: point(82, 45 + bodyBob))
+                    path.addCurve(
+                        to: point(80 + trunkSwing, 68),
+                        control1: point(91, 53 + bodyBob),
+                        control2: point(85 + trunkSwing, 64)
+                    )
+                }, color: gray, width: 6.5)
+                strokePath({ path in
+                    path.move(to: point(22, 42 + bodyBob))
+                    path.addCurve(to: point(11, 35 + bodyBob), control1: point(14, 42 + bodyBob), control2: point(11, 39 + bodyBob))
+                }, color: gray, width: 4.4)
+            }
+
+        }
+        .drawingGroup(opaque: false, colorMode: .linear)
+        .accessibilityHidden(true)
     }
 }
 
