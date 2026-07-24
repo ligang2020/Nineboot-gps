@@ -1739,14 +1739,14 @@ private struct VehicleMotionScene: View {
 
 
 /// 道路动物的行进方向。动物源图默认面向左侧，因此向右移动时在绘制层镜像。
-private enum RoadAnimalDirection {
+enum RoadAnimalDirection {
     case leftToRight
     case rightToLeft
 }
 
 /// 每次冷启动轮换的动物主题。大象完成后重新从小狗主题开始，
 /// 保持用户所要求的「每次打开 App 更换一组动物」体验。
-private enum RoadAnimalKind: CaseIterable {
+enum RoadAnimalKind: CaseIterable {
     case dogs
     case cats
     case ducks
@@ -1768,7 +1768,7 @@ private enum RoadAnimalKind: CaseIterable {
 
 /// 单只动物在道路上的一次经过参数。所有随机值只在冷启动时生成一次，
 /// TimelineView 的每一帧都读取相同计划，因此不会出现闪烁或跳变。
-private struct RoadAnimalWalker: Identifiable {
+struct RoadAnimalWalker: Identifiable {
     let id = UUID()
     let emoji: String
     let direction: RoadAnimalDirection
@@ -1784,7 +1784,7 @@ private struct RoadAnimalWalker: Identifiable {
 /// 冷启动级别的动物经过计划。
 /// 存储在 App Group 的计数器仅在新进程首次使用时递增；App 前后台切换不会换动物，
 /// 下一次真正打开 App 才会轮换至下一组。
-private struct RoadAnimalEncounterPlan {
+struct RoadAnimalEncounterPlan {
     private static let launchCounterKey = "ninebot.road-animal.launch-counter"
 
     let kind: RoadAnimalKind
