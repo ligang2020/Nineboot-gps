@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// 当前告警，既是 SwiftUI 状态源，也是防盗 Live Activity 的内容来源。
 struct NinebotActiveAlarm: Hashable, Sendable {

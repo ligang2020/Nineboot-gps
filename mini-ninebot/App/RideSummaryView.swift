@@ -2,10 +2,11 @@ import CoreLocation
 import MapKit
 import SwiftUI
 import UIKit
+import Combine
 
 /// 骑行结束后持久化的完整总结记录。
 /// 所有 GPS 采样点会随记录编码保存，因此历史页面和轨迹回放不依赖网络。
-struct RideRecord: Codable, Identifiable, Equatable {
+struct RideRecord: Codable, Identifiable, Equatable, Hashable {
     var id: String
     var sourceRecordingID: String?
     var vehicleSN: String?
@@ -68,6 +69,12 @@ struct RideRecord: Codable, Identifiable, Equatable {
             remainingRangeKm: remainingRangeKm,
             points: recordedRide.points
         )
+    }
+
+    /// 历史页使用记录 ID 作为导航身份；轨迹数组本身无需参与哈希，
+    /// 从而避免为 CoreLocation 采样点附加不必要的 Hashable 约束。
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 
     var duration: TimeInterval { max(endedAt.timeIntervalSince(startedAt), 0) }

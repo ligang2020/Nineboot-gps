@@ -1,6 +1,7 @@
 import CoreLocation
 import Foundation
 import MapKit
+import Combine
 
 /// 电子围栏采用由地图缩放确定的半径。界面不提供固定数字档位，
 /// 但在数据层保留合理边界，避免过小范围造成误报或过大范围失去安全意义。

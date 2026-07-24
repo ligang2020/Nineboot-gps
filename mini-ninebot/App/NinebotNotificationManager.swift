@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import UserNotifications
+import Combine
 
 /// 通知点击后的 App 内路由。ContentView 监听该对象并切换到对应页面。
 enum NinebotNotificationDestination: String, Codable, Hashable, Sendable {
