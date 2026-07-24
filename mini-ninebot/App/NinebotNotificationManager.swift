@@ -30,6 +30,7 @@ enum NinebotNotificationCategory: String, CaseIterable, Sendable {
     case geofenceExited = "NINEBOT_GEOFENCE_EXITED"
     case vehicleLocationUpdated = "NINEBOT_LOCATION_UPDATED"
     case sos = "NINEBOT_SOS"
+    case rideCompleted = "NINEBOT_RIDE_COMPLETED"
 
     var threadIdentifier: String {
         switch self {
@@ -39,6 +40,8 @@ enum NinebotNotificationCategory: String, CaseIterable, Sendable {
             return "ninebot.location"
         case .lowBattery, .criticalBattery:
             return "ninebot.battery"
+        case .rideCompleted:
+            return "ninebot.ride"
         default:
             return "ninebot.security"
         }
@@ -53,6 +56,7 @@ enum NinebotNotificationCategory: String, CaseIterable, Sendable {
         case .illegalMovement, .vehiclePushed, .geofenceEntered, .geofenceExited, .vehicleLocationUpdated: return .map
         case .powerDisconnected, .batteryRemoved, .bluetoothDisconnected, .gpsOffline: return .vehicleStatus
         case .lowBattery, .criticalBattery: return .vehicle
+        case .rideCompleted: return .vehicleStatus
         }
     }
 }
@@ -203,6 +207,18 @@ final class NinebotNotificationManager: NSObject, ObservableObject, UNUserNotifi
         UNUserNotificationCenter.current().add(request)
     }
 
+    /// 骑行结束后发送一次本地通知；通知内容与总结页核心数据保持一致。
+    func sendRideCompletedNotification(for ride: RideRecord) {
+        send(
+            category: .rideCompleted,
+            title: "🏁 骑行结束",
+            body: "本次骑行：\(String(format: "%.1f km", ride.distanceKilometers))\n\(ride.duration.notificationRideDurationText)\n平均速度：\(String(format: "%.0f km/h", ride.averageSpeedKmh))",
+            vehicleSN: ride.vehicleSN,
+            destination: .vehicleStatus,
+            dedupeInterval: 1
+        )
+    }
+
     /// 监听 BLE 电池与充电状态变化。安全异常由 `NinebotAlarmManager` 处理，
     /// 这里仅处理充电、低电量等非防盗类通知。
     func ingestVehicleTelemetry(_ telemetry: NinebotBLETelemetry, previous: NinebotBLETelemetry?) {
@@ -309,5 +325,14 @@ private extension String {
             hash &*= 1099511628211
         }
         return String(hash, radix: 16)
+    }
+}
+
+private extension TimeInterval {
+    /// 通知中使用简洁的本地化骑行时长文本。
+    var notificationRideDurationText: String {
+        let totalMinutes = max(Int((self / 60).rounded()), 0)
+        if totalMinutes >= 60 { return "\(totalMinutes / 60) 小时 \(totalMinutes % 60) 分钟" }
+        return "\(totalMinutes) 分钟"
     }
 }

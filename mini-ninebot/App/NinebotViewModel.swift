@@ -170,6 +170,8 @@ final class NinebotViewModel: ObservableObject {
     /// 仅用于状态边沿通知（开始充电、低电量等），不会保存原始 BLE 数据。
     private var lastNotificationBLETelemetryByVehicle: [String: NinebotBLETelemetry] = [:]
     private var lastBLERideSessionPersistenceAt: Date = .distantPast
+    /// 用户主动结束后，在车辆下一次明确停止前不重新创建骑行 Live Activity。
+    private var manuallyEndedRideVehicleSN: String?
 
     init() {
         let configuration = store.loadConfiguration()
@@ -663,6 +665,17 @@ final class NinebotViewModel: ObservableObject {
         return try await client.consumeLoginCode(account: account, code: code)
     }
 
+    /// 结束当前骑行的 Live Activity 与持久化会话；由“结束骑行”和五分钟自动结束共用。
+    func endRideSession(vehicleSN: String?) {
+        let resolvedVehicleSN = vehicleSN ?? activeRideSession?.vehicleSN
+        manuallyEndedRideVehicleSN = resolvedVehicleSN
+        if activeRideSession?.vehicleSN == resolvedVehicleSN {
+            activeRideSession = nil
+            store.clearActiveRideSession()
+        }
+        NinebotRideLiveActivityManager.end(vehicleSN: resolvedVehicleSN)
+    }
+
     /// BLE 层每秒解析一帧后调用此方法。该方法是 BLE 与 Live Activity 之间的
     /// 唯一桥接点：不依赖某一个车辆型号的 GATT UUID，便于后续替换协议解析器。
     ///
@@ -683,7 +696,16 @@ final class NinebotViewModel: ObservableObject {
                 store.clearActiveRideSession()
                 activeRideSession = nil
             }
+            if manuallyEndedRideVehicleSN == telemetry.vehicleSN {
+                manuallyEndedRideVehicleSN = nil
+            }
             NinebotRideLiveActivityManager.sync(session: nil, telemetry: telemetry)
+            return
+        }
+
+        // 手动结束后，BLE 仍短暂上报“骑行中”时也不重新展示 Live Activity。
+        if manuallyEndedRideVehicleSN == telemetry.vehicleSN {
+            NinebotRideLiveActivityManager.end(vehicleSN: telemetry.vehicleSN)
             return
         }
 
@@ -719,6 +741,20 @@ final class NinebotViewModel: ObservableObject {
     /// drives the dashboard scene. Reusing the existing session's `startedAt`
     /// is what prevents the ride clock from resetting after an app relaunch.
     private func reconcileRideSession(with dashboard: NinebotDashboard) {
+        // 手动结束只是结束本次会话，不会因下一次常规刷新马上被重新拉起。
+        if let manuallyEndedRideVehicleSN,
+           let snapshot = dashboard.primaryVehicle,
+           snapshot.vehicle.sn == manuallyEndedRideVehicleSN {
+            if !isRiding(snapshot) {
+                self.manuallyEndedRideVehicleSN = nil
+            } else {
+                store.clearActiveRideSession()
+                activeRideSession = nil
+                NinebotRideLiveActivityManager.end(vehicleSN: manuallyEndedRideVehicleSN)
+                return
+            }
+        }
+
         let freshBLETelemetry: NinebotBLETelemetry? = latestBLETelemetry.flatMap { telemetry in
             guard telemetry.isRiding,
                   !telemetry.isCharging,

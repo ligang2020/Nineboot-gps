@@ -26,6 +26,16 @@ enum NinebotRideLiveActivityManager {
         #endif
     }
 
+    /// 骑行手动或自动结束时立即收起对应车辆的 Live Activity。
+    static func end(vehicleSN: String?) {
+        #if canImport(ActivityKit)
+        guard #available(iOS 18.0, *), let vehicleSN else { return }
+        Task {
+            await NinebotRideLiveActivityController.shared.end(vehicleSN: vehicleSN)
+        }
+        #endif
+    }
+
     /// 给 BLE 接入层使用的高保真入口。每收到一帧（通常每秒一次）即可调用。
     static func sync(
         session: NinebotActiveRideSession?,
@@ -87,6 +97,14 @@ private actor NinebotRideLiveActivityController {
             updatedAt: telemetry.receivedAt
         )
         await startOrUpdate(session: session, state: state)
+    }
+
+    func end(vehicleSN: String) async {
+        for activity in Activity<NinebotRideActivityAttributes>.activities where activity.attributes.vehicleSN == vehicleSN {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+        lastSubmittedState = nil
+        lastSubmissionDate = .distantPast
     }
 
     private func startOrUpdate(

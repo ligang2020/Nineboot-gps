@@ -9,6 +9,9 @@ struct NinebotRecordingView: View {
     @ObservedObject var model: NinebotViewModel
     @StateObject private var recorder = NinebotRideRecorder()
     @State private var pendingRecord: NinebotRecordedRide?
+    @State private var summaryRide: RideRecord?
+    @State private var rideStartBatteryPercent: Int?
+    @State private var rideStartRangeKm: Double?
 
     private var snapshot: NinebotVehicleSnapshot? {
         model.dashboard.primaryVehicle
@@ -38,12 +41,14 @@ struct NinebotRecordingView: View {
                         recorder: recorder,
                         canRecord: snapshot != nil,
                         onStart: {
+                            // 开始时保留电量和续航基线，结束页可计算本次消耗电量。
+                            rideStartBatteryPercent = snapshot?.state.battery
+                            rideStartRangeKm = snapshot?.state.endurance
                             recorder.start(vehicleSN: snapshot?.vehicle.sn)
                         },
                         onStop: {
                             guard let record = recorder.stop() else { return }
-                            model.saveRecordedRide(record)
-                            pendingRecord = record
+                            completeRide(record, snapshot: snapshot)
                         }
                     )
 
@@ -68,6 +73,12 @@ struct NinebotRecordingView: View {
         .navigationTitle("记录")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
+        .navigationDestination(item: $summaryRide) { ride in
+            RideSummaryView(ride: ride) {
+                model.deleteRecordedRide(id: ride.sourceRecordingID ?? ride.id)
+                RideHistoryManager.shared.delete(id: ride.id)
+            }
+        }
         .sheet(item: $pendingRecord) { record in
             RideAssociationSheet(snapshot: snapshot, record: record) { rideID in
                 var savedRecord = record
@@ -77,6 +88,11 @@ struct NinebotRecordingView: View {
                 pendingRecord = nil
             }
         }
+        .onChange(of: recorder.automaticallyFinishedRide) { _, record in
+            guard let record else { return }
+            completeRide(record, snapshot: snapshot)
+            recorder.consumeAutomaticallyFinishedRide()
+        }
         .onAppear {
             recorder.startPreview()
         }
@@ -84,6 +100,24 @@ struct NinebotRecordingView: View {
             recorder.stopPreviewIfIdle()
         }
     }
+
+    /// 统一处理手动与自动结束：保存 GPS 轨迹、结束 Live Activity、发通知，并立即进入总结页。
+    private func completeRide(_ record: NinebotRecordedRide, snapshot: NinebotVehicleSnapshot?) {
+        model.saveRecordedRide(record)
+        let ride = RideRecord(
+            recordedRide: record,
+            startBatteryPercent: rideStartBatteryPercent,
+            endBatteryPercent: snapshot?.state.battery,
+            remainingRangeKm: snapshot?.state.endurance ?? rideStartRangeKm
+        )
+        RideHistoryManager.shared.upsert(ride)
+        model.endRideSession(vehicleSN: record.vehicleSN)
+        NinebotNotificationManager.shared.sendRideCompletedNotification(for: ride)
+        summaryRide = ride
+        rideStartBatteryPercent = nil
+        rideStartRangeKm = nil
+    }
+
 }
 
 @MainActor
@@ -100,6 +134,8 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
     @Published private(set) var startedAt: Date?
     @Published private(set) var endedAt: Date?
     @Published private(set) var lastErrorText: String?
+    /// 连续静止五分钟后由记录器自动产出的骑行记录。
+    @Published private(set) var automaticallyFinishedRide: NinebotRecordedRide?
 
     private let manager = CLLocationManager()
     private let motionManager = CMMotionManager()
@@ -110,6 +146,8 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
     private var speedSamples: [Double] = []
     private var lastMotionTimestamp: TimeInterval?
     private var ignoreLocationUntil: Date?
+    private var lastMovementAt: Date?
+    private var inactivityTask: Task<Void, Never>?
 
     private let maximumReasonableSpeedKmh = 120.0
     private let maximumReasonableGPSAccelerationG = 1.5
@@ -210,6 +248,9 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
         ignoreLocationUntil = Date().addingTimeInterval(1.2)
         startedAt = Date()
         endedAt = nil
+        automaticallyFinishedRide = nil
+        lastMovementAt = startedAt
+        scheduleAutomaticEndCheck()
         startMotionUpdates()
         manager.startUpdatingLocation()
     }
@@ -218,6 +259,8 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
         guard isRecording, let startedAt else { return nil }
         let endedAt = Date()
         isRecording = false
+        inactivityTask?.cancel()
+        inactivityTask = nil
         self.endedAt = endedAt
 
         let correctedDistanceMeters = NinebotRecordedRide.recalculatedDistanceMeters(from: points)
@@ -380,6 +423,11 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
         currentLocationPoint = point
 
         if isRecording {
+            // 速度略高于 GPS 静止抖动阈值时，延后五分钟自动结束计时。
+            if speedKmh > 1.0 {
+                lastMovementAt = location.timestamp
+                scheduleAutomaticEndCheck()
+            }
             maxSpeedKmh = max(maxSpeedKmh, speedKmh)
             if !motionManager.isDeviceMotionActive {
                 maxAccelerationG = max(maxAccelerationG, sanitizedGPSAccelerationG)
@@ -431,8 +479,35 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
             longitude: location.coordinate.longitude,
             speedKmh: speedKmh,
             accelerationG: accelerationG,
-            horizontalAccuracy: location.horizontalAccuracy
+            horizontalAccuracy: location.horizontalAccuracy,
+            altitude: location.verticalAccuracy >= 0 ? location.altitude : nil
         )
+    }
+
+    /// 用户停止移动超过五分钟后自动结束骑行，并通过发布值交给 SwiftUI 展示总结页。
+    private func scheduleAutomaticEndCheck() {
+        inactivityTask?.cancel()
+        guard isRecording, let lastMovementAt else { return }
+        inactivityTask = Task { @MainActor [weak self] in
+            let remaining = max(300 - Date().timeIntervalSince(lastMovementAt), 0)
+            do {
+                try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard let self,
+                  self.isRecording,
+                  let latestMovement = self.lastMovementAt,
+                  Date().timeIntervalSince(latestMovement) >= 300 else {
+                return
+            }
+            self.automaticallyFinishedRide = self.stop()
+        }
+    }
+
+    /// Summary 页面已经消费自动结束事件后清空它，避免视图再次出现时重复导航。
+    func consumeAutomaticallyFinishedRide() {
+        automaticallyFinishedRide = nil
     }
 
     private func isUsable(_ location: CLLocation) -> Bool {
@@ -782,7 +857,11 @@ private struct RecordingHistorySection: View {
                 VStack(spacing: 8) {
                     ForEach(records.prefix(5)) { record in
                         NavigationLink {
-                            RecordedRideDetailView(record: record, onDelete: onDelete)
+                            // 历史记录统一复用骑行总结页，轨迹、分享与回放均可再次查看。
+                            RideSummaryView(ride: RideRecord(recordedRide: record)) {
+                                onDelete(record)
+                                RideHistoryManager.shared.delete(id: record.id)
+                            }
                         } label: {
                             RecordedRideRowContent(record: record)
                         }
