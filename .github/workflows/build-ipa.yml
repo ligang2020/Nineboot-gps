@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
-      EXPECTED_VERSION: 1.2.39
+      EXPECTED_VERSION: 1.2.40
 
     steps:
       - name: Check out source
@@ -45,7 +45,7 @@ jobs:
           xcodebuild -version
           test -d "$DEVELOPER_DIR"
           grep -q "MARKETING_VERSION = $EXPECTED_VERSION;" mini-ninebot.xcodeproj/project.pbxproj
-          grep -q "CURRENT_PROJECT_VERSION = 39;" mini-ninebot.xcodeproj/project.pbxproj
+          grep -q "CURRENT_PROJECT_VERSION = 40;" mini-ninebot.xcodeproj/project.pbxproj
 
       - name: Build and package unsigned IPA
         id: package
