@@ -2,21 +2,14 @@ import CoreLocation
 import Foundation
 import MapKit
 
-/// 可选的电子围栏半径，遵循产品限定的四档，避免精度与耗电不可控。
-enum NinebotGeofenceRadius: Int, CaseIterable, Codable, Identifiable, Sendable {
-    case meters100 = 100
-    case meters300 = 300
-    case meters500 = 500
-    case meters1000 = 1000
-
-    var id: Int { rawValue }
-    var title: String { "\(rawValue) 米" }
-}
-
+/// 电子围栏采用由地图缩放确定的半径。界面不提供固定数字档位，
+/// 但在数据层保留合理边界，避免过小范围造成误报或过大范围失去安全意义。
 struct NinebotGeofence: Codable, Hashable, Sendable {
+    static let supportedRadiusRange: ClosedRange<CLLocationDistance> = 100 ... 1_000
+
     var vehicleSN: String
     var center: NinebotVehicleLocation
-    var radius: NinebotGeofenceRadius
+    var radiusMeters: CLLocationDistance
     var isEnabled: Bool
     var wasInside: Bool?
     var updatedAt: Date
@@ -24,17 +17,51 @@ struct NinebotGeofence: Codable, Hashable, Sendable {
     init(
         vehicleSN: String,
         center: NinebotVehicleLocation,
-        radius: NinebotGeofenceRadius = .meters300,
+        radiusMeters: CLLocationDistance = 300,
         isEnabled: Bool = true,
         wasInside: Bool? = nil,
         updatedAt: Date = .now
     ) {
         self.vehicleSN = vehicleSN
         self.center = center
-        self.radius = radius
+        self.radiusMeters = radiusMeters.clamped(to: Self.supportedRadiusRange)
         self.isEnabled = isEnabled
         self.wasInside = wasInside
         self.updatedAt = updatedAt
+    }
+
+    /// 兼容此前以 `radius`（100 / 300 / 500 / 1000）存储的旧围栏数据。
+    private enum CodingKeys: String, CodingKey {
+        case vehicleSN, center, radiusMeters, radius, isEnabled, wasInside, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        vehicleSN = try container.decode(String.self, forKey: .vehicleSN)
+        center = try container.decode(NinebotVehicleLocation.self, forKey: .center)
+        let savedRadius = try container.decodeIfPresent(CLLocationDistance.self, forKey: .radiusMeters)
+            ?? container.decodeIfPresent(CLLocationDistance.self, forKey: .radius)
+            ?? 300
+        radiusMeters = savedRadius.clamped(to: Self.supportedRadiusRange)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        wasInside = try container.decodeIfPresent(Bool.self, forKey: .wasInside)
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .now
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(vehicleSN, forKey: .vehicleSN)
+        try container.encode(center, forKey: .center)
+        try container.encode(radiusMeters, forKey: .radiusMeters)
+        try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encodeIfPresent(wasInside, forKey: .wasInside)
+        try container.encode(updatedAt, forKey: .updatedAt)
+    }
+}
+
+extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }
 
@@ -81,7 +108,8 @@ final class NinebotVehicleLocationManager: ObservableObject {
     }
 
     func mapItem(for location: NinebotVehicleLocation, name: String) -> MKMapItem {
-        let placemark = MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude))
+        let coordinate = NinebotCoordinateTransform.mapKitCoordinate(latitude: location.latitude, longitude: location.longitude)
+        let placemark = MKPlacemark(coordinate: coordinate)
         let item = MKMapItem(placemark: placemark)
         item.name = name
         return item
@@ -135,8 +163,8 @@ final class NinebotGeofenceManager: NSObject, ObservableObject, CLLocationManage
         }
     }
 
-    func setFence(vehicleSN: String, center: NinebotVehicleLocation, radius: NinebotGeofenceRadius) {
-        fences[vehicleSN] = NinebotGeofence(vehicleSN: vehicleSN, center: center, radius: radius)
+    func setFence(vehicleSN: String, center: NinebotVehicleLocation, radiusMeters: CLLocationDistance) {
+        fences[vehicleSN] = NinebotGeofence(vehicleSN: vehicleSN, center: center, radiusMeters: radiusMeters)
         persist()
     }
 
@@ -157,7 +185,7 @@ final class NinebotGeofenceManager: NSObject, ObservableObject, CLLocationManage
     func ingestVehicleLocation(_ location: NinebotVehicleLocation, vehicleSN: String, vehicleName: String) {
         guard var fence = fences[vehicleSN], fence.isEnabled, location.isValid else { return }
         let distance = NinebotVehicleLocationManager.distanceMeters(fence.center, location)
-        let isInside = distance <= Double(fence.radius.rawValue)
+        let isInside = distance <= fence.radiusMeters
         defer {
             fence.wasInside = isInside
             fence.updatedAt = .now
@@ -170,7 +198,7 @@ final class NinebotGeofenceManager: NSObject, ObservableObject, CLLocationManage
             NinebotNotificationManager.shared.send(
                 category: .geofenceEntered,
                 title: "📍 车辆已进入安全区域",
-                body: "\(vehicleName) 已进入 \(fence.radius.title) 安全围栏。",
+                body: "\(vehicleName) 已进入你设定的安全区域。",
                 vehicleSN: vehicleSN,
                 destination: .map,
                 dedupeInterval: 60
@@ -179,7 +207,7 @@ final class NinebotGeofenceManager: NSObject, ObservableObject, CLLocationManage
             NinebotNotificationManager.shared.send(
                 category: .geofenceExited,
                 title: "📍 车辆已离开安全区域",
-                body: "\(vehicleName) 已离开 \(fence.radius.title) 安全围栏。",
+                body: "\(vehicleName) 已离开你设定的安全区域。",
                 vehicleSN: vehicleSN,
                 destination: .map,
                 dedupeInterval: 30,

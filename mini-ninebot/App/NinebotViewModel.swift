@@ -16,7 +16,7 @@ enum NinebotInputError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingProxy:
-            return "请先填写工程版服务地址"
+            return "请先填写服务地址"
         case .missingAccount:
             return "请填写九号账号或手机号"
         case .missingPassword:
@@ -26,9 +26,9 @@ enum NinebotInputError: LocalizedError {
         case .missingAppToken:
             return "App Bearer Token 仅在你的服务端开启鉴权时才需要填写"
         case .platformSMSUnsupported:
-            return "工程版平台当前使用手机号密码登录；短信验证码请切换代理模式使用"
+            return "平台服务当前使用手机号密码登录；短信验证码请切换代理模式使用"
         case .platformOnly:
-            return "请切换到工程版平台后再拉取历史行程"
+            return "请切换到平台服务后再拉取历史行程"
         }
     }
 }
@@ -206,11 +206,11 @@ final class NinebotViewModel: ObservableObject {
         let value = baseURLString.trimmed
         if !value.isEmpty {
             if dataSourceMode == .platform, bearerToken.trimmed.isEmpty {
-                return "\(value) · 连接工程版服务"
+                return "\(value) · 连接服务"
             }
             return value
         }
-        return dataSourceMode == .platform ? "填写工程版服务地址后读取车辆数据" : "填写工程版代理地址后读取车辆数据"
+        return dataSourceMode == .platform ? "填写服务地址后读取车辆数据" : "填写代理地址后读取车辆数据"
     }
 
     var hasVehicles: Bool {

@@ -601,9 +601,9 @@ private struct RideLockScreenLiveActivityView: View {
 
             // 第三、四行：值与图标保持单行，避免窄高 Live Activity 裁切第二行内容。
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 7) {
-                RideMetricCell(title: "剩余电量", value: "\(state.batteryPercent)%", symbol: RideActivityTheme.batterySymbol(for: state.batteryPercent), tint: RideActivityTheme.batteryColor(for: state.batteryPercent))
+                RideMetricCell(title: "车辆电量", value: "\(state.batteryPercent)%", symbol: RideActivityTheme.batterySymbol(for: state.batteryPercent), tint: RideActivityTheme.batteryColor(for: state.batteryPercent))
                 RideMetricCell(title: "剩余续航", value: rideDistanceText(state.remainingRangeKm), symbol: "location.fill", tint: .secondary)
-                RideMetricCell(title: "今日骑行", value: rideDistanceText(state.todayDistanceKm), symbol: "bicycle", tint: .secondary)
+                RideMetricCell(title: "骑行公里", value: rideDistanceText(state.rideDistanceKm), symbol: "bicycle", tint: .secondary)
                 RideTimerMetricCell(startedAt: attributes.startedAt)
             }
         }
@@ -637,16 +637,22 @@ private struct RideMetricCell: View {
     var tint: Color
 
     var body: some View {
-        // 次级指标在锁屏中只显示 SF Symbol + 数值；语义通过无障碍标签完整保留。
-        HStack(spacing: 6) {
+        // 指标保持单行「图标 + 文字 + 数值」：既保留可读文字，也避免两层卡片造成锁屏裁切。
+        HStack(spacing: 4) {
             Image(systemName: symbol)
-                .font(.caption.weight(.semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(tint)
-                .frame(width: 14)
-            Text(value)
-                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .frame(width: 13)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.72)
+            Spacer(minLength: 2)
+            Text(value)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
@@ -659,15 +665,21 @@ private struct RideTimerMetricCell: View {
     var startedAt: Date
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             Image(systemName: "timer")
-                .font(.caption.weight(.semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 14)
-            Text(startedAt, style: .timer)
-                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .frame(width: 13)
+            Text("骑行时间")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.72)
+            Spacer(minLength: 2)
+            Text(startedAt, style: .timer)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
@@ -699,22 +711,21 @@ private struct RideIslandSummary: View {
     var state: NinebotRideActivityContentState
 
     var body: some View {
-        // Expanded Bottom 区域高度有限。模式独占一行，四项指标压缩为单行图标+数值，
-        // 不使用标题或分隔线，以防 iPhone 15 / 16 的灵动岛底部被系统裁切。
-        VStack(spacing: 6) {
+        // Expanded Bottom 使用两行双列的短标签，保留文字同时避免 iPhone 15 / 16 灵动岛底部裁切。
+        VStack(spacing: 5) {
             RideModeBadge(mode: state.mode)
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.2), value: state.mode)
 
-            HStack(spacing: 5) {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], alignment: .leading, spacing: 5) {
                 RideIslandMetric(
-                    title: "剩余电量",
+                    title: "电量",
                     value: "\(state.batteryPercent)%",
                     symbol: RideActivityTheme.batterySymbol(for: state.batteryPercent),
                     tint: RideActivityTheme.batteryColor(for: state.batteryPercent)
                 )
-                RideIslandMetric(title: "剩余续航", value: rideDistanceText(state.remainingRangeKm), symbol: "location.fill", tint: .secondary)
-                RideIslandMetric(title: "今日骑行", value: rideDistanceText(state.todayDistanceKm), symbol: "bicycle", tint: .secondary)
+                RideIslandMetric(title: "续航", value: rideDistanceText(state.remainingRangeKm), symbol: "location.fill", tint: .secondary)
+                RideIslandMetric(title: "骑行", value: rideDistanceText(state.rideDistanceKm), symbol: "bicycle", tint: .secondary)
                 RideIslandTimer(start: attributes.startedAt)
             }
         }
@@ -736,12 +747,17 @@ private struct RideIslandMetric: View {
             Image(systemName: symbol)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(tint)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 1)
             Text(value)
                 .font(.caption2.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
-                .minimumScaleFactor(0.58)
+                .minimumScaleFactor(0.64)
         }
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title) \(value)")
     }
@@ -756,12 +772,16 @@ private struct RideIslandTimer: View {
             Image(systemName: "timer")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
+            Text("时间")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 1)
             Text(start, style: .timer)
                 .font(.caption2.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
-                .minimumScaleFactor(0.55)
+                .minimumScaleFactor(0.64)
         }
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("骑行时间")
     }

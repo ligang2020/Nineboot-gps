@@ -58,7 +58,7 @@ struct NinebotSettingsView: View {
                         Toggle(isOn: proxyModeBinding) {
                             SettingsNavigationRow(
                                 title: "代理模式",
-                                subtitle: model.dataSourceMode == .proxy ? "当前使用工程版代理" : "当前使用工程版平台",
+                                subtitle: model.dataSourceMode == .proxy ? "当前使用代理连接" : "当前使用平台连接",
                                 systemImage: "server.rack",
                                 tint: model.dataSourceMode == .proxy ? .orange : .green
                             )
@@ -108,7 +108,7 @@ struct NinebotSettingsView: View {
                         }
                         .font(.subheadline.weight(.semibold))
 
-                        Text(model.dataSourceMode == .platform ? "开启后会登记 APNs；只有工程版服务端开启推送鉴权时才需要 Bearer Token。" : "代理模式连接工程版代理，适合调试；车辆报警的远程推送需填写带推送能力的服务端 Token。")
+                        Text(model.dataSourceMode == .platform ? "开启后会登记 APNs；仅当服务端开启推送鉴权时才需要 Bearer Token。" : "代理模式使用已配置的服务连接车辆；车辆报警的远程推送需填写带推送能力的服务端 Token。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -190,6 +190,8 @@ struct NinebotSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
                 .ninePlusCard(cornerRadius: 24)
+
+                AppVersionFooter()
             }
             .padding(16)
             .padding(.bottom, 18)
@@ -708,7 +710,7 @@ private struct LoginConnectionSheet: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("连接设置")
                         .font(.title2.weight(.semibold))
-                    Text(model.dataSourceMode == .platform ? "接入项目工程版服务；请填写工程版服务地址，服务端开启鉴权时再配置 Bearer Token。" : "代理模式填写工程版代理地址；代理设置了 Token 时再填口令。")
+                    Text(model.dataSourceMode == .platform ? "接入车辆服务；请填写服务地址，服务端开启鉴权时再配置 Bearer Token。" : "代理模式填写代理地址；代理设置了 Token 时再填口令。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -716,7 +718,7 @@ private struct LoginConnectionSheet: View {
                 Toggle(isOn: proxyModeBinding) {
                     SettingsNavigationRow(
                         title: "代理模式",
-                        subtitle: model.dataSourceMode == .proxy ? "当前使用代理" : "工程版平台",
+                        subtitle: model.dataSourceMode == .proxy ? "当前使用代理" : "平台服务",
                         systemImage: "server.rack",
                         tint: model.dataSourceMode == .proxy ? .orange : .blue
                     )
@@ -1209,18 +1211,18 @@ private struct AccountLoginHero: View {
 
     private var title: String {
         if !hasConfiguration { return mode == .platform ? "先保存连接地址" : "先保存连接地址" }
-        return mode == .platform ? "工程版账号登录" : "代理账号登录"
+        return mode == .platform ? "平台账号登录" : "代理账号登录"
     }
 
     private var detail: String {
         if !hasConfiguration {
             return mode == .platform
-                ? "在“连接与通知”里填写工程版服务地址；服务端开启鉴权时再填写 Token。"
+                ? "在“连接与通知”里填写服务地址；服务端开启鉴权时再填写 Token。"
                 : "在“连接与通知”里保存代理地址后再登录。"
         }
         return mode == .platform
-            ? "调用工程版服务端 /accounts/login，由工程版服务处理手机号密码登录。"
-            : "代理模式会登录当前工程版代理，会替换代理上的单账号会话。"
+            ? "调用服务端 /accounts/login，由服务处理手机号密码登录。"
+            : "代理模式会登录当前代理，并替换代理上的单账号会话。"
     }
 }
 
@@ -1233,10 +1235,10 @@ private struct PlatformPasswordLoginNotice: View {
                 .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("工程版服务手机号密码登录")
+                Text("服务手机号密码登录")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.teslaPrimaryText)
-                Text("已切回项目工程版登录：App 调用工程版服务端 /accounts/login，不再做官方直连；中国手机号区号仍可填写。")
+                Text("App 通过服务端 /accounts/login 登录，不再做官方直连；中国手机号区号仍可填写。")
                     .font(.caption2)
                     .foregroundStyle(Color.teslaSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1407,6 +1409,25 @@ private struct ProfileAvatar: View {
     }
 }
 
+/// “我的”页面底部的版本信息，读取 App 配置，避免版本号在界面中硬编码。
+private struct AppVersionFooter: View {
+    private var versionText: String {
+        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.39"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "39"
+        return "Ninebot Live v\(shortVersion) (\(build))"
+    }
+
+    var body: some View {
+        Text(versionText)
+            .font(.footnote)
+            .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
+            .accessibilityLabel("应用版本 \(versionText)")
+    }
+}
+
 private struct SettingsOverviewCard: View {
     var hasConfiguration: Bool
     var dataSourceMode: NinebotDataSourceMode
@@ -1440,7 +1461,7 @@ private struct SettingsOverviewCard: View {
 
             HStack(spacing: 10) {
                 SettingsInfoPill(title: "车辆", value: "\(vehicleCount)", systemImage: "bolt.car.fill")
-                SettingsInfoPill(title: dataSourceMode == .platform ? "工程版" : "账号", value: dataSourceMode == .platform ? "平台" : "\(accountCount)", systemImage: dataSourceMode == .platform ? "shippingbox.fill" : "person.fill")
+                SettingsInfoPill(title: dataSourceMode == .platform ? "平台" : "账号", value: dataSourceMode == .platform ? "平台" : "\(accountCount)", systemImage: dataSourceMode == .platform ? "shippingbox.fill" : "person.fill")
                 SettingsInfoPill(title: "快捷指令", value: "7 个", systemImage: "sparkles")
             }
         }
@@ -1452,7 +1473,7 @@ private struct SettingsOverviewCard: View {
     }
 
     private var summaryText: String {
-        hasConfiguration ? cleanBaseURL : (dataSourceMode == .platform ? "填写工程版服务地址后读取车辆数据" : "填写工程版代理地址后读取车辆数据")
+        hasConfiguration ? cleanBaseURL : (dataSourceMode == .platform ? "填写服务地址后读取车辆数据" : "填写代理地址后读取车辆数据")
     }
 
     private var cleanBaseURL: String {
@@ -1574,7 +1595,7 @@ private struct PushDeviceTokenRow: View {
 
     private var detailText: String {
         guard let token, !token.isEmpty else {
-            return hasConfiguration ? "点“检查权限并上报”，会重新注册 APNs；仅在填写带推送能力的 Bearer Token 时同步到服务端。" : "先保存工程版服务地址；服务端开启鉴权时再填 Token。"
+            return hasConfiguration ? "点“检查权限并上报”，会重新注册 APNs；仅在填写带推送能力的 Bearer Token 时同步到服务端。" : "先保存服务地址；服务端开启鉴权时再填 Token。"
         }
         let prefix = token.prefix(8)
         let suffix = token.suffix(6)

@@ -10,8 +10,7 @@ struct NinebotAntiTheftView: View {
     @ObservedObject private var locationManager = NinebotVehicleLocationManager.shared
     @ObservedObject private var findVehicleManager = NinebotFindVehicleManager.shared
 
-    @State private var selectedRadius: NinebotGeofenceRadius = .meters300
-    @State private var isShowingFenceConfirmation = false
+    @State private var isShowingFenceEditor = false
     @State private var isShowingTrack = false
 
     private var snapshot: NinebotVehicleSnapshot? { model.dashboard.primaryVehicle }
@@ -84,35 +83,39 @@ struct NinebotAntiTheftView: View {
             }
 
             Section("电子围栏") {
-                Picker("安全范围", selection: $selectedRadius) {
-                    ForEach(NinebotGeofenceRadius.allCases) { radius in
-                        Text(radius.title).tag(radius)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onAppear { selectedRadius = fence?.radius ?? .meters300 }
-
-                if let fence {
-                    Toggle("启用电子围栏", isOn: Binding(
-                        get: { fence.isEnabled },
-                        set: { enabled in if let vehicleSN { geofenceManager.setEnabled(enabled, vehicleSN: vehicleSN) } }
-                    ))
-                    LabeledContent("围栏中心") {
-                        Text(String(format: "%.5f, %.5f", fence.center.latitude, fence.center.longitude))
-                            .font(.footnote.monospacedDigit())
-                    }
-                    Button(role: .destructive) {
-                        if let vehicleSN { geofenceManager.removeFence(vehicleSN: vehicleSN) }
+                if let location {
+                    Button {
+                        isShowingFenceEditor = true
                     } label: {
-                        Label("移除电子围栏", systemImage: "trash")
+                        Label(fence == nil ? "在地图上设置安全区域" : "在地图上调整安全区域", systemImage: "map")
+                    }
+
+                    if let fence {
+                        Toggle("启用电子围栏", isOn: Binding(
+                            get: { fence.isEnabled },
+                            set: { enabled in
+                                if let vehicleSN { geofenceManager.setEnabled(enabled, vehicleSN: vehicleSN) }
+                            }
+                        ))
+                        LabeledContent("围栏中心") {
+                            Text(String(format: "%.5f, %.5f", fence.center.latitude, fence.center.longitude))
+                                .font(.footnote.monospacedDigit())
+                        }
+                        Text("双指缩放地图可调整安全区域。车辆进入或离开该区域时会通知你。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Button(role: .destructive) {
+                            if let vehicleSN { geofenceManager.removeFence(vehicleSN: vehicleSN) }
+                        } label: {
+                            Label("移除电子围栏", systemImage: "trash")
+                        }
+                    } else {
+                        Text("以车辆当前位置为中心，双指缩放地图确定安全区域。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 } else {
-                    Button {
-                        isShowingFenceConfirmation = true
-                    } label: {
-                        Label("以当前位置设为安全围栏", systemImage: "scope")
-                    }
-                    .disabled(location == nil)
+                    ContentUnavailableView("等待车辆定位", systemImage: "location.slash", description: Text("收到车辆 GPS 后即可在地图上设置安全区域。"))
                 }
 
                 if geofenceManager.phoneAuthorizationStatus == .notDetermined {
@@ -165,14 +168,21 @@ struct NinebotAntiTheftView: View {
         }
         .navigationTitle("车辆安全")
         .navigationBarTitleDisplayMode(.large)
-        .alert("设置电子围栏", isPresented: $isShowingFenceConfirmation) {
-            Button("取消", role: .cancel) {}
-            Button("设置") {
-                guard let vehicleSN, let location else { return }
-                geofenceManager.setFence(vehicleSN: vehicleSN, center: location, radius: selectedRadius)
+        .sheet(isPresented: $isShowingFenceEditor) {
+            if let vehicleSN, let location {
+                NinebotGeofenceEditorSheet(
+                    vehicleSN: vehicleSN,
+                    vehicleName: vehicleName,
+                    vehicleLocation: location,
+                    initialRadiusMeters: fence?.radiusMeters ?? 300
+                ) { radiusMeters in
+                    geofenceManager.setFence(
+                        vehicleSN: vehicleSN,
+                        center: location,
+                        radiusMeters: radiusMeters
+                    )
+                }
             }
-        } message: {
-            Text("将以车辆当前定位为中心，设置 \(selectedRadius.title) 安全围栏。车辆进出围栏将发送通知。")
         }
         .sheet(isPresented: $isShowingTrack) {
             NinebotVehicleTrackHistoryView(vehicleName: vehicleName, points: vehicleSN.flatMap { locationManager.tracks[$0] } ?? [])
@@ -235,10 +245,10 @@ struct NinebotAntiTheftView: View {
     private var locationMap: some View {
         if let location {
             Map(initialPosition: .region(MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude),
+                center: mapCoordinate(for: location),
                 span: MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)
             ))) {
-                Marker(vehicleName, coordinate: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude))
+                Marker(vehicleName, coordinate: mapCoordinate(for: location))
                     .tint(alarmManager.activeAlarm?.vehicleSN == vehicleSN ? .red : .green)
             }
         } else {
@@ -249,6 +259,11 @@ struct NinebotAntiTheftView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// Apple 地图使用转换后的坐标显示；围栏距离计算仍使用原始车辆 GPS 坐标。
+    private func mapCoordinate(for location: NinebotVehicleLocation) -> CLLocationCoordinate2D {
+        NinebotCoordinateTransform.mapKitCoordinate(latitude: location.latitude, longitude: location.longitude)
     }
 
     private func trackDistance(_ points: [NinebotVehicleLocation]) -> String {
@@ -263,6 +278,113 @@ struct NinebotAntiTheftView: View {
     }
 }
 
+/// 围栏中心固定为车辆当前位置；用户只需双指缩放地图，就能以直观的圆形范围调整安全区域。
+private struct NinebotGeofenceEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let vehicleSN: String
+    let vehicleName: String
+    let vehicleLocation: NinebotVehicleLocation
+    let initialRadiusMeters: CLLocationDistance
+    let onSave: (CLLocationDistance) -> Void
+
+    @State private var cameraPosition: MapCameraPosition
+    @State private var draftRadiusMeters: CLLocationDistance
+
+    init(
+        vehicleSN: String,
+        vehicleName: String,
+        vehicleLocation: NinebotVehicleLocation,
+        initialRadiusMeters: CLLocationDistance,
+        onSave: @escaping (CLLocationDistance) -> Void
+    ) {
+        self.vehicleSN = vehicleSN
+        self.vehicleName = vehicleName
+        self.vehicleLocation = vehicleLocation
+        self.initialRadiusMeters = initialRadiusMeters
+        self.onSave = onSave
+
+        let coordinate = NinebotCoordinateTransform.mapKitCoordinate(
+            latitude: vehicleLocation.latitude,
+            longitude: vehicleLocation.longitude
+        )
+        let radius = initialRadiusMeters.clamped(to: NinebotGeofence.supportedRadiusRange)
+        _draftRadiusMeters = State(initialValue: radius)
+        _cameraPosition = State(initialValue: .region(Self.region(center: coordinate, radiusMeters: radius)))
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Map(position: $cameraPosition, interactionModes: [.zoom]) {
+                    MapCircle(center: displayCoordinate, radius: draftRadiusMeters)
+                        .foregroundStyle(.green.opacity(0.14))
+                        .stroke(.green, lineWidth: 2)
+                    Marker(vehicleName, coordinate: displayCoordinate)
+                        .tint(.green)
+                }
+                .mapStyle(.standard(elevation: .flat))
+                .onMapCameraChange(frequency: .continuous) { context in
+                    draftRadiusMeters = Self.radius(from: context.region)
+                }
+                .accessibilityLabel("电子围栏地图")
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Label("双指缩放地图以调整安全区域", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .font(.subheadline.weight(.semibold))
+                    Text("车辆进入或离开此区域时，App 会发送通知。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .background(.bar)
+            }
+            .navigationTitle("设置安全区域")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") {
+                        onSave(draftRadiusMeters)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var displayCoordinate: CLLocationCoordinate2D {
+        NinebotCoordinateTransform.mapKitCoordinate(
+            latitude: vehicleLocation.latitude,
+            longitude: vehicleLocation.longitude
+        )
+    }
+
+    /// 使用当前可见地图区域估算围栏半径；不把具体米数暴露为固定数字选项。
+    private static func radius(from region: MKCoordinateRegion) -> CLLocationDistance {
+        let center = CLLocation(latitude: region.center.latitude, longitude: region.center.longitude)
+        let topEdge = CLLocation(
+            latitude: region.center.latitude + region.span.latitudeDelta / 2,
+            longitude: region.center.longitude
+        )
+        return (center.distance(from: topEdge) * 0.72).clamped(to: NinebotGeofence.supportedRadiusRange)
+    }
+
+    private static func region(center: CLLocationCoordinate2D, radiusMeters: CLLocationDistance) -> MKCoordinateRegion {
+        // 圆形围栏约占可见区域七成，方便用户在缩放时始终看清边界。
+        let halfSpanMeters = radiusMeters / 0.72
+        let latitudeDelta = max(0.003, halfSpanMeters * 2 / 111_000)
+        let longitudeDelta = max(0.003, latitudeDelta / max(0.25, abs(cos(center.latitude * .pi / 180))))
+        return MKCoordinateRegion(
+            center: center,
+            span: MKCoordinateSpan(latitudeDelta: latitudeDelta, longitudeDelta: longitudeDelta)
+        )
+    }
+}
+
 private struct NinebotVehicleTrackHistoryView: View {
     @Environment(\.dismiss) private var dismiss
     let vehicleName: String
@@ -273,12 +395,12 @@ private struct NinebotVehicleTrackHistoryView: View {
             Group {
                 if let last = points.last {
                     Map(initialPosition: .region(MKCoordinateRegion(
-                        center: CLLocationCoordinate2D(latitude: last.latitude, longitude: last.longitude),
+                        center: NinebotCoordinateTransform.mapKitCoordinate(latitude: last.latitude, longitude: last.longitude),
                         span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
                     ))) {
                         ForEach(Array(points.enumerated()), id: \.offset) { index, point in
                             if index == 0 || index == points.count - 1 {
-                                Marker(index == 0 ? "开始" : "结束", coordinate: CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
+                                Marker(index == 0 ? "开始" : "结束", coordinate: NinebotCoordinateTransform.mapKitCoordinate(latitude: point.latitude, longitude: point.longitude))
                             }
                         }
                     }
