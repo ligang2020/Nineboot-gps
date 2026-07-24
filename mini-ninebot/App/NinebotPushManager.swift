@@ -49,8 +49,7 @@ final class NinebotPushManager: NSObject, UIApplicationDelegate, UNUserNotificat
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        configureVehicleAlarmCategory()
-        UNUserNotificationCenter.current().delegate = self
+        NinebotNotificationManager.shared.configure()
         Task { await requestAuthorizationOnLaunchAndRegister() }
         return true
     }
@@ -204,19 +203,15 @@ final class NinebotPushManager: NSObject, UIApplicationDelegate, UNUserNotificat
         identifier: String,
         completion: (() -> Void)? = nil
     ) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        content.categoryIdentifier = Self.vehicleAlarmCategoryIdentifier
-        content.userInfo = ["event": "vehicle_alarm"]
-
-        let request = UNNotificationRequest(
-            identifier: identifier,
-            content: content,
-            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.5, repeats: false)
-        )
-        UNUserNotificationCenter.current().add(request) { _ in
+        Task { @MainActor in
+            NinebotNotificationManager.shared.send(
+                category: .vehicleAlarm,
+                title: title,
+                body: body,
+                vehicleSN: identifier,
+                destination: .location,
+                dedupeInterval: 60
+            )
             completion?()
         }
     }

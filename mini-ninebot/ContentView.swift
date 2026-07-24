@@ -9,6 +9,7 @@ private enum NinebotRootTab: Hashable {
     case dashboard
     case trips
     case recording
+    case security
     case settings
 }
 
@@ -16,6 +17,7 @@ struct ContentView: View {
     @StateObject private var model = NinebotViewModel()
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab: NinebotRootTab = .dashboard
+    @ObservedObject private var notificationRouter = NinebotNotificationRouter.shared
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -50,6 +52,14 @@ struct ContentView: View {
             .tag(NinebotRootTab.recording)
 
             NavigationStack {
+                NinebotAntiTheftView(model: model)
+            }
+            .tabItem {
+                Label("安全", systemImage: "checkmark.shield")
+            }
+            .tag(NinebotRootTab.security)
+
+            NavigationStack {
                 NinebotSettingsView(model: model)
                     .navigationTitle(model.hasLoginAccount ? "我的" : "")
                     .toolbar(model.hasLoginAccount ? .visible : .hidden, for: .navigationBar)
@@ -60,6 +70,17 @@ struct ContentView: View {
             .tag(NinebotRootTab.settings)
         }
         .tint(Color(red: 0.13, green: 0.82, blue: 0.28))
+        .onChange(of: notificationRouter.routeToken) { _, _ in
+            switch notificationRouter.destination {
+            case .map, .location, .vehicleStatus:
+                selectedTab = .security
+            case .charging, .chargingDetail, .vehicle:
+                selectedTab = .dashboard
+            case nil:
+                break
+            }
+            notificationRouter.consume()
+        }
         .task {
             await model.refreshOnLaunchIfPossible()
         }

@@ -16,6 +16,7 @@ struct NinebotWidgetBundle: WidgetBundle {
         NinebotChargeLiveActivity()
         if #available(iOS 18.0, *) {
             NinebotRideLiveActivity()
+            NinebotAntiTheftLiveActivity()
             NinebotWatchChargeLiveActivity()
         }
         #endif
@@ -521,250 +522,94 @@ private func chargeUpdatedText(_ date: Date) -> String {
 struct NinebotRideLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: NinebotRideActivityAttributes.self) { context in
+            // 锁屏 / StandBy：只呈现正在骑行时最关键的速度、电量和续航，
+            // 以系统分隔线组织信息，避免 Dashboard 化的大量卡片。
             RideLockScreenLiveActivityView(attributes: context.attributes, state: context.state)
                 .activityBackgroundTint(.clear)
-                .activitySystemActionForegroundColor(.primary)
+                .activitySystemActionForegroundColor(.green)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    RideIslandLeading(state: context.state)
+                    RideIslandSpeed(state: context.state)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    RideIslandTrailing(state: context.state)
+                    RideBatteryLabel(percent: context.state.batteryPercent, compact: false)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    RideIslandBottom(attributes: context.attributes, state: context.state)
+                    RideIslandSummary(attributes: context.attributes, state: context.state)
                 }
             } compactLeading: {
-                // Compact Leading：车辆图标 + 当前速度。
-                HStack(spacing: 3) {
-                    Image(systemName: "scooter")
-                        .foregroundStyle(RideActivityTheme.accent)
-                    Text(rideSpeedValue(context.state.speedKmh))
-                        .contentTransition(.numericText(value: context.state.speedKmh))
-                        .monospacedDigit()
-                }
-                .font(.caption.weight(.semibold))
+                // Compact Leading：仅保留车辆语义，不与其他信息争夺宽度。
+                Image(systemName: "scooter")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.green)
             } compactTrailing: {
-                // Compact Trailing：电量颜色会随百分比变化。
-                RideBatteryLabel(percent: context.state.batteryPercent, compact: true)
-            } minimal: {
-                // Minimal：仅保留速度和电池图标，避免挤占其他 Live Activity。
+                // Compact Trailing：速度是骑行中的最高优先级信息。
                 HStack(spacing: 2) {
                     Text(rideSpeedValue(context.state.speedKmh))
                         .contentTransition(.numericText(value: context.state.speedKmh))
-                    Image(systemName: "battery.100percent")
-                        .foregroundStyle(RideActivityTheme.batteryColor(for: context.state.batteryPercent))
+                    Text("km/h")
+                        .font(.caption2)
                 }
-                .font(.caption2.weight(.bold))
-                .monospacedDigit()
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+            } minimal: {
+                // Minimal：只显示速度数字，适合与其他 Live Activity 并存。
+                Text(rideSpeedValue(context.state.speedKmh))
+                    .contentTransition(.numericText(value: context.state.speedKmh))
+                    .font(.caption.monospacedDigit().weight(.bold))
             }
-            .keylineTint(RideActivityTheme.accent)
+            .keylineTint(.green)
         }
         .configurationDisplayName("九号骑行实况")
-        .description("骑行时显示速度、电量、续航与车辆连接状态。")
+        .description("以简洁层级显示速度、模式、电量、续航与骑行数据。")
     }
 }
 
-/// 锁屏与 StandBy 的 Live Activity 主视图。
-/// 采用系统材料、清晰数字层级和有限的信息密度，适配浅色/深色模式。
+/// 锁屏与 StandBy 主视图。控制在紧凑高度内，不使用 Dashboard 式卡片。
 @available(iOS 18.0, *)
 private struct RideLockScreenLiveActivityView: View {
     var attributes: NinebotRideActivityAttributes
     var state: NinebotRideActivityContentState
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack(alignment: .center) {
-                HStack(spacing: 8) {
-                    Image(systemName: "scooter")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(RideActivityTheme.accent)
-                        .frame(width: 36, height: 36)
-                        .background(RideActivityTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(attributes.vehicleName)
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                        Label("骑行中", systemImage: "location.fill")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text("总里程 \(rideDistanceText(state.totalDistanceKm))")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    Image(systemName: state.isLocked ? "lock.fill" : "lock.open.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(state.isLocked ? .secondary : RideActivityTheme.accent)
-                        .accessibilityLabel(state.isLocked ? "车辆已锁定" : "车辆未锁定")
-                }
-            }
-
-            VStack(spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(rideSpeedValue(state.speedKmh))
-                        .font(.system(size: 56, weight: .bold, design: .rounded))
-                        .contentTransition(.numericText(value: state.speedKmh))
-                        .monospacedDigit()
-                        .animation(.smooth(duration: 0.35), value: Int(state.speedKmh.rounded()))
-                    Text("km/h")
-                        .font(.headline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityLabel("当前速度 \(rideSpeedValue(state.speedKmh)) 公里每小时")
-
-                RideModeBadge(mode: state.mode)
-                    .id(state.mode)
-                    .transition(.opacity)
-                    .animation(.easeInOut(duration: 0.2), value: state.mode)
-            }
-
-            VStack(spacing: 8) {
-                HStack(spacing: 8) {
-                    RideMetricCard(
-                        title: "剩余电量",
-                        value: "\(state.batteryPercent)%",
-                        symbol: "battery.100percent",
-                        tint: RideActivityTheme.batteryColor(for: state.batteryPercent)
-                    )
-                    RideMetricCard(
-                        title: "剩余续航",
-                        value: rideDistanceText(state.remainingRangeKm),
-                        symbol: "arrow.triangle.turn.up.right.diamond.fill",
-                        tint: RideActivityTheme.accent
-                    )
-                }
-
-                HStack(spacing: 8) {
-                    RideMetricCard(
-                        title: "今日骑行",
-                        value: rideDistanceText(state.todayDistanceKm),
-                        symbol: "figure.outdoor.cycle",
-                        tint: .primary
-                    )
-                    RideMetricCard(
-                        title: "骑行时间",
-                        timerStart: attributes.startedAt,
-                        symbol: "timer",
-                        tint: .primary
-                    )
-                }
-
-                HStack(spacing: 8) {
-                    RideConnectionCard(
-                        title: "蓝牙",
-                        isAvailable: state.isBluetoothConnected,
-                        availableSymbol: "bluetooth",
-                        unavailableSymbol: "bluetooth.slash"
-                    )
-                    RideConnectionCard(
-                        title: "GPS",
-                        isAvailable: state.isGPSAvailable,
-                        availableSymbol: "location.fill",
-                        unavailableSymbol: "location.slash"
-                    )
-                }
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.background.opacity(0.88))
-        }
-        .accessibilityElement(children: .contain)
-    }
-}
-
-@available(iOS 18.0, *)
-private struct RideIslandLeading: View {
-    var state: NinebotRideActivityContentState
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 7) {
-            Image(systemName: "scooter")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(RideActivityTheme.accent)
-                .frame(width: 36, height: 36)
-                .background(RideActivityTheme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            VStack(alignment: .leading, spacing: 0) {
+        VStack(spacing: 7) {
+            // 第一行：速度为最强视觉锚点。
+            HStack(alignment: .lastTextBaseline, spacing: 5) {
                 Text(rideSpeedValue(state.speedKmh))
-                    .font(.title2.monospacedDigit().weight(.bold))
-                    .contentTransition(.numericText(value: state.speedKmh))
-                    .animation(.smooth(duration: 0.35), value: Int(state.speedKmh.rounded()))
-                Text("km/h")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.leading, 5)
-    }
-}
-
-@available(iOS 18.0, *)
-private struct RideIslandTrailing: View {
-    var state: NinebotRideActivityContentState
-
-    var body: some View {
-        VStack(alignment: .trailing, spacing: 3) {
-            RideBatteryLabel(percent: state.batteryPercent, compact: false)
-            Text("续航 \(rideDistanceText(state.remainingRangeKm))")
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary)
-        }
-        .padding(.trailing, 4)
-    }
-}
-
-@available(iOS 18.0, *)
-private struct RideIslandBottom: View {
-    var attributes: NinebotRideActivityAttributes
-    var state: NinebotRideActivityContentState
-
-    var body: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 0) {
-                RideIslandValue(title: "今日骑行", value: rideDistanceText(state.todayDistanceKm), symbol: "figure.outdoor.cycle")
-                RideIslandTimer(start: attributes.startedAt)
-                RideIslandValue(title: "模式", value: state.mode.localizedTitle, symbol: state.mode.symbolName)
-            }
-            HStack(spacing: 8) {
-                RideIslandStatus(title: "蓝牙", isAvailable: state.isBluetoothConnected, availableSymbol: "bluetooth", unavailableSymbol: "bluetooth.slash")
-                RideIslandStatus(title: "GPS", isAvailable: state.isGPSAvailable, availableSymbol: "location.fill", unavailableSymbol: "location.slash")
-            }
-        }
-        .padding(.horizontal, 4)
-        .padding(.bottom, 4)
-    }
-}
-
-@available(iOS 18.0, *)
-private struct RideBatteryLabel: View {
-    var percent: Int
-    var compact: Bool
-
-    var body: some View {
-        Label {
-            if !compact {
-                Text("\(percent)%")
-                    .contentTransition(.numericText(value: Double(percent)))
+                    .font(.system(size: 54, weight: .bold, design: .rounded))
                     .monospacedDigit()
-            } else {
-                Text("\(percent)%").monospacedDigit()
+                    .contentTransition(.numericText(value: state.speedKmh))
+                    .minimumScaleFactor(0.72)
+                    .accessibilityLabel("当前速度 \(rideSpeedValue(state.speedKmh)) 公里每小时")
+                Text("km/h")
+                    .font(.headline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 8)
             }
-        } icon: {
-            Image(systemName: RideActivityTheme.batterySymbol(for: percent))
+            .frame(maxWidth: .infinity)
+            .animation(.smooth(duration: 0.35), value: state.speedKmh)
+
+            // 第二行：模式是骑行语义，使用唯一的系统绿色 Capsule。
+            RideModeBadge(mode: state.mode)
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: state.mode)
+
+            Divider()
+                .padding(.top, 1)
+
+            // 第三、四行：四个二级指标使用统一栅格和留白，不再使用独立矩形卡片。
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
+                RideMetricCell(title: "剩余电量", value: "\(state.batteryPercent)%", symbol: RideActivityTheme.batterySymbol(for: state.batteryPercent), tint: RideActivityTheme.batteryColor(for: state.batteryPercent))
+                RideMetricCell(title: "剩余续航", value: rideDistanceText(state.remainingRangeKm), symbol: "location.fill", tint: .secondary)
+                RideMetricCell(title: "今日骑行", value: rideDistanceText(state.todayDistanceKm), symbol: "bicycle", tint: .secondary)
+                RideTimerMetricCell(startedAt: attributes.startedAt)
+            }
         }
-        .font(compact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
-        .foregroundStyle(RideActivityTheme.batteryColor(for: percent))
-        .animation(.easeInOut(duration: 0.35), value: percent)
-        .accessibilityLabel("剩余电量 \(percent)%")
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .widgetURL(URL(string: "ninebot://ride"))
     }
 }
 
@@ -775,18 +620,18 @@ private struct RideModeBadge: View {
     var body: some View {
         Label(mode.localizedTitle, systemImage: mode.symbolName)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(RideActivityTheme.modeColor(for: mode))
-            .padding(.horizontal, 9)
+            .foregroundStyle(.green)
+            .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(RideActivityTheme.modeColor(for: mode).opacity(0.13), in: Capsule())
+            .background(.green.opacity(0.14), in: Capsule())
+            .accessibilityLabel("当前模式 \(mode.localizedTitle)")
     }
 }
 
 @available(iOS 18.0, *)
-private struct RideMetricCard: View {
+private struct RideMetricCell: View {
     var title: String
-    var value: String? = nil
-    var timerStart: Date? = nil
+    var value: String
     var symbol: String
     var tint: Color
 
@@ -795,65 +640,104 @@ private struct RideMetricCard: View {
             Image(systemName: symbol)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(tint)
-                .frame(width: 16)
+                .frame(width: 15)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                if let timerStart {
-                    Text(timerStart, style: .timer)
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
-                } else {
-                    Text(value ?? "--")
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
-                }
+                Text(value)
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
 @available(iOS 18.0, *)
-private struct RideConnectionCard: View {
-    var title: String
-    var isAvailable: Bool
-    var availableSymbol: String
-    var unavailableSymbol: String
+private struct RideTimerMetricCell: View {
+    var startedAt: Date
 
     var body: some View {
-        Label {
-            Text("\(title)\(isAvailable ? "已连接" : "不可用")")
-                .lineLimit(1)
-        } icon: {
-            Image(systemName: isAvailable ? availableSymbol : unavailableSymbol)
+        HStack(spacing: 7) {
+            Image(systemName: "timer")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 15)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("骑行时间")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(startedAt, style: .timer)
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
         }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(isAvailable ? RideActivityTheme.accent : .secondary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
 @available(iOS 18.0, *)
-private struct RideIslandValue: View {
-    var title: String
+private struct RideIslandSpeed: View {
+    var state: NinebotRideActivityContentState
+
+    var body: some View {
+        HStack(alignment: .lastTextBaseline, spacing: 3) {
+            Text(rideSpeedValue(state.speedKmh))
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(.numericText(value: state.speedKmh))
+            Text("km/h")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .animation(.smooth(duration: 0.35), value: state.speedKmh)
+    }
+}
+
+@available(iOS 18.0, *)
+private struct RideIslandSummary: View {
+    var attributes: NinebotRideActivityAttributes
+    var state: NinebotRideActivityContentState
+
+    var body: some View {
+        VStack(spacing: 9) {
+            RideModeBadge(mode: state.mode)
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: state.mode)
+
+            Divider()
+
+            HStack(spacing: 0) {
+                RideIslandMetric(value: "\(state.batteryPercent)%", title: "电量", symbol: RideActivityTheme.batterySymbol(for: state.batteryPercent), tint: RideActivityTheme.batteryColor(for: state.batteryPercent))
+                RideIslandMetric(value: rideDistanceText(state.remainingRangeKm), title: "续航", symbol: "location.fill", tint: .secondary)
+                RideIslandMetric(value: rideDistanceText(state.todayDistanceKm), title: "今日", symbol: "bicycle", tint: .secondary)
+                RideIslandTimer(start: attributes.startedAt)
+            }
+        }
+        .padding(.horizontal, 5)
+        .padding(.top, 5)
+    }
+}
+
+@available(iOS 18.0, *)
+private struct RideIslandMetric: View {
     var value: String
+    var title: String
     var symbol: String
+    var tint: Color
 
     var body: some View {
         VStack(spacing: 3) {
             Image(systemName: symbol)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(RideActivityTheme.accent)
+                .foregroundStyle(tint)
             Text(value)
                 .font(.caption.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -870,11 +754,12 @@ private struct RideIslandTimer: View {
         VStack(spacing: 3) {
             Image(systemName: "timer")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(RideActivityTheme.accent)
+                .foregroundStyle(.secondary)
             Text(start, style: .timer)
                 .font(.caption.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
-            Text("骑行时长")
+                .minimumScaleFactor(0.65)
+            Text("时间")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -883,27 +768,29 @@ private struct RideIslandTimer: View {
 }
 
 @available(iOS 18.0, *)
-private struct RideIslandStatus: View {
-    var title: String
-    var isAvailable: Bool
-    var availableSymbol: String
-    var unavailableSymbol: String
+private struct RideBatteryLabel: View {
+    var percent: Int
+    var compact: Bool
 
     var body: some View {
-        Label("\(title)\(isAvailable ? "已连接" : "不可用")", systemImage: isAvailable ? availableSymbol : unavailableSymbol)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(isAvailable ? RideActivityTheme.accent : .secondary)
-            .frame(maxWidth: .infinity)
+        Label {
+            Text("\(percent)%")
+                .contentTransition(.numericText(value: Double(percent)))
+                .monospacedDigit()
+        } icon: {
+            Image(systemName: RideActivityTheme.batterySymbol(for: percent))
+        }
+        .font(compact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
+        .foregroundStyle(RideActivityTheme.batteryColor(for: percent))
+        .animation(.easeInOut(duration: 0.3), value: percent)
     }
 }
 
 @available(iOS 18.0, *)
 private enum RideActivityTheme {
-    static let accent = Color(red: 0.17, green: 0.78, blue: 0.40)
-
     static func batteryColor(for percent: Int) -> Color {
         switch percent {
-        case 51...100: return accent
+        case 51...100: return .green
         case 21...50: return .orange
         default: return .red
         }
@@ -918,14 +805,6 @@ private enum RideActivityTheme {
         default: return "battery.0percent"
         }
     }
-
-    static func modeColor(for mode: NinebotRideMode) -> Color {
-        switch mode {
-        case .eco: return .green
-        case .drive: return accent
-        case .sport: return .orange
-        }
-    }
 }
 
 @available(iOS 18.0, *)
@@ -938,8 +817,132 @@ private func rideDistanceText(_ kilometers: Double) -> String {
     if kilometers < 1 {
         return "\(Int((kilometers * 1_000).rounded())) m"
     }
-    return String(format: "%.1f km", kilometers)
+    return String(format: "%.0f km", kilometers)
 }
+
+/// 车辆触发安全事件时展示的独立 Live Activity。
+/// 红色仅用于明确的报警语义，平时骑行实况保持中性、克制的系统风格。
+@available(iOS 18.0, *)
+struct NinebotAntiTheftLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: NinebotAntiTheftActivityAttributes.self) { context in
+            AntiTheftLockScreenLiveActivityView(attributes: context.attributes, state: context.state)
+                .activityBackgroundTint(.red.opacity(0.12))
+                .activitySystemActionForegroundColor(.red)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Label("车辆报警", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Image(systemName: context.state.alarmType.symbolName)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.red)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    HStack(spacing: 10) {
+                        Image(systemName: context.state.alarmType.symbolName)
+                            .foregroundStyle(.red)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(context.state.isSOS ? "SOS 安全报警" : context.state.alarmType.title)
+                                .font(.subheadline.weight(.semibold))
+                            Text(antiTheftLocationText(context.state.location))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 4)
+                        Text(context.attributes.startedAt, style: .timer)
+                            .font(.caption.monospacedDigit().weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.top, 5)
+                }
+            } compactLeading: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.red)
+            } compactTrailing: {
+                Image(systemName: context.state.alarmType.symbolName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.red)
+            } minimal: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.red)
+            }
+            .keylineTint(.red)
+        }
+        .configurationDisplayName("九号车辆报警")
+        .description("车辆发生安全异常时，显示报警类型、定位和持续时间。")
+    }
+}
+
+/// 防盗锁屏视图只保留报警类型、车辆定位与报警时间，便于用户在锁屏快速判断情况。
+@available(iOS 18.0, *)
+private struct AntiTheftLockScreenLiveActivityView: View {
+    var attributes: NinebotAntiTheftActivityAttributes
+    var state: NinebotAntiTheftActivityAttributes.ContentState
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: state.isSOS ? "exclamationmark.triangle.fill" : state.alarmType.symbolName)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.red)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(state.isSOS ? "SOS 车辆报警" : "车辆报警")
+                    .font(.headline.weight(.bold))
+                Text(state.alarmType.title)
+                    .font(.subheadline.weight(.semibold))
+                Label(antiTheftLocationText(state.location), systemImage: "location.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
+            VStack(alignment: .trailing, spacing: 3) {
+                Text("报警时间")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(attributes.startedAt, style: .timer)
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
+        .widgetURL(URL(string: "ninebot://security"))
+    }
+}
+
+@available(iOS 18.0, *)
+private func antiTheftLocationText(_ location: NinebotVehicleLocation?) -> String {
+    guard let location, location.isValid else { return "正在获取车辆定位" }
+    return String(format: "%.4f, %.4f", location.latitude, location.longitude)
+}
+
+#if DEBUG
+@available(iOS 18.0, *)
+#Preview("防盗锁屏", as: .content, using: NinebotAntiTheftActivityAttributes.preview) {
+    NinebotAntiTheftLiveActivity()
+} contentStates: {
+    NinebotAntiTheftActivityAttributes.ContentState.preview
+}
+
+@available(iOS 18.0, *)
+#Preview("防盗灵动岛", as: .dynamicIsland(.expanded), using: NinebotAntiTheftActivityAttributes.preview) {
+    NinebotAntiTheftLiveActivity()
+} contentStates: {
+    NinebotAntiTheftActivityAttributes.ContentState.preview
+}
+#endif
 
 #if DEBUG
 @available(iOS 18.0, *)

@@ -73,6 +73,8 @@ struct NinebotBLETelemetry: Sendable, Hashable {
     var isLocked: Bool
     var isCharging: Bool
     var isRiding: Bool
+    /// 防盗状态由 BLE 协议适配层归一化，供 AntiTheftManager 监听。
+    var security: NinebotVehicleSecurityTelemetry
     var receivedAt: Date
 
     init(
@@ -89,6 +91,7 @@ struct NinebotBLETelemetry: Sendable, Hashable {
         isLocked: Bool,
         isCharging: Bool,
         isRiding: Bool,
+        security: NinebotVehicleSecurityTelemetry = .init(),
         receivedAt: Date = .now
     ) {
         self.vehicleSN = vehicleSN
@@ -104,6 +107,7 @@ struct NinebotBLETelemetry: Sendable, Hashable {
         self.isLocked = isLocked
         self.isCharging = isCharging
         self.isRiding = isRiding
+        self.security = security
         self.receivedAt = receivedAt
     }
 }

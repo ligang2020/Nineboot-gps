@@ -59,5 +59,17 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>用于在用户启用电子围栏后，辅助守护车辆安全区域；车辆实际定位来自车辆 GPS。</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>用于连接车辆、接收车辆安全状态和发送寻车指令。</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>用于连接电动车并读取实时车辆状态。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>location</string>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

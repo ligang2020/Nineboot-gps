@@ -167,6 +167,8 @@ final class NinebotViewModel: ObservableObject {
     private var lastWidgetTimelineRefreshAt: Date?
     /// 最近一帧 BLE 遥测；仅用于避免网络轮询覆盖正在进行的本地骑行。
     private var latestBLETelemetry: NinebotBLETelemetry?
+    /// 仅用于状态边沿通知（开始充电、低电量等），不会保存原始 BLE 数据。
+    private var lastNotificationBLETelemetryByVehicle: [String: NinebotBLETelemetry] = [:]
     private var lastBLERideSessionPersistenceAt: Date = .distantPast
 
     init() {
@@ -668,7 +670,13 @@ final class NinebotViewModel: ObservableObject {
     ///     Task { @MainActor in model?.ingestBLETelemetry(frame) }
     /// }`
     func ingestBLETelemetry(_ telemetry: NinebotBLETelemetry) {
+        let previousTelemetry = lastNotificationBLETelemetryByVehicle[telemetry.vehicleSN]
         latestBLETelemetry = telemetry
+        lastNotificationBLETelemetryByVehicle[telemetry.vehicleSN] = telemetry
+
+        let resolvedVehicleName = dashboard.vehicles.first { $0.vehicle.sn == telemetry.vehicleSN }?.vehicle.displayName ?? "Ninebot 电动车"
+        NinebotNotificationManager.shared.ingestVehicleTelemetry(telemetry, previous: previousTelemetry)
+        NinebotAlarmManager.shared.ingest(telemetry, vehicleName: resolvedVehicleName)
 
         guard telemetry.isRiding, !telemetry.isCharging else {
             if activeRideSession?.vehicleSN == telemetry.vehicleSN {
@@ -684,7 +692,7 @@ final class NinebotViewModel: ObservableObject {
             ? activeRideSession
             : store.loadActiveRideSession().flatMap { $0.vehicleSN == telemetry.vehicleSN ? $0 : nil }
         let startedAt = previous?.startedAt ?? telemetry.receivedAt
-        let vehicleName = snapshot?.vehicle.displayName ?? "Ninebot 电动车"
+        let vehicleName = snapshot?.vehicle.displayName ?? resolvedVehicleName
         let vehicleModel = snapshot?.vehicle.model ?? "电动车"
         let session = NinebotActiveRideSession(
             vehicleSN: telemetry.vehicleSN,

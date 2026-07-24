@@ -24,6 +24,12 @@
 		B2000000000000000000000E /* NinebotSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000205 /* NinebotSharedStore.swift */; };
 		B2000000000000000000000F /* NinebotRideActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000206 /* NinebotRideActivityAttributes.swift */; };
 		B20000000000000000000010 /* NinebotRideLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010C /* NinebotRideLiveActivityManager.swift */; };
+		B20000000000000000000011 /* NinebotNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010D /* NinebotNotificationManager.swift */; };
+		B20000000000000000000012 /* NinebotAntiTheftManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010E /* NinebotAntiTheftManager.swift */; };
+		B20000000000000000000013 /* NinebotGeofenceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010F /* NinebotGeofenceManager.swift */; };
+		B20000000000000000000014 /* NinebotAntiTheftLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000110 /* NinebotAntiTheftLiveActivityManager.swift */; };
+		B20000000000000000000015 /* NinebotAntiTheftView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000112 /* NinebotAntiTheftView.swift */; };
+		B20000000000000000000016 /* NinebotAntiTheftActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000207 /* NinebotAntiTheftActivityAttributes.swift */; };
 		B30000000000000000000001 /* NinebotWidgetConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000301 /* NinebotWidgetConfiguration.swift */; };
 		B30000000000000000000002 /* NinebotWidgetProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000302 /* NinebotWidgetProvider.swift */; };
 		B30000000000000000000003 /* NinebotWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000303 /* NinebotWidgets.swift */; };
@@ -33,6 +39,7 @@
 		B30000000000000000000007 /* NinebotChargeActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000204 /* NinebotChargeActivityAttributes.swift */; };
 		B30000000000000000000008 /* NinebotSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000205 /* NinebotSharedStore.swift */; };
 		B30000000000000000000009 /* NinebotRideActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000206 /* NinebotRideActivityAttributes.swift */; };
+		B3000000000000000000000A /* NinebotAntiTheftActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000207 /* NinebotAntiTheftActivityAttributes.swift */; };
 		B40000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000103 /* Assets.xcassets */; };
 		B40000000000000000000002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000305 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -74,6 +81,11 @@
 		B100000000000000000000108 /* NinebotRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotRecordingView.swift"; sourceTree = "<group>"; };
 		B100000000000000000000109 /* NinebotChargeLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotChargeLiveActivityManager.swift"; sourceTree = "<group>"; };
 		B10000000000000000000010C /* NinebotRideLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotRideLiveActivityManager.swift"; sourceTree = "<group>"; };
+		B10000000000000000000010D /* NinebotNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotNotificationManager.swift"; sourceTree = "<group>"; };
+		B10000000000000000000010E /* NinebotAntiTheftManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotAntiTheftManager.swift"; sourceTree = "<group>"; };
+		B10000000000000000000010F /* NinebotGeofenceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotGeofenceManager.swift"; sourceTree = "<group>"; };
+		B100000000000000000000110 /* NinebotAntiTheftLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotAntiTheftLiveActivityManager.swift"; sourceTree = "<group>"; };
+		B100000000000000000000112 /* NinebotAntiTheftView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotAntiTheftView.swift"; sourceTree = "<group>"; };
 		B10000000000000000000010A /* NinebotSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotSettingsView.swift"; sourceTree = "<group>"; };
 		B10000000000000000000010B /* NinebotViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotViewModel.swift"; sourceTree = "<group>"; };
 		B100000000000000000000201 /* NinebotCoordinateTransform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotCoordinateTransform.swift"; sourceTree = "<group>"; };
@@ -82,6 +94,7 @@
 		B100000000000000000000204 /* NinebotChargeActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotChargeActivityAttributes.swift"; sourceTree = "<group>"; };
 		B100000000000000000000205 /* NinebotSharedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotSharedStore.swift"; sourceTree = "<group>"; };
 		B100000000000000000000206 /* NinebotRideActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotRideActivityAttributes.swift"; sourceTree = "<group>"; };
+		B100000000000000000000207 /* NinebotAntiTheftActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotAntiTheftActivityAttributes.swift"; sourceTree = "<group>"; };
 		B100000000000000000000301 /* NinebotWidgetConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotWidgetConfiguration.swift"; sourceTree = "<group>"; };
 		B100000000000000000000302 /* NinebotWidgetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotWidgetProvider.swift"; sourceTree = "<group>"; };
 		B100000000000000000000303 /* NinebotWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotWidgets.swift"; sourceTree = "<group>"; };
@@ -143,6 +156,11 @@
 				B100000000000000000000108 /* NinebotRecordingView.swift */,
 				B100000000000000000000109 /* NinebotChargeLiveActivityManager.swift */,
 				B10000000000000000000010C /* NinebotRideLiveActivityManager.swift */,
+				B10000000000000000000010D /* NinebotNotificationManager.swift */,
+				B10000000000000000000010E /* NinebotAntiTheftManager.swift */,
+				B10000000000000000000010F /* NinebotGeofenceManager.swift */,
+				B100000000000000000000110 /* NinebotAntiTheftLiveActivityManager.swift */,
+				B100000000000000000000112 /* NinebotAntiTheftView.swift */,
 				B10000000000000000000010A /* NinebotSettingsView.swift */,
 				B10000000000000000000010B /* NinebotViewModel.swift */,
 			);
@@ -158,6 +176,7 @@
 				B100000000000000000000204 /* NinebotChargeActivityAttributes.swift */,
 				B100000000000000000000205 /* NinebotSharedStore.swift */,
 				B100000000000000000000206 /* NinebotRideActivityAttributes.swift */,
+				B100000000000000000000207 /* NinebotAntiTheftActivityAttributes.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -301,6 +320,11 @@
 				B20000000000000000000004 /* NinebotRecordingView.swift in Sources */,
 				B20000000000000000000005 /* NinebotChargeLiveActivityManager.swift in Sources */,
 				B20000000000000000000010 /* NinebotRideLiveActivityManager.swift in Sources */,
+				B20000000000000000000011 /* NinebotNotificationManager.swift in Sources */,
+				B20000000000000000000012 /* NinebotAntiTheftManager.swift in Sources */,
+				B20000000000000000000013 /* NinebotGeofenceManager.swift in Sources */,
+				B20000000000000000000014 /* NinebotAntiTheftLiveActivityManager.swift in Sources */,
+				B20000000000000000000015 /* NinebotAntiTheftView.swift in Sources */,
 				B20000000000000000000006 /* NinebotSettingsView.swift in Sources */,
 				B20000000000000000000007 /* NinebotViewModel.swift in Sources */,
 				B20000000000000000000008 /* ContentView.swift in Sources */,
@@ -311,6 +335,7 @@
 				B2000000000000000000000D /* NinebotChargeActivityAttributes.swift in Sources */,
 				B2000000000000000000000E /* NinebotSharedStore.swift in Sources */,
 				B2000000000000000000000F /* NinebotRideActivityAttributes.swift in Sources */,
+				B20000000000000000000016 /* NinebotAntiTheftActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -327,6 +352,7 @@
 				B30000000000000000000007 /* NinebotChargeActivityAttributes.swift in Sources */,
 				B30000000000000000000008 /* NinebotSharedStore.swift in Sources */,
 				B30000000000000000000009 /* NinebotRideActivityAttributes.swift in Sources */,
+				B3000000000000000000000A /* NinebotAntiTheftActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -469,7 +495,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "mini-ninebot/mini-ninebot.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 38;
+				CURRENT_PROJECT_VERSION = 39;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -483,7 +509,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.38;
+				MARKETING_VERSION = 1.2.39;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -503,7 +529,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "mini-ninebot/mini-ninebot.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 38;
+				CURRENT_PROJECT_VERSION = 39;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -517,7 +543,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.38;
+				MARKETING_VERSION = 1.2.39;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -536,7 +562,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = NinebotWidgets/NinebotWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 38;
+				CURRENT_PROJECT_VERSION = 39;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -548,7 +574,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.38;
+				MARKETING_VERSION = 1.2.39;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ.NinebotWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -565,7 +591,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = NinebotWidgets/NinebotWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 38;
+				CURRENT_PROJECT_VERSION = 39;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -577,7 +603,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.38;
+				MARKETING_VERSION = 1.2.39;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ.NinebotWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
