@@ -765,6 +765,7 @@ private struct RideActivityShareSheet: UIViewControllerRepresentable {
 }
 
 /// 生成分享图：采用 Apple Maps 快照作为底图，并在其上绘制路线、起终点与核心指标。
+@MainActor
 private enum RideShareCardRenderer {
     static func render(ride: RideRecord) async -> UIImage? {
         let mapSize = CGSize(width: 1_080, height: 700)
@@ -781,9 +782,8 @@ private enum RideShareCardRenderer {
             }
         }
 
-        return await MainActor.run {
-            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1_080, height: 1_350))
-            return renderer.image { context in
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1_080, height: 1_350))
+        return renderer.image { context in
                 UIColor.systemBackground.setFill()
                 context.fill(CGRect(x: 0, y: 0, width: 1_080, height: 1_350))
 
@@ -817,7 +817,6 @@ private enum RideShareCardRenderer {
                 NSString(string: "●  Ninebot LiveRide").draw(at: CGPoint(x: 704, y: 1_220), withAttributes: logoStyle)
             }
         }
-    }
 
     private static func drawMetric(_ value: String, title: String, x: CGFloat, y: CGFloat, context: CGContext) {
         let valueStyle: [NSAttributedString.Key: Any] = [
