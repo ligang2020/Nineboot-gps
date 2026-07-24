@@ -17,6 +17,8 @@ struct ContentView: View {
     @StateObject private var model = NinebotViewModel()
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab: NinebotRootTab = .dashboard
+    /// 同一轮前台展示只轮换一次动物；切换后台后下一次打开 App 才进入下一组。
+    @State private var didRegisterRoadAnimalPresentation = false
     @ObservedObject private var notificationRouter = NinebotNotificationRouter.shared
 
     var body: some View {
@@ -82,10 +84,15 @@ struct ContentView: View {
             notificationRouter.consume()
         }
         .task {
+            registerRoadAnimalPresentationIfNeeded()
             await model.refreshOnLaunchIfPossible()
         }
         .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase == .active else { return }
+            guard newPhase == .active else {
+                didRegisterRoadAnimalPresentation = false
+                return
+            }
+            registerRoadAnimalPresentationIfNeeded()
             Task { await model.refreshWhenActiveIfPossible() }
         }
         .task(id: scenePhase) {
@@ -103,6 +110,13 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    /// 车辆场景只在「已停稳」时真正显示动物；此处仅负责按每次打开 App 轮换主题。
+    private func registerRoadAnimalPresentationIfNeeded() {
+        guard !didRegisterRoadAnimalPresentation else { return }
+        didRegisterRoadAnimalPresentation = true
+        RoadAnimalEncounterManager.shared.beginNewAppPresentation()
     }
 }
 

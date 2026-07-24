@@ -1364,6 +1364,9 @@ private struct VehicleMotionScene: View {
 
     @State private var isAnimating = false
     @State private var rideStartedAt: Date?
+    /// 仅在车辆进入「已停稳」状态后开始计时；骑行或充电会立即取消动物经过动画。
+    @State private var parkedAnimalStartAt: Date?
+    @ObservedObject private var roadAnimalEncounter = RoadAnimalEncounterManager.shared
     @StateObject private var rideWeather = RideWeatherProvider()
     @StateObject private var weatherLocation = RideWeatherLocationProvider()
 
@@ -1374,7 +1377,7 @@ private struct VehicleMotionScene: View {
     /// actually visible while a rider has the vehicle active, instead of
     /// incorrectly falling back to the parked card shown in the screenshot.
     private var mode: VehicleMotionSceneMode {
-        if snapshot.state.isCharging == true && !snapshot.state.isFullyCharged {
+        if snapshot.state.isCharging == true {
             return .charging
         }
         return hasExplicitLiveMovement || isRideSessionActive ? .riding : .parked
@@ -1388,6 +1391,23 @@ private struct VehicleMotionScene: View {
         guard let status = snapshot.state.rawStatus else { return false }
         let movementKeys = ["isRiding", "riding", "isMoving", "moving", "inMotion", "driving"]
         return movementKeys.contains(where: { status[$0]?.boolValue == true })
+    }
+
+    /// 车辆必须处于停车模式至少 0.85 秒，才让道路动物进入画面。
+    /// 这能防止接口状态刚切换、车辆仍在滑行时误触发动画。
+    private func updateParkedAnimalTimer(for newMode: VehicleMotionSceneMode) {
+        guard newMode == .parked else {
+            parkedAnimalStartAt = nil
+            return
+        }
+        if parkedAnimalStartAt == nil {
+            parkedAnimalStartAt = .now
+        }
+    }
+
+    private func parkedAnimalElapsed(at phase: TimeInterval) -> TimeInterval {
+        guard let parkedAnimalStartAt else { return 0 }
+        return max(0, phase - parkedAnimalStartAt.timeIntervalSinceReferenceDate)
     }
 
     private func updateRideTimer(for newMode: VehicleMotionSceneMode) {
@@ -1420,12 +1440,14 @@ private struct VehicleMotionScene: View {
                         )
                     }
                 case .parked:
-                    // Keep the parked vehicle and roadway still, while weather
-                    // particles (rain/snow) continue to move naturally.
-                    TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !isAnimating)) { timeline in
+                    // 停车场景中的动物步态采用 60 FPS 时间线；道路与车辆保持静止，
+                    // 只保留自然天气与动物移动，避免营造「车辆仍在行驶」的错觉。
+                    TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isAnimating)) { timeline in
+                        let phase = timeline.date.timeIntervalSinceReferenceDate
                         parkedScene(
                             in: proxy.size,
-                            phase: timeline.date.timeIntervalSinceReferenceDate,
+                            phase: phase,
+                            animalElapsed: parkedAnimalElapsed(at: phase),
                             weather: rideWeather.snapshot
                         )
                     }
@@ -1452,13 +1474,15 @@ private struct VehicleMotionScene: View {
         .onAppear {
             isAnimating = true
             updateRideTimer(for: mode)
+            updateParkedAnimalTimer(for: mode)
             // The vehicle API does not always include its latest GPS reading.
             // Fall back to the phone's one-shot location so weather data can
             // still be shown instead of permanently rendering placeholders.
             weatherLocation.requestCurrentLocation()
         }
-        .onChange(of: mode) { newMode in
+        .onChange(of: mode) { _, newMode in
             updateRideTimer(for: newMode)
+            updateParkedAnimalTimer(for: newMode)
         }
         .onDisappear { isAnimating = false }
         .task(id: weatherRequestID) {
@@ -1573,7 +1597,7 @@ private struct VehicleMotionScene: View {
         case .charging:
             return "车辆正在进行三维充电动画"
         case .parked:
-            return "车辆静止停放"
+            return "车辆已停稳；道路动物将在确认停车后经过"
         case .riding:
             return "车辆正在进行三维骑行动画"
         }
@@ -1583,6 +1607,7 @@ private struct VehicleMotionScene: View {
     private func parkedScene(
         in size: CGSize,
         phase: TimeInterval,
+        animalElapsed: TimeInterval,
         weather: RideWeatherSnapshot
     ) -> some View {
         ZStack {
@@ -1593,6 +1618,17 @@ private struct VehicleMotionScene: View {
                 phase: phase,
                 animatesRoadAndCity: false
             )
+
+            // 每次冷启动固定选择一组动物；只有车辆已停稳 0.85 秒后才开始经过。
+            // 叠层放在车辆图片之前，因此动物始终沿道路从车辆后方自然穿行。
+            if animalElapsed >= 0.85 {
+                RoadAnimalEncounterOverlay(
+                    plan: roadAnimalEncounter.plan,
+                    elapsed: animalElapsed - 0.85,
+                    phase: phase,
+                    isNight: weather.isNight
+                )
+            }
 
             Ellipse()
                 .fill(Color.black.opacity(weather.isNight ? 0.34 : 0.19))
@@ -1698,6 +1734,240 @@ private struct VehicleMotionScene: View {
             .stroke(Color.teslaGreen.opacity(0.38), style: StrokeStyle(lineWidth: 1.1, lineCap: .round, dash: [2, 11]))
             .shadow(color: Color.teslaGreen.opacity(0.42), radius: 2)
         }
+    }
+}
+
+
+/// 道路动物的行进方向。动物源图默认面向左侧，因此向右移动时在绘制层镜像。
+private enum RoadAnimalDirection {
+    case leftToRight
+    case rightToLeft
+}
+
+/// 每次冷启动轮换的动物主题。大象完成后重新从小狗主题开始，
+/// 保持用户所要求的「每次打开 App 更换一组动物」体验。
+private enum RoadAnimalKind: CaseIterable {
+    case dogs
+    case cats
+    case ducks
+    case pandas
+    case giraffe
+    case elephant
+
+    var emoji: String {
+        switch self {
+        case .dogs: return "🐕"
+        case .cats: return "🐈"
+        case .ducks: return "🦆"
+        case .pandas: return "🐼"
+        case .giraffe: return "🦒"
+        case .elephant: return "🐘"
+        }
+    }
+}
+
+/// 单只动物在道路上的一次经过参数。所有随机值只在冷启动时生成一次，
+/// TimelineView 的每一帧都读取相同计划，因此不会出现闪烁或跳变。
+private struct RoadAnimalWalker: Identifiable {
+    let id = UUID()
+    let emoji: String
+    let direction: RoadAnimalDirection
+    let delay: TimeInterval
+    let duration: TimeInterval
+    /// 0 表示更靠近道路远端，1 表示更靠近车辆前景。
+    let lane: CGFloat
+    let scale: CGFloat
+    let stepRate: Double
+    let phaseOffset: Double
+}
+
+/// 冷启动级别的动物经过计划。
+/// 存储在 App Group 的计数器仅在新进程首次使用时递增；App 前后台切换不会换动物，
+/// 下一次真正打开 App 才会轮换至下一组。
+private struct RoadAnimalEncounterPlan {
+    private static let launchCounterKey = "ninebot.road-animal.launch-counter"
+
+    let kind: RoadAnimalKind
+    let walkers: [RoadAnimalWalker]
+
+    /// 当 App 进入前台时生成下一组主题；计数器持久化后，冷启动和从后台重新打开
+    /// 都会稳定地轮换到下一组动物。
+    static func nextPlan() -> RoadAnimalEncounterPlan {
+        let defaults = UserDefaults(suiteName: NinebotAppGroup.identifier) ?? .standard
+        let launchCount = defaults.integer(forKey: launchCounterKey)
+        defaults.set(launchCount + 1, forKey: launchCounterKey)
+        let kinds = RoadAnimalKind.allCases
+        return RoadAnimalEncounterPlan(kind: kinds[launchCount % kinds.count])
+    }
+
+    /// 在场景刚创建、尚未收到前台事件时使用的安全默认值；不会写入轮换计数器。
+    static var placeholder: RoadAnimalEncounterPlan {
+        RoadAnimalEncounterPlan(kind: .dogs)
+    }
+
+    private init(kind: RoadAnimalKind) {
+        self.kind = kind
+        var generator = SystemRandomNumberGenerator()
+
+        func walker(
+            direction: RoadAnimalDirection,
+            index: Int,
+            delay: TimeInterval,
+            scale: CGFloat,
+            lane: CGFloat? = nil
+        ) -> RoadAnimalWalker {
+            RoadAnimalWalker(
+                emoji: kind.emoji,
+                direction: direction,
+                delay: delay,
+                duration: Double.random(in: 6.6...8.6, using: &generator),
+                lane: lane ?? CGFloat.random(in: 0.10...0.88, using: &generator),
+                scale: scale,
+                stepRate: Double.random(in: 7.0...9.5, using: &generator),
+                phaseOffset: Double(index) * 1.61 + Double.random(in: 0...0.9, using: &generator)
+            )
+        }
+
+        switch kind {
+        case .dogs:
+            // 2～3 只小狗，各自随机从左或从右经过。
+            let count = Int.random(in: 2...3, using: &generator)
+            walkers = (0..<count).map { index in
+                walker(
+                    direction: Bool.random(using: &generator) ? .leftToRight : .rightToLeft,
+                    index: index,
+                    delay: Double(index) * 1.05 + Double.random(in: 0...0.45, using: &generator),
+                    scale: CGFloat.random(in: 0.78...0.96, using: &generator)
+                )
+            }
+        case .cats:
+            // 2～3 只猫统一从左向右走。
+            let count = Int.random(in: 2...3, using: &generator)
+            walkers = (0..<count).map { index in
+                walker(
+                    direction: .leftToRight,
+                    index: index,
+                    delay: Double(index) * 0.92,
+                    scale: CGFloat.random(in: 0.72...0.90, using: &generator)
+                )
+            }
+        case .ducks:
+            // 一群鸭子统一从右向左，队列更紧凑，表现为自然结伴经过。
+            let count = Int.random(in: 6...8, using: &generator)
+            walkers = (0..<count).map { index in
+                walker(
+                    direction: .rightToLeft,
+                    index: index,
+                    delay: Double(index) * 0.32,
+                    scale: CGFloat.random(in: 0.42...0.60, using: &generator),
+                    lane: CGFloat(index % 3) * 0.29 + CGFloat.random(in: 0.04...0.13, using: &generator)
+                )
+            }
+        case .pandas:
+            // 两只熊猫同行，从左向右。
+            walkers = [
+                walker(direction: .leftToRight, index: 0, delay: 0.12, scale: 0.94, lane: 0.22),
+                walker(direction: .leftToRight, index: 1, delay: 1.10, scale: 1.02, lane: 0.68)
+            ]
+        case .giraffe:
+            // 长颈鹿单独从右向左经过，体型更大且步频较慢。
+            walkers = [
+                walker(direction: .rightToLeft, index: 0, delay: 0.25, scale: 1.22, lane: 0.48)
+            ]
+        case .elephant:
+            // 大象单独从左向右经过；下一次冷启动后轮换回小狗。
+            walkers = [
+                walker(direction: .leftToRight, index: 0, delay: 0.25, scale: 1.24, lane: 0.54)
+            ]
+        }
+    }
+}
+
+/// 全局道路动物轮换管理器。ContentView 每次进入前台只调用一次，
+/// VehicleMotionScene 订阅其计划，因此不会因仪表盘的普通刷新而意外换动物。
+@MainActor
+final class RoadAnimalEncounterManager: ObservableObject {
+    static let shared = RoadAnimalEncounterManager()
+
+    @Published private(set) var plan: RoadAnimalEncounterPlan = .placeholder
+
+    private init() {}
+
+    func beginNewAppPresentation() {
+        plan = .nextPlan()
+    }
+}
+
+/// 停车道路中的动物移动层。
+/// 采用与停车场景相同的 60 FPS TimelineView 时间源：每只动物有独立延迟、速度、
+/// 景深比例、上下步态与接地阴影，确保群体经过时仍保持连续自然的运动节奏。
+private struct RoadAnimalEncounterOverlay: View {
+    let plan: RoadAnimalEncounterPlan
+    let elapsed: TimeInterval
+    let phase: TimeInterval
+    let isNight: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        GeometryReader { proxy in
+            if !reduceMotion {
+                ZStack {
+                    ForEach(plan.walkers) { walker in
+                        animal(walker, in: proxy.size)
+                    }
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func animal(_ walker: RoadAnimalWalker, in size: CGSize) -> some View {
+        let rawProgress = (elapsed - walker.delay) / walker.duration
+        if (0...1).contains(rawProgress) {
+            let progress = CGFloat(rawProgress)
+            let xProgress = walker.direction == .leftToRight ? progress : 1 - progress
+            let x = size.width * (-0.12 + xProgress * 1.24)
+            // 动物越靠近前景越大、越靠近画面底部，形成道路透视关系。
+            let perspective = 0.56 + walker.lane * 0.44
+            let baseSize = max(22, size.width * 0.105) * perspective * walker.scale
+            let y = size.height * (0.50 + walker.lane * 0.21)
+            let walkPhase = phase * walker.stepRate + walker.phaseOffset
+            let stepLift = abs(sin(walkPhase)) * baseSize * 0.052
+            let sway = sin(walkPhase * 0.5) * 1.25
+            let visibility = edgeOpacity(for: rawProgress)
+            let horizontalScale = walker.direction == .leftToRight ? -1.0 : 1.0
+
+            ZStack {
+                Ellipse()
+                    .fill(Color.black.opacity(isNight ? 0.40 : 0.22))
+                    .frame(width: baseSize * 0.88, height: max(2.5, baseSize * 0.115))
+                    .blur(radius: max(1, baseSize * 0.055))
+                    .scaleEffect(x: 1.0 - stepLift / max(baseSize, 1) * 0.28, y: 1)
+                    .offset(y: baseSize * 0.44)
+
+                // 使用系统高分辨率彩色动物字形，并结合步态、轻微躯干起伏和接地阴影。
+                // 这样无需网络下载素材，也可在深浅色模式中保持原生清晰度。
+                Text(walker.emoji)
+                    .font(.system(size: baseSize))
+                    .shadow(color: .black.opacity(isNight ? 0.48 : 0.26), radius: max(1.4, baseSize * 0.055), x: 0, y: max(1, baseSize * 0.055))
+                    .scaleEffect(x: horizontalScale, y: 1)
+                    .rotationEffect(.degrees(sway))
+                    .offset(y: -stepLift)
+            }
+            .position(x: x, y: y)
+            .opacity(visibility)
+        }
+    }
+
+    /// 进出道路时采用短淡入淡出，避免动物在边缘突然出现或消失。
+    private func edgeOpacity(for progress: Double) -> Double {
+        let fadeLength = 0.075
+        if progress < fadeLength { return progress / fadeLength }
+        if progress > 1 - fadeLength { return (1 - progress) / fadeLength }
+        return 1
     }
 }
 
