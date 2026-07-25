@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 
 #if canImport(ActivityKit)
@@ -59,6 +60,7 @@ private actor NinebotRideLiveActivityController {
     private let minimumUpdateInterval: TimeInterval = 1
     private var lastSubmittedState: NinebotRideActivityContentState?
     private var lastSubmissionDate: Date = .distantPast
+    private var resolvedLocationTextByVehicle: [String: NinebotResolvedAddress] = [:]
 
     func sync(
         session: NinebotActiveRideSession?,
@@ -69,7 +71,7 @@ private actor NinebotRideLiveActivityController {
             return
         }
 
-        let state = makeContentState(session: session, snapshot: snapshot)
+        let state = await makeContentState(session: session, snapshot: snapshot)
         await startOrUpdate(session: session, state: state)
     }
 
@@ -83,7 +85,10 @@ private actor NinebotRideLiveActivityController {
         }
 
         let state = NinebotRideActivityContentState(
-            vehicleLocationText: vehicleLocationText(from: telemetry.security.location),
+            vehicleLocationText: await vehicleLocationText(
+                vehicleSN: session.vehicleSN,
+                location: telemetry.security.location
+            ),
             batteryPercent: telemetry.batteryPercent,
             remainingRangeKm: telemetry.remainingRangeKm,
             todayDistanceKm: telemetry.todayDistanceKm,
@@ -191,10 +196,10 @@ private actor NinebotRideLiveActivityController {
     private func makeContentState(
         session: NinebotActiveRideSession,
         snapshot: NinebotVehicleSnapshot
-    ) -> NinebotRideActivityContentState {
+    ) async -> NinebotRideActivityContentState {
         let state = snapshot.state
         return NinebotRideActivityContentState(
-            vehicleLocationText: vehicleLocationText(from: state),
+            vehicleLocationText: await vehicleLocationText(vehicleSN: session.vehicleSN, state: state),
             batteryPercent: state.battery ?? 0,
             remainingRangeKm: state.endurance ?? state.aiEstimatedMileage ?? 0,
             todayDistanceKm: todayDistanceKm(from: state),
@@ -210,30 +215,92 @@ private actor NinebotRideLiveActivityController {
         )
     }
 
-    private func liveSpeedKmh(from state: NinebotVehicleState) -> Double? {
-        for key in ["speed", "currentSpeed", "current_speed", "speedKmh", "speed_kmh", "velocity"] {
-            if let value = state.rawStatus?[key]?.doubleValue, value.isFinite, (0...180).contains(value) {
-                return value
-            }
-        }
-        return nil
-    }
-
-    private func vehicleLocationText(from state: NinebotVehicleState) -> String {
+    /// 实时活动绝不展示经纬度。优先使用车辆接口返回的中文地址或 App Group
+    /// 缓存；没有地址时在后台反查并暂时显示中文加载提示。
+    private func vehicleLocationText(vehicleSN: String, state: NinebotVehicleState) async -> String {
         let description = state.locationDescription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !description.isEmpty { return description }
-        guard let latitude = state.latitude,
-              let longitude = state.longitude,
-              (-90...90).contains(latitude),
-              (-180...180).contains(longitude) else {
+        guard let latitude = state.latitude, let longitude = state.longitude else {
             return "正在获取车辆定位"
         }
-        return String(format: "%.4f, %.4f", latitude, longitude)
+        return await vehicleLocationText(
+            vehicleSN: vehicleSN,
+            location: NinebotVehicleLocation(latitude: latitude, longitude: longitude, updatedAt: state.updatedAt)
+        )
     }
 
-    private func vehicleLocationText(from location: NinebotVehicleLocation?) -> String {
+    private func vehicleLocationText(
+        vehicleSN: String,
+        location: NinebotVehicleLocation?
+    ) async -> String {
         guard let location, location.isValid else { return "正在获取车辆定位" }
-        return String(format: "%.4f, %.4f", location.latitude, location.longitude)
+        if let cached = freshAddress(for: vehicleSN, location: location) {
+            return cached.address
+        }
+
+        do {
+            let coordinate = NinebotCoordinateTransform.gcj02Coordinate(
+                latitude: location.latitude,
+                longitude: location.longitude
+            )
+            let placemarks = try await CLGeocoder().reverseGeocodeLocation(
+                CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude),
+                preferredLocale: Locale(identifier: "zh_CN")
+            )
+            let address = chineseAddressText(from: placemarks.first)
+            guard !address.isEmpty else { return "正在解析车辆位置" }
+            let resolved = NinebotResolvedAddress(
+                sn: vehicleSN,
+                address: address,
+                latitude: location.latitude,
+                longitude: location.longitude,
+                updatedAt: .now,
+                source: "apple-mapkit"
+            )
+            resolvedLocationTextByVehicle[vehicleSN] = resolved
+            var allAddresses = NinebotSharedStore().loadResolvedAddresses()
+            allAddresses[vehicleSN] = resolved
+            NinebotSharedStore().saveResolvedAddresses(allAddresses)
+            return address
+        } catch {
+            return "正在解析车辆位置"
+        }
+    }
+
+    private func freshAddress(
+        for vehicleSN: String,
+        location: NinebotVehicleLocation
+    ) -> NinebotResolvedAddress? {
+        let address = resolvedLocationTextByVehicle[vehicleSN]
+            ?? NinebotSharedStore().loadResolvedAddresses()[vehicleSN]
+        guard let address,
+              address.source == "apple-mapkit",
+              Date().timeIntervalSince(address.updatedAt) < 1_800 else {
+            return nil
+        }
+        let cached = CLLocation(latitude: address.latitude, longitude: address.longitude)
+        let current = CLLocation(latitude: location.latitude, longitude: location.longitude)
+        guard cached.distance(from: current) <= 250 else { return nil }
+        resolvedLocationTextByVehicle[vehicleSN] = address
+        return address
+    }
+
+    private func chineseAddressText(from placemark: CLPlacemark?) -> String {
+        guard let placemark else { return "" }
+        let parts = [
+            placemark.administrativeArea,
+            placemark.locality,
+            placemark.subLocality,
+            placemark.thoroughfare,
+            placemark.subThoroughfare,
+            placemark.name
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        .reduce(into: [String]()) { result, part in
+            if !result.contains(part) { result.append(part) }
+        }
+        return parts.joined()
     }
 
     private func todayDistanceKm(from state: NinebotVehicleState) -> Double {

@@ -44,7 +44,7 @@ struct NinebotProxyClient {
     }
 
     func platformLogin(account: String, password: String, areaCode: String?) async throws -> NinebotLoginResult {
-        // 工程版平台登录：交给项目服务端处理账号密码，不在 App 内做官方 Passport 直连。
+        // 平台登录：交给项目服务端处理账号密码，不在 App 内做官方 Passport 直连。
         var body = [
             "account": account,
             "password": password,
@@ -256,7 +256,7 @@ struct NinebotProxyClient {
             guard Self.shouldTryLegacyPlatformFallback(after: error) else {
                 throw error
             }
-            // 工程版平台 exposes the travel API as a
+            // 平台服务 exposes the travel API as a
             // read-only GET endpoint instead of the Platform archive sync API.
             let payload = try await fetchTravel(sn: sn, month: month)
             return Self.travelPage(from: payload, fallbackMonth: month)
@@ -314,7 +314,7 @@ struct NinebotProxyClient {
         let token = configuration.bearerToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard token.isEmpty else { return }
         guard let url = configuration.baseURL, Self.isLocalOrPrivateNetwork(url) else {
-            throw NinebotProxyError.server("未填写 Bearer Token 时请确认工程版服务地址可信；公网服务建议开启鉴权并填写 Token")
+            throw NinebotProxyError.server("未填写 Bearer Token 时请确认服务地址可信；公网服务建议开启鉴权并填写 Token")
         }
     }
 

@@ -67,15 +67,15 @@ enum NinebotDataSourceMode: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .proxy: return "工程版代理"
-        case .platform: return "工程版平台"
+        case .proxy: return "代理服务"
+        case .platform: return "车辆服务"
         }
     }
 
     var shortTitle: String {
         switch self {
         case .proxy: return "代理"
-        case .platform: return "工程版"
+        case .platform: return "车辆服务"
         }
     }
 
@@ -89,7 +89,7 @@ enum NinebotDataSourceMode: String, Codable, CaseIterable, Identifiable {
     var tokenPlaceholder: String {
         switch self {
         case .proxy: return "ninecli 设置了 Token 才填写"
-        case .platform: return "工程版服务端 Bearer Token（如开启鉴权）"
+        case .platform: return "服务端 Bearer Token（如开启鉴权）"
         }
     }
 

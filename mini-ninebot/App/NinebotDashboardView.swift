@@ -916,6 +916,7 @@ private struct NinebotTripsView: View {
 
     private var monthOptions: [String] {
         var months = Set(snapshot.state.rides.compactMap(tripMonthString(for:)))
+        months.formUnion(recordedRides.map { tripMonthString(for: $0.startedAt) })
         months.insert(tripMonthString(for: Date()))
         months.insert(selectedMonth)
         return months.sorted(by: >)
@@ -5856,12 +5857,12 @@ private struct RideListSection: View {
 
                 Spacer()
 
-                Text("\(records.count)")
+                Text("\(totalRecordCount)")
                     .font(.title3.monospacedDigit().weight(.semibold))
                     .foregroundStyle(Color.teslaSecondaryText)
             }
 
-            if records.isEmpty {
+            if records.isEmpty && standaloneRecordedRides.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("\(tripMonthDisplayName(selectedMonth)) 暂无行程")
                         .font(.subheadline.weight(.semibold))
@@ -5897,14 +5898,23 @@ private struct RideListSection: View {
                         .buttonStyle(.plain)
                     }
 
-                    if records.count > visibleLimit {
+                    ForEach(standaloneRecordedRides.prefix(localVisibleLimit)) { ride in
+                        NavigationLink {
+                            RideSummaryView(ride: RideRecord(recordedRide: ride))
+                        } label: {
+                            LocalRecordedRideRow(record: ride)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if totalRecordCount > visibleLimit {
                         Button {
                             visibleLimit += 30
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "chevron.down.circle.fill")
                                 Text("显示更多")
-                                Text("\(records.count - visibleLimit)")
+                                Text("\(totalRecordCount - visibleLimit)")
                                     .monospacedDigit()
                             }
                             .font(.subheadline.weight(.semibold))
@@ -5928,9 +5938,73 @@ private struct RideListSection: View {
         }
     }
 
+    private var standaloneRecordedRides: [NinebotRecordedRide] {
+        recordedRides
+            .filter { $0.associatedRideID == nil && tripMonthString(for: $0.startedAt) == selectedMonth }
+            .sorted { $0.startedAt > $1.startedAt }
+    }
+
+    private var totalRecordCount: Int {
+        records.count + standaloneRecordedRides.count
+    }
+
+    private var localVisibleLimit: Int {
+        max(0, visibleLimit - records.count)
+    }
+
     private func associatedRecord(for record: NinebotRideRecord) -> NinebotRecordedRide? {
         recordedRides.first { ride in
             ride.associatedRideID == record.id && (vehicleSN == nil || ride.vehicleSN == nil || ride.vehicleSN == vehicleSN)
+        }
+    }
+}
+
+
+private struct LocalRecordedRideRow: View {
+    var record: NinebotRecordedRide
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.teslaGreen.opacity(0.14))
+                    Image(systemName: "map.fill")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(Color.teslaGreen)
+                }
+                .frame(width: 42, height: 42)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(formatRideDate(record.startedAt))
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(Color.teslaPrimaryText)
+                        .lineLimit(1)
+                    Text("自动骑行 · 已保存轨迹回放")
+                        .font(.caption)
+                        .foregroundStyle(Color.teslaSecondaryText)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.teslaSecondaryText)
+            }
+
+            HStack(spacing: 12) {
+                Label(formatDistance(record.distanceKilometers), systemImage: "road.lanes")
+                Label(formatSpeed(record.maxSpeedKmh), systemImage: "gauge.with.dots.needle.67percent")
+                Label("\(record.points.count) 点", systemImage: "point.3.connected.trianglepath.dotted")
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(Color.teslaSecondaryText)
+        }
+        .padding(14)
+        .background(Color.teslaCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.teslaHairline, lineWidth: 1)
         }
     }
 }
