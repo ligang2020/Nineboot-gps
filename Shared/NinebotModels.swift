@@ -372,6 +372,17 @@ extension NinebotRideDetail {
     }
 
     private static func bestTrackPoints(from value: JSONValue) -> [NinebotInterfaceTrackPoint] {
+        // The official Ninebot `travel-info` response exposes the route as
+        // `trail`: `longitude,latitude,elapsedSeconds,speedKmh;...`.
+        // Prefer it over generic numeric-track parsing so the elapsed time is
+        // not incorrectly rendered as the vehicle speed.
+        let officialTrailCandidates = officialTrailValues(from: value)
+            .map { officialTrailTrackPoints(from: $0) }
+            .filter { $0.count > 1 }
+        if let officialTrail = officialTrailCandidates.max(by: { $0.count < $1.count }) {
+            return officialTrail
+        }
+
         let candidateValues = trackCandidateValues(from: value)
         let parsedCandidates = candidateValues
             .map { trackPoints(from: $0) }
@@ -432,6 +443,56 @@ extension NinebotRideDetail {
 
         collect(value)
         return values
+    }
+
+    private static func officialTrailValues(from value: JSONValue) -> [JSONValue] {
+        var values: [JSONValue] = []
+
+        func collect(_ value: JSONValue) {
+            if let object = value.objectValue {
+                for (key, child) in object {
+                    if key.caseInsensitiveCompare("trail") == .orderedSame {
+                        values.append(child)
+                    }
+                    collect(child)
+                }
+            } else if let array = value.arrayValue {
+                for child in array {
+                    collect(child)
+                }
+            }
+        }
+
+        collect(value)
+        return values
+    }
+
+    private static func officialTrailTrackPoints(from value: JSONValue) -> [NinebotInterfaceTrackPoint] {
+        guard let string = value.stringValue else { return [] }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let separators = CharacterSet(charactersIn: ";|\n")
+        let points = trimmed.components(separatedBy: separators).enumerated().compactMap { index, segment -> NinebotInterfaceTrackPoint? in
+            let numbers = segment
+                .split { character in
+                    character == "," || character == " " || character == "\t"
+                }
+                .compactMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            guard numbers.count >= 2,
+                  let coordinate = coordinate(fromPair: [.number(numbers[0]), .number(numbers[1])]) else {
+                return nil
+            }
+
+            return interfaceTrackPoint(
+                coordinate: coordinate,
+                speedKmh: normalizedSpeed(numbers.count >= 4 ? numbers[3] : nil),
+                auxiliaryValue: numbers.count >= 3 ? numbers[2] : nil,
+                index: index
+            )
+        }
+
+        return points.count > 1 ? deduplicated(points) : []
     }
 
     private static func trackPoints(from value: JSONValue) -> [NinebotInterfaceTrackPoint] {
