@@ -1450,7 +1450,6 @@ private struct VehicleMotionScene: View {
         .onAppear {
             isAnimating = true
             updateRideTimer(for: mode)
-            updateParkedAnimalTimer(for: mode)
             // The vehicle API does not always include its latest GPS reading.
             // Fall back to the phone's one-shot location so weather data can
             // still be shown instead of permanently rendering placeholders.
@@ -1458,7 +1457,6 @@ private struct VehicleMotionScene: View {
         }
         .onChange(of: mode) { _, newMode in
             updateRideTimer(for: newMode)
-            updateParkedAnimalTimer(for: newMode)
         }
         .onDisappear { isAnimating = false }
         .task(id: weatherRequestID) {
