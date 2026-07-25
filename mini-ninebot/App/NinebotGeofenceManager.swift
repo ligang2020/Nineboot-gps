@@ -6,7 +6,7 @@ import Combine
 /// 电子围栏采用由地图缩放确定的半径。界面不提供固定数字档位，
 /// 但在数据层保留合理边界，避免过小范围造成误报或过大范围失去安全意义。
 struct NinebotGeofence: Codable, Hashable, Sendable {
-    static let supportedRadiusRange: ClosedRange<CLLocationDistance> = 100 ... 1_000
+    static let supportedRadiusRange: ClosedRange<CLLocationDistance> = 50 ... 20_000
 
     var vehicleSN: String
     var center: NinebotVehicleLocation
@@ -18,7 +18,7 @@ struct NinebotGeofence: Codable, Hashable, Sendable {
     init(
         vehicleSN: String,
         center: NinebotVehicleLocation,
-        radiusMeters: CLLocationDistance = 300,
+        radiusMeters: CLLocationDistance = 500,
         isEnabled: Bool = true,
         wasInside: Bool? = nil,
         updatedAt: Date = .now
@@ -42,7 +42,7 @@ struct NinebotGeofence: Codable, Hashable, Sendable {
         center = try container.decode(NinebotVehicleLocation.self, forKey: .center)
         let savedRadius = try container.decodeIfPresent(CLLocationDistance.self, forKey: .radiusMeters)
             ?? container.decodeIfPresent(CLLocationDistance.self, forKey: .radius)
-            ?? 300
+            ?? 500
         radiusMeters = savedRadius.clamped(to: Self.supportedRadiusRange)
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         wasInside = try container.decodeIfPresent(Bool.self, forKey: .wasInside)

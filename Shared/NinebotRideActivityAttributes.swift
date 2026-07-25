@@ -8,6 +8,8 @@ struct NinebotActiveRideSession: Codable, Hashable {
     var vehicleModel: String
     var startedAt: Date
     var latestSpeedKmh: Double?
+    /// 本次骑行中已观测到的最高速度，用于结束总结与通知。
+    var maximumSpeedKmh: Double?
     var distanceMeters: Double?
     /// 骑行开始时的总里程，用于计算本次骑行距离。
     var startedTotalMileageKm: Double?
@@ -19,6 +21,7 @@ struct NinebotActiveRideSession: Codable, Hashable {
         vehicleModel: String,
         startedAt: Date,
         latestSpeedKmh: Double? = nil,
+        maximumSpeedKmh: Double? = nil,
         distanceMeters: Double? = nil,
         startedTotalMileageKm: Double? = nil,
         updatedAt: Date = .now
@@ -28,6 +31,7 @@ struct NinebotActiveRideSession: Codable, Hashable {
         self.vehicleModel = vehicleModel
         self.startedAt = startedAt
         self.latestSpeedKmh = latestSpeedKmh
+        self.maximumSpeedKmh = maximumSpeedKmh
         self.distanceMeters = distanceMeters
         self.startedTotalMileageKm = startedTotalMileageKm
         self.updatedAt = updatedAt
@@ -95,7 +99,7 @@ struct NinebotBLETelemetry: Sendable, Hashable {
         receivedAt: Date = .now
     ) {
         self.vehicleSN = vehicleSN
-        self.speedKmh = speedKmh
+        self.speedKmh = max(speedKmh, 0)
         self.batteryPercent = batteryPercent
         self.remainingRangeKm = remainingRangeKm
         self.todayDistanceKm = todayDistanceKm
@@ -117,7 +121,8 @@ struct NinebotBLETelemetry: Sendable, Hashable {
 /// 不会为了时钟每秒唤醒 App。
 @available(iOS 18.0, *)
 struct NinebotRideActivityContentState: Codable, Hashable {
-    var speedKmh: Double
+    /// 已解析的车辆位置。优先使用服务端/地图反解地址，坐标仅作为兜底。
+    var vehicleLocationText: String
     var batteryPercent: Int
     var remainingRangeKm: Double
     var todayDistanceKm: Double
@@ -132,7 +137,7 @@ struct NinebotRideActivityContentState: Codable, Hashable {
     var updatedAt: Date
 
     init(
-        speedKmh: Double,
+        vehicleLocationText: String,
         batteryPercent: Int,
         remainingRangeKm: Double,
         todayDistanceKm: Double,
@@ -145,7 +150,8 @@ struct NinebotRideActivityContentState: Codable, Hashable {
         isCharging: Bool,
         updatedAt: Date = .now
     ) {
-        self.speedKmh = max(speedKmh, 0)
+        let trimmedLocation = vehicleLocationText.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.vehicleLocationText = trimmedLocation.isEmpty ? "正在获取车辆定位" : trimmedLocation
         self.batteryPercent = min(max(batteryPercent, 0), 100)
         self.remainingRangeKm = max(remainingRangeKm, 0)
         self.todayDistanceKm = max(todayDistanceKm, 0)
@@ -186,7 +192,7 @@ extension NinebotRideActivityAttributes {
 extension NinebotRideActivityContentState {
     /// Xcode Canvas / Widget Preview 专用 Mock 数据。
     static let preview = NinebotRideActivityContentState(
-        speedKmh: 24,
+        vehicleLocationText: "上海市黄浦区中山东一路",
         batteryPercent: 68,
         remainingRangeKm: 31,
         todayDistanceKm: 12.6,

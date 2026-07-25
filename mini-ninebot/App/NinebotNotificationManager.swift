@@ -213,7 +213,7 @@ final class NinebotNotificationManager: NSObject, ObservableObject, UNUserNotifi
         send(
             category: .rideCompleted,
             title: "🏁 骑行结束",
-            body: "本次骑行：\(String(format: "%.1f km", ride.distanceKilometers))\n\(ride.duration.notificationRideDurationText)\n平均速度：\(String(format: "%.0f km/h", ride.averageSpeedKmh))",
+            body: "本次骑行：\(String(format: "%.1f km", ride.distanceKilometers))\n\(ride.duration.notificationRideDurationText)\n最高速度：\(String(format: "%.0f km/h", ride.maxSpeedKmh))",
             vehicleSN: ride.vehicleSN,
             destination: .vehicleStatus,
             dedupeInterval: 1

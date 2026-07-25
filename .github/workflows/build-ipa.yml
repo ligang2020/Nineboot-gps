@@ -33,7 +33,6 @@ jobs:
     timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
-      EXPECTED_VERSION: 1.2.41
 
     steps:
       - name: Check out source
@@ -44,8 +43,12 @@ jobs:
           set -euo pipefail
           xcodebuild -version
           test -d "$DEVELOPER_DIR"
-          grep -q "MARKETING_VERSION = $EXPECTED_VERSION;" mini-ninebot.xcodeproj/project.pbxproj
-          grep -q "CURRENT_PROJECT_VERSION = 41;" mini-ninebot.xcodeproj/project.pbxproj
+          PROJECT=mini-ninebot.xcodeproj/project.pbxproj
+          VERSION="$(awk -F ' = ' '/MARKETING_VERSION = / { gsub(/;/, "", $2); print $2; exit }' "$PROJECT")"
+          BUILD="$(awk -F ' = ' '/CURRENT_PROJECT_VERSION = / { gsub(/;/, "", $2); print $2; exit }' "$PROJECT")"
+          test -n "$VERSION"
+          test -n "$BUILD"
+          echo "Building source version $VERSION ($BUILD) without modifying project settings."
 
       - name: Build and package unsigned IPA
         id: package

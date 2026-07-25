@@ -83,7 +83,7 @@ private actor NinebotRideLiveActivityController {
         }
 
         let state = NinebotRideActivityContentState(
-            speedKmh: telemetry.speedKmh,
+            vehicleLocationText: vehicleLocationText(from: telemetry.security.location),
             batteryPercent: telemetry.batteryPercent,
             remainingRangeKm: telemetry.remainingRangeKm,
             todayDistanceKm: telemetry.todayDistanceKm,
@@ -171,7 +171,7 @@ private actor NinebotRideLiveActivityController {
         from previous: NinebotRideActivityContentState,
         to next: NinebotRideActivityContentState
     ) -> Bool {
-        Int(previous.speedKmh.rounded()) != Int(next.speedKmh.rounded())
+        previous.vehicleLocationText != next.vehicleLocationText
             || previous.batteryPercent != next.batteryPercent
             || Int(previous.remainingRangeKm.rounded()) != Int(next.remainingRangeKm.rounded())
             || abs(previous.todayDistanceKm - next.todayDistanceKm) >= 0.01
@@ -194,7 +194,7 @@ private actor NinebotRideLiveActivityController {
     ) -> NinebotRideActivityContentState {
         let state = snapshot.state
         return NinebotRideActivityContentState(
-            speedKmh: liveSpeedKmh(from: state) ?? session.latestSpeedKmh ?? 0,
+            vehicleLocationText: vehicleLocationText(from: state),
             batteryPercent: state.battery ?? 0,
             remainingRangeKm: state.endurance ?? state.aiEstimatedMileage ?? 0,
             todayDistanceKm: todayDistanceKm(from: state),
@@ -217,6 +217,23 @@ private actor NinebotRideLiveActivityController {
             }
         }
         return nil
+    }
+
+    private func vehicleLocationText(from state: NinebotVehicleState) -> String {
+        let description = state.locationDescription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !description.isEmpty { return description }
+        guard let latitude = state.latitude,
+              let longitude = state.longitude,
+              (-90...90).contains(latitude),
+              (-180...180).contains(longitude) else {
+            return "正在获取车辆定位"
+        }
+        return String(format: "%.4f, %.4f", latitude, longitude)
+    }
+
+    private func vehicleLocationText(from location: NinebotVehicleLocation?) -> String {
+        guard let location, location.isValid else { return "正在获取车辆定位" }
+        return String(format: "%.4f, %.4f", location.latitude, location.longitude)
     }
 
     private func todayDistanceKm(from state: NinebotVehicleState) -> Double {

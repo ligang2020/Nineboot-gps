@@ -669,7 +669,8 @@ final class NinebotViewModel: ObservableObject {
     func endRideSession(vehicleSN: String?) {
         let resolvedVehicleSN = vehicleSN ?? activeRideSession?.vehicleSN
         manuallyEndedRideVehicleSN = resolvedVehicleSN
-        if activeRideSession?.vehicleSN == resolvedVehicleSN {
+        if let session = activeRideSession, session.vehicleSN == resolvedVehicleSN {
+            finishRideSession(session, endedAt: .now, telemetry: latestBLETelemetry)
             activeRideSession = nil
             store.clearActiveRideSession()
         }
@@ -692,7 +693,8 @@ final class NinebotViewModel: ObservableObject {
         NinebotAlarmManager.shared.ingest(telemetry, vehicleName: resolvedVehicleName)
 
         guard telemetry.isRiding, !telemetry.isCharging else {
-            if activeRideSession?.vehicleSN == telemetry.vehicleSN {
+            if let session = activeRideSession, session.vehicleSN == telemetry.vehicleSN {
+                finishRideSession(session, endedAt: telemetry.receivedAt, telemetry: telemetry)
                 store.clearActiveRideSession()
                 activeRideSession = nil
             }
@@ -722,6 +724,7 @@ final class NinebotViewModel: ObservableObject {
             vehicleModel: vehicleModel,
             startedAt: startedAt,
             latestSpeedKmh: telemetry.speedKmh,
+            maximumSpeedKmh: max(previous?.maximumSpeedKmh ?? 0, telemetry.speedKmh),
             distanceMeters: telemetry.rideDistanceKm * 1_000,
             startedTotalMileageKm: previous?.startedTotalMileageKm ?? max(telemetry.totalDistanceKm - telemetry.rideDistanceKm, 0),
             updatedAt: telemetry.receivedAt
@@ -766,7 +769,8 @@ final class NinebotViewModel: ObservableObject {
 
         guard let snapshot = dashboard.primaryVehicle,
               isRiding(snapshot) || freshBLETelemetry?.vehicleSN == snapshot.vehicle.sn else {
-            if activeRideSession != nil {
+            if let session = activeRideSession {
+                finishRideSession(session, endedAt: .now, telemetry: latestBLETelemetry)
                 store.clearActiveRideSession()
                 activeRideSession = nil
             }
@@ -790,6 +794,10 @@ final class NinebotViewModel: ObservableObject {
             vehicleModel: snapshot.vehicle.model,
             startedAt: startedAt,
             latestSpeedKmh: freshBLETelemetry?.speedKmh ?? liveSpeedKmh(from: snapshot.state) ?? previous?.latestSpeedKmh,
+            maximumSpeedKmh: max(
+                previous?.maximumSpeedKmh ?? 0,
+                freshBLETelemetry?.speedKmh ?? liveSpeedKmh(from: snapshot.state) ?? 0
+            ),
             distanceMeters: freshBLETelemetry.map { $0.rideDistanceKm * 1_000 } ?? liveDistanceMeters ?? (isSameVehicle ? previous?.distanceMeters : nil),
             startedTotalMileageKm: startedTotalMileageKm,
             updatedAt: freshBLETelemetry?.receivedAt ?? snapshot.state.updatedAt
@@ -800,6 +808,82 @@ final class NinebotViewModel: ObservableObject {
             NinebotRideLiveActivityManager.sync(session: session, telemetry: freshBLETelemetry)
         } else {
             NinebotRideLiveActivityManager.sync(session: session, snapshot: snapshot)
+        }
+    }
+
+    /// 将自动骑行会话转换为与“记录行程”相同的数据模型。车辆定位轨迹从
+    /// `NinebotVehicleLocationManager` 读取并随记录持久化，详情页因此可离线回放。
+    private func finishRideSession(
+        _ session: NinebotActiveRideSession,
+        endedAt: Date,
+        telemetry: NinebotBLETelemetry?
+    ) {
+        let telemetry = telemetry?.vehicleSN == session.vehicleSN ? telemetry : nil
+        let start = session.startedAt
+        let end = max(endedAt, start)
+        let recordingID = "live-\(session.vehicleSN)-\(Int(start.timeIntervalSince1970))"
+        let alreadySaved = store.loadRecordedRides().contains { $0.id == recordingID }
+
+        let locations = (NinebotVehicleLocationManager.shared.tracks[session.vehicleSN] ?? [])
+            .filter { $0.isValid && $0.updatedAt >= start.addingTimeInterval(-10) && $0.updatedAt <= end.addingTimeInterval(10) }
+            .sorted { $0.updatedAt < $1.updatedAt }
+        let points = locations.enumerated().map { index, location in
+            let previous = index > 0 ? locations[index - 1] : nil
+            let speed: Double
+            if let previous {
+                let elapsed = max(location.updatedAt.timeIntervalSince(previous.updatedAt), 1)
+                speed = min(NinebotVehicleLocationManager.distanceMeters(previous, location) / elapsed * 3.6, 180)
+            } else {
+                speed = min(max(session.latestSpeedKmh ?? 0, 0), 180)
+            }
+            return NinebotRideTrackPoint(
+                id: "\(recordingID)-\(Int(location.updatedAt.timeIntervalSince1970))-\(index)",
+                date: location.updatedAt,
+                latitude: location.latitude,
+                longitude: location.longitude,
+                speedKmh: speed,
+                accelerationG: 0,
+                horizontalAccuracy: location.horizontalAccuracy
+            )
+        }
+        let gpsDistanceMeters = zip(locations, locations.dropFirst()).reduce(0.0) { result, pair in
+            result + NinebotVehicleLocationManager.distanceMeters(pair.0, pair.1)
+        }
+        let distanceMeters = max(
+            session.distanceMeters ?? 0,
+            telemetry.map { $0.rideDistanceKm * 1_000 } ?? 0,
+            gpsDistanceMeters
+        )
+        let duration = max(end.timeIntervalSince(start), 0)
+        let averageSpeedKmh = duration > 0 ? distanceMeters / duration * 3.6 : 0
+        let maximumSpeedKmh = max(
+            session.maximumSpeedKmh ?? 0,
+            telemetry?.speedKmh ?? 0,
+            points.map(\.speedKmh).max() ?? 0
+        )
+        let recordedRide = NinebotRecordedRide(
+            id: recordingID,
+            vehicleSN: session.vehicleSN,
+            startedAt: start,
+            endedAt: end,
+            distanceMeters: distanceMeters,
+            maxSpeedKmh: maximumSpeedKmh,
+            averageSpeedKmh: averageSpeedKmh,
+            maxAccelerationG: 0,
+            points: points
+        )
+        store.upsertRecordedRide(recordedRide)
+        recordedRides = store.loadRecordedRides()
+
+        let state = dashboard.vehicles.first { $0.vehicle.sn == session.vehicleSN }?.state
+        let summary = RideRecord(
+            recordedRide: recordedRide,
+            endBatteryPercent: telemetry?.batteryPercent ?? state?.battery,
+            remainingRangeKm: telemetry?.remainingRangeKm ?? state?.endurance ?? state?.aiEstimatedMileage
+        )
+        RideHistoryManager.shared.upsert(summary)
+        if !alreadySaved {
+            NinebotNotificationManager.shared.sendRideCompletedNotification(for: summary)
         }
     }
 

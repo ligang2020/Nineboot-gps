@@ -530,7 +530,7 @@ struct NinebotRideLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    RideIslandSpeed(state: context.state)
+                    RideIslandVehicleLocation(state: context.state)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     RideBatteryLabel(percent: context.state.batteryPercent, compact: false)
@@ -539,25 +539,22 @@ struct NinebotRideLiveActivity: Widget {
                     RideIslandSummary(attributes: context.attributes, state: context.state)
                 }
             } compactLeading: {
-                // Compact Leading：仅保留车辆语义，不与其他信息争夺宽度。
-                Image(systemName: "scooter")
+                Image(systemName: "location.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.green)
+                    .accessibilityLabel("车辆位置")
             } compactTrailing: {
-                // Compact Trailing：速度是骑行中的最高优先级信息。
-                HStack(spacing: 2) {
-                    Text(rideSpeedValue(context.state.speedKmh))
-                        .contentTransition(.numericText(value: context.state.speedKmh))
-                    Text("km/h")
-                        .font(.caption2)
-                }
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .lineLimit(1)
+                Text(rideCompactLocationText(context.state.vehicleLocationText))
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .frame(maxWidth: 74, alignment: .trailing)
+                    .accessibilityLabel("车辆位置：\(context.state.vehicleLocationText)")
             } minimal: {
-                // Minimal：只显示速度数字，适合与其他 Live Activity 并存。
-                Text(rideSpeedValue(context.state.speedKmh))
-                    .contentTransition(.numericText(value: context.state.speedKmh))
-                    .font(.caption.monospacedDigit().weight(.bold))
+                Image(systemName: "location.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.green)
+                    .accessibilityLabel("车辆位置")
             }
             .keylineTint(.green)
         }
@@ -573,44 +570,45 @@ private struct RideLockScreenLiveActivityView: View {
     var state: NinebotRideActivityContentState
 
     var body: some View {
-        // 锁屏实际可用高度会因设备、锁屏控件和系统边距而变化；保持紧凑行高，
-        // 避免「今日骑行」和「骑行时间」在较小的实时活动容器中被裁切。
+        // 位置文本在不同锁屏容器的可用宽度差异很大；控制为两行并保留缩放余量，
+        // 防止长地址挤压下方的骑行数据或被实时活动容器裁切。
         VStack(spacing: 5) {
-            // 第一行：速度为最强视觉锚点。
-            HStack(alignment: .lastTextBaseline, spacing: 5) {
-                Text(rideSpeedValue(state.speedKmh))
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText(value: state.speedKmh))
-                    .minimumScaleFactor(0.72)
-                    .accessibilityLabel("当前速度 \(rideSpeedValue(state.speedKmh)) 公里每小时")
-                Text("km/h")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 7)
-            }
-            .frame(maxWidth: .infinity)
-            .animation(.smooth(duration: 0.35), value: state.speedKmh)
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "location.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.green)
+                    .frame(width: 20, alignment: .center)
+                    .padding(.top, 2)
 
-            // 第二行：模式是骑行语义，使用唯一的系统绿色 Capsule。
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("车辆位置")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Text(state.vehicleLocationText)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.72)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("车辆位置：\(state.vehicleLocationText)")
+
             RideModeBadge(mode: state.mode)
-                .transition(.opacity)
-                .animation(.easeInOut(duration: 0.2), value: state.mode)
 
             Divider()
 
-            // 第三、四行：值与图标保持单行，避免窄高 Live Activity 裁切第二行内容。
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 7) {
-                RideMetricCell(title: "车辆电量", value: "\(state.batteryPercent)%", symbol: RideActivityTheme.batterySymbol(for: state.batteryPercent), tint: RideActivityTheme.batteryColor(for: state.batteryPercent))
-                RideMetricCell(title: "剩余续航", value: rideDistanceText(state.remainingRangeKm), symbol: "location.fill", tint: .secondary)
-                RideMetricCell(title: "骑行公里", value: rideDistanceText(state.rideDistanceKm), symbol: "bicycle", tint: .secondary)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], alignment: .leading, spacing: 5) {
+                RideMetricCell(title: "电量", value: "\(state.batteryPercent)%", symbol: RideActivityTheme.batterySymbol(for: state.batteryPercent), tint: RideActivityTheme.batteryColor(for: state.batteryPercent))
+                RideMetricCell(title: "续航", value: rideDistanceText(state.remainingRangeKm), symbol: "road.lanes", tint: .secondary)
+                RideMetricCell(title: "本次骑行", value: rideDistanceText(state.rideDistanceKm), symbol: "bicycle", tint: .secondary)
                 RideTimerMetricCell(startedAt: attributes.startedAt)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity)
-        .widgetURL(URL(string: "ninebot://ride"))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 }
 
@@ -688,20 +686,28 @@ private struct RideTimerMetricCell: View {
 }
 
 @available(iOS 18.0, *)
-private struct RideIslandSpeed: View {
+private struct RideIslandVehicleLocation: View {
     var state: NinebotRideActivityContentState
 
     var body: some View {
-        HStack(alignment: .lastTextBaseline, spacing: 3) {
-            Text(rideSpeedValue(state.speedKmh))
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .contentTransition(.numericText(value: state.speedKmh))
-            Text("km/h")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "location.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.green)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("车辆位置")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(state.vehicleLocationText)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
+            }
         }
-        .animation(.smooth(duration: 0.35), value: state.speedKmh)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("车辆位置：\(state.vehicleLocationText)")
     }
 }
 
@@ -828,16 +834,18 @@ private enum RideActivityTheme {
 }
 
 @available(iOS 18.0, *)
-private func rideSpeedValue(_ speed: Double) -> String {
-    String(Int(max(speed, 0).rounded()))
-}
-
-@available(iOS 18.0, *)
 private func rideDistanceText(_ kilometers: Double) -> String {
     if kilometers < 1 {
         return "\(Int((kilometers * 1_000).rounded())) m"
     }
     return String(format: "%.0f km", kilometers)
+}
+
+@available(iOS 18.0, *)
+private func rideCompactLocationText(_ location: String) -> String {
+    let text = location.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return "定位中" }
+    return String(text.prefix(10))
 }
 
 /// 车辆触发安全事件时展示的独立 Live Activity。

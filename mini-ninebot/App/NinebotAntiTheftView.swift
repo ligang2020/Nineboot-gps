@@ -135,6 +135,17 @@ struct NinebotAntiTheftView: View {
                 }
                 .disabled(vehicleSN == nil || findVehicleManager.findingVehicleSN != nil)
 
+                if let status = findVehicleManager.lastStatusMessage {
+                    Label(status, systemImage: "checkmark.circle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.green)
+                }
+                if let error = findVehicleManager.lastErrorMessage {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+
                 if let until = findVehicleManager.findingUntil {
                     Button(role: .destructive) {
                         Task { await findVehicleManager.stop() }
@@ -316,7 +327,7 @@ private struct NinebotGeofenceEditorSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Map(position: $cameraPosition, interactionModes: [.zoom]) {
+                Map(position: $cameraPosition, interactionModes: [.zoom, .pan]) {
                     MapCircle(center: displayCoordinate, radius: draftRadiusMeters)
                         .foregroundStyle(.green.opacity(0.14))
                         .stroke(.green, lineWidth: 2)
@@ -332,6 +343,8 @@ private struct NinebotGeofenceEditorSheet: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("双指缩放地图以调整安全区域", systemImage: "arrow.up.left.and.arrow.down.right")
                         .font(.subheadline.weight(.semibold))
+                    Text("当前半径：\(Self.radiusText(draftRadiusMeters)) · 可设置 50 米至 20 公里")
+                        .font(.footnote.weight(.semibold))
                     Text("车辆进入或离开此区域时，App 会发送通知。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -373,11 +386,15 @@ private struct NinebotGeofenceEditorSheet: View {
         return (center.distance(from: topEdge) * 0.72).clamped(to: NinebotGeofence.supportedRadiusRange)
     }
 
+    private static func radiusText(_ meters: CLLocationDistance) -> String {
+        meters >= 1_000 ? String(format: "%.1f km", meters / 1_000) : "\(Int(meters.rounded())) 米"
+    }
+
     private static func region(center: CLLocationCoordinate2D, radiusMeters: CLLocationDistance) -> MKCoordinateRegion {
         // 圆形围栏约占可见区域七成，方便用户在缩放时始终看清边界。
         let halfSpanMeters = radiusMeters / 0.72
-        let latitudeDelta = max(0.003, halfSpanMeters * 2 / 111_000)
-        let longitudeDelta = max(0.003, latitudeDelta / max(0.25, abs(cos(center.latitude * .pi / 180))))
+        let latitudeDelta = max(0.001, halfSpanMeters * 2 / 111_000)
+        let longitudeDelta = max(0.001, latitudeDelta / max(0.25, abs(cos(center.latitude * .pi / 180))))
         return MKCoordinateRegion(
             center: center,
             span: MKCoordinateSpan(latitudeDelta: latitudeDelta, longitudeDelta: longitudeDelta)

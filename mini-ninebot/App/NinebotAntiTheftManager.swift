@@ -193,18 +193,32 @@ final class NinebotFindVehicleManager: ObservableObject {
 
     @Published private(set) var findingVehicleSN: String?
     @Published private(set) var findingUntil: Date?
+    @Published private(set) var lastStatusMessage: String?
+    @Published private(set) var lastErrorMessage: String?
     weak var commandSender: NinebotAntiTheftCommandSending?
     private var automaticStopTask: Task<Void, Never>?
 
     func start(vehicleSN: String) async {
         guard findingVehicleSN == nil else { return }
-        findingVehicleSN = vehicleSN
-        findingUntil = Date().addingTimeInterval(30)
+        lastStatusMessage = nil
+        lastErrorMessage = nil
         do {
-            try await commandSender?.sendFindVehicleCommand(vehicleSN: vehicleSN, duration: 30)
+            // BLE 控制器可用时优先使用车端 30 秒闪灯/鸣笛命令；否则一定要走
+            // 已登录代理的铃铛接口，不能因可选调用静默成功而让按钮毫无反应。
+            if let commandSender {
+                try await commandSender.sendFindVehicleCommand(vehicleSN: vehicleSN, duration: 30)
+            } else if let configuration = NinebotSharedStore().loadConfiguration(), configuration.isUsable {
+                _ = try await NinebotProxyClient(configuration: configuration).ringBell(sn: vehicleSN)
+            } else {
+                throw NinebotInputError.missingProxy
+            }
+            findingVehicleSN = vehicleSN
+            findingUntil = Date().addingTimeInterval(30)
+            lastStatusMessage = "寻车指令已发送，车辆将闪灯并鸣笛 30 秒。"
         } catch {
             findingVehicleSN = nil
             findingUntil = nil
+            lastErrorMessage = "寻找车辆失败：\(error.localizedDescription)"
             return
         }
         automaticStopTask?.cancel()
