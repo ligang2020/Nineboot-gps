@@ -872,6 +872,10 @@ struct NinebotRideTrackPoint: Codable, Equatable, Identifiable {
     var horizontalAccuracy: Double?
     /// CoreLocation 海拔；可为空以兼容旧版已经保存的 GPS 记录。
     var altitude: Double?
+    /// CoreLocation 航向（0...359°）；旧版记录解码时为 nil。
+    var course: Double?
+    /// CoreLocation 垂直精度（米）；旧版记录解码时为 nil。
+    var verticalAccuracy: Double?
 
     init(
         id: String = UUID().uuidString,
@@ -881,7 +885,9 @@ struct NinebotRideTrackPoint: Codable, Equatable, Identifiable {
         speedKmh: Double,
         accelerationG: Double,
         horizontalAccuracy: Double?,
-        altitude: Double? = nil
+        altitude: Double? = nil,
+        course: Double? = nil,
+        verticalAccuracy: Double? = nil
     ) {
         self.id = id
         self.date = date
@@ -891,6 +897,8 @@ struct NinebotRideTrackPoint: Codable, Equatable, Identifiable {
         self.accelerationG = accelerationG
         self.horizontalAccuracy = horizontalAccuracy
         self.altitude = altitude
+        self.course = course
+        self.verticalAccuracy = verticalAccuracy
     }
 }
 

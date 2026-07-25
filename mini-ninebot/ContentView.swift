@@ -70,6 +70,9 @@ struct ContentView: View {
             .tag(NinebotRootTab.settings)
         }
         .tint(Color(red: 0.13, green: 0.82, blue: 0.28))
+        .onReceive(NotificationCenter.default.publisher(for: .ninebotOfflineRideSaved)) { _ in
+            model.reloadLocalRideRecords()
+        }
         .onChange(of: notificationRouter.routeToken) { _, _ in
             switch notificationRouter.destination {
             case .map, .location, .vehicleStatus:

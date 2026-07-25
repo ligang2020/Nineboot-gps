@@ -582,6 +582,11 @@ final class NinebotViewModel: ObservableObject {
         statusMessage = "骑行记录已保存"
     }
 
+    /// 供本地离线自动记录器在后台保存后刷新“行程”页；不需要任何网络请求。
+    func reloadLocalRideRecords() {
+        recordedRides = store.loadRecordedRides()
+    }
+
     func deleteRecordedRide(id: String) {
         store.deleteRecordedRide(id: id)
         recordedRides = store.loadRecordedRides()

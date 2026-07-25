@@ -60,7 +60,13 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>用于在用户启用电子围栏后，辅助守护车辆安全区域；车辆实际定位来自车辆 GPS。</string>
+	<string>用于在后台自动检测骑行、记录本地离线轨迹，并在骑行结束后生成路线回放。</string>
+	<key>NSMotionUsageDescription</key>
+	<string>用于低功耗识别骑行或静止状态，减少后台定位耗电。</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.ninebot.live.offlineRideMaintenance</string>
+	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>用于连接车辆、接收车辆安全状态和发送寻车指令。</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>

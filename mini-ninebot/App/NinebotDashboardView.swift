@@ -860,11 +860,9 @@ struct NinebotTripsTabView: View {
                 recordedRides: model.recordedRides(for: snapshot.vehicle.sn)
             )
         } else {
-            EmptyDashboardView(hasConfiguration: model.hasConfiguration)
-                .padding(.horizontal, 16)
+            // 没有云端账号/车辆快照时仍可浏览完全离线的 iPhone 本地轨迹与回放。
+            OfflineRideHistoryView()
                 .background(Color.teslaPageBackground.ignoresSafeArea())
-                .navigationTitle("行程")
-                .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
