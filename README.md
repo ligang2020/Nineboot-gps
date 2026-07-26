@@ -1,12 +1,12 @@
 # NineBot+ Live Ride
 
-NineBot+ Live Ride is a personal iOS app for viewing and managing Ninebot vehicle status. It includes refined vehicle cards, Home Screen / Lock Screen widgets, Siri shortcuts, local ride recording, and an ActivityKit Live Activity designed for the Dynamic Island while riding.
+NineBot+ Live Ride is a personal iOS app for viewing and managing Ninebot vehicle status. It includes refined vehicle cards, Home Screen / Lock Screen widgets, Siri shortcuts, official trip-detail route playback, and an ActivityKit Live Activity designed for the Dynamic Island while riding.
 
 This project is intended for personal builds. The bundled GitHub Action produces an **unsigned IPA**; it is not App Store or TestFlight distribution by itself.
 
 ## What is included
 
-- Vehicle dashboard: battery, estimated range, locking / power status, location, trip history, mileage trends, and local ride recording.
+- Vehicle dashboard: battery, estimated range, locking / power status, location, trip history, mileage trends, and start-to-finish route playback from official trip-detail API points.
 - Home Screen and Lock Screen widgets; each widget can be configured for a particular vehicle.
 - Dynamic Island / Live Activity for the active selected vehicle, including the Apple Watch Smart Stack charging view on supported systems.
 - 3D charging energy animation in the app and vehicle-alarm notifications with an actionable “查看车辆” button.
@@ -96,4 +96,4 @@ Download the artifact from the GitHub Actions run, or open the GitHub Release fo
 
 ## Privacy
 
-The app stores configuration, login state, vehicle snapshots, cached addresses, trip records, and local ride records on the device. Do not commit personal tokens, account data, signing certificates, provisioning profiles, or generated build artifacts to this repository.
+The app stores configuration, login state, vehicle snapshots, cached addresses, and API trip records on the device. It does not create background ride-route recordings or retain local GPS ride trajectories. Do not commit personal tokens, account data, signing certificates, provisioning profiles, or generated build artifacts to this repository.

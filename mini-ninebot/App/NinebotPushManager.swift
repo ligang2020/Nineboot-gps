@@ -50,8 +50,6 @@ final class NinebotPushManager: NSObject, UIApplicationDelegate, UNUserNotificat
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         NinebotNotificationManager.shared.configure()
-        // 注册 BGProcessingTask 必须发生在应用启动阶段；定位服务会在授权后自行进入低功耗监听。
-        RideRecorder.shared.start()
         Task { await requestAuthorizationOnLaunchAndRegister() }
         return true
     }

@@ -854,15 +854,14 @@ struct NinebotTripsTabView: View {
 
     var body: some View {
         if let snapshot = model.dashboard.primaryVehicle {
-            NinebotTripsView(
-                model: model,
-                snapshot: snapshot,
-                recordedRides: model.recordedRides(for: snapshot.vehicle.sn)
-            )
+            NinebotTripsView(model: model, snapshot: snapshot)
         } else {
-            // 没有云端账号/车辆快照时仍可浏览完全离线的 iPhone 本地轨迹与回放。
-            OfflineRideHistoryView()
-                .background(Color.teslaPageBackground.ignoresSafeArea())
+            ContentUnavailableView(
+                "暂无接口行程",
+                systemImage: "road.lanes",
+                description: Text("登录并刷新车辆数据后可查看服务端行程和路线回放。")
+            )
+            .background(Color.teslaPageBackground.ignoresSafeArea())
         }
     }
 }
@@ -870,7 +869,6 @@ struct NinebotTripsTabView: View {
 private struct NinebotTripsView: View {
     @ObservedObject var model: NinebotViewModel
     var snapshot: NinebotVehicleSnapshot
-    var recordedRides: [NinebotRecordedRide] = []
     @State private var selectedMonth = tripMonthString(for: Date())
 
     var body: some View {
@@ -878,7 +876,7 @@ private struct NinebotTripsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 TripHeroPanel(snapshot: snapshot)
                 NavigationLink {
-                    TripTrendView(snapshot: snapshot, recordedRides: recordedRides)
+                    TripTrendView(snapshot: snapshot)
                 } label: {
                     TripTrendEntryCard(snapshot: snapshot)
                 }
@@ -900,7 +898,6 @@ private struct NinebotTripsView: View {
                 RideListSection(
                     model: model,
                     records: filteredRecords,
-                    recordedRides: recordedRides,
                     vehicleSN: snapshot.vehicle.sn,
                     selectedMonth: selectedMonth
                 )
@@ -914,7 +911,6 @@ private struct NinebotTripsView: View {
 
     private var monthOptions: [String] {
         var months = Set(snapshot.state.rides.compactMap(tripMonthString(for:)))
-        months.formUnion(recordedRides.map { tripMonthString(for: $0.startedAt) })
         months.insert(tripMonthString(for: Date()))
         months.insert(selectedMonth)
         return months.sorted(by: >)
@@ -4447,10 +4443,9 @@ private struct TripTrendEntryCard: View {
 
 private struct TripTrendView: View {
     var snapshot: NinebotVehicleSnapshot
-    var recordedRides: [NinebotRecordedRide]
 
     private var analysis: TripTrendAnalysis {
-        TripTrendAnalysis(snapshot: snapshot, recordedRides: recordedRides)
+        TripTrendAnalysis(snapshot: snapshot)
     }
 
     var body: some View {
@@ -4461,10 +4456,6 @@ private struct TripTrendView: View {
                 TripTrendDailyCard(records: analysis.dailyRecords)
                 TripTrendRideCard(analysis: analysis)
                 TripTrendInsightCard(analysis: analysis)
-
-                if !recordedRides.isEmpty {
-                    TripTrendRecordedCard(records: recordedRides)
-                }
             }
             .padding(16)
             .padding(.bottom, 12)
@@ -4738,47 +4729,6 @@ private struct TripTrendInsightCard: View {
     }
 }
 
-private struct TripTrendRecordedCard: View {
-    var records: [NinebotRecordedRide]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("本地记录")
-                        .font(.headline)
-                        .foregroundStyle(Color.teslaPrimaryText)
-                    Text("记录页生成的轨迹统计")
-                        .font(.caption)
-                        .foregroundStyle(Color.teslaSecondaryText)
-                }
-
-                Spacer()
-
-                Text("\(records.count) 次")
-                    .font(.headline.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(Color.teslaGreen)
-            }
-
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 10),
-                    GridItem(.flexible(), spacing: 10)
-                ],
-                spacing: 10
-            ) {
-                BasicInfoTile(title: "本地总里程", value: formatDistance(records.reduce(0) { $0 + $1.distanceKilometers }), systemImage: "point.3.connected.trianglepath.dotted")
-                BasicInfoTile(title: "本地极速", value: formatSpeed(records.map(\.maxSpeedKmh).max()), systemImage: "gauge.with.dots.needle.67percent")
-                BasicInfoTile(title: "最大 G", value: formatAccelerationG(records.map(\.maxAccelerationG).max()), systemImage: "bolt.circle.fill")
-                BasicInfoTile(title: "已关联", value: "\(records.filter { $0.associatedRideID != nil }.count) 次", systemImage: "link")
-            }
-        }
-        .padding(16)
-        .background(Color.teslaCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 8)
-    }
-}
 
 private struct TrendBarValue: Identifiable {
     var id: String
@@ -4879,7 +4829,6 @@ private struct EmptyTrendState: View {
 
 private struct TripTrendAnalysis {
     var snapshot: NinebotVehicleSnapshot
-    var recordedRides: [NinebotRecordedRide]
 
     var dailyRecords: [NinebotDailyMileageRecord] {
         snapshot.state.dailyMileages.sorted {
@@ -4970,10 +4919,6 @@ private struct TripTrendAnalysis {
 
         if snapshot.state.observedRangeSampleCount < 5 {
             result.append("有效续航样本还不多，多记录几次后准确率会更稳定。")
-        }
-
-        if recordedRides.contains(where: { $0.associatedRideID == nil }) {
-            result.append("有本地记录尚未关联接口行程，关联后趋势会更完整。")
         }
 
         if result.isEmpty {
@@ -5836,7 +5781,6 @@ private struct DetailRow: View {
 private struct RideListSection: View {
     @ObservedObject var model: NinebotViewModel
     var records: [NinebotRideRecord]
-    var recordedRides: [NinebotRecordedRide] = []
     var vehicleSN: String?
     var selectedMonth: String
     @State private var visibleLimit = 30
@@ -5848,19 +5792,19 @@ private struct RideListSection: View {
                     Text("行程列表")
                         .font(.headline)
                         .foregroundStyle(Color.teslaPrimaryText)
-                    Text("点击行程查看详情和本地轨迹")
+                    Text("点击行程查看接口详情与路线回放")
                         .font(.caption)
                         .foregroundStyle(Color.teslaSecondaryText)
                 }
 
                 Spacer()
 
-                Text("\(totalRecordCount)")
+                Text("\(records.count)")
                     .font(.title3.monospacedDigit().weight(.semibold))
                     .foregroundStyle(Color.teslaSecondaryText)
             }
 
-            if records.isEmpty && standaloneRecordedRides.isEmpty {
+            if records.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("\(tripMonthDisplayName(selectedMonth)) 暂无行程")
                         .font(.subheadline.weight(.semibold))
@@ -5881,128 +5825,21 @@ private struct RideListSection: View {
                 VStack(spacing: 10) {
                     ForEach(Array(records.prefix(visibleLimit).enumerated()), id: \.element.id) { index, record in
                         NavigationLink {
-                            NinebotRideDetailView(
-                                model: model,
-                                vehicleSN: vehicleSN,
-                                record: record,
-                                localRecord: associatedRecord(for: record)
-                            )
+                            NinebotRideDetailView(model: model, vehicleSN: vehicleSN, record: record)
                         } label: {
-                            RideRecordRow(
-                                record: record,
-                                index: index
-                            )
+                            RideRecordRow(record: record, index: index)
                         }
                         .buttonStyle(.plain)
                     }
 
-                    ForEach(standaloneRecordedRides.prefix(localVisibleLimit)) { ride in
-                        NavigationLink {
-                            RideSummaryView(ride: RideRecord(recordedRide: ride))
-                        } label: {
-                            LocalRecordedRideRow(record: ride)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    if totalRecordCount > visibleLimit {
-                        Button {
+                    if records.count > visibleLimit {
+                        Button("显示更多") {
                             visibleLimit += 30
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "chevron.down.circle.fill")
-                                Text("显示更多")
-                                Text("\(totalRecordCount - visibleLimit)")
-                                    .monospacedDigit()
-                            }
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.teslaGreen)
-                        .background(Color.teslaCardBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color.teslaHairline, lineWidth: 1)
-                        }
+                        .buttonStyle(.bordered)
                     }
                 }
             }
-        }
-        .onChange(of: selectedMonth) { _ in
-            visibleLimit = 30
-        }
-    }
-
-    private var standaloneRecordedRides: [NinebotRecordedRide] {
-        recordedRides
-            .filter { $0.associatedRideID == nil && tripMonthString(for: $0.startedAt) == selectedMonth }
-            .sorted { $0.startedAt > $1.startedAt }
-    }
-
-    private var totalRecordCount: Int {
-        records.count + standaloneRecordedRides.count
-    }
-
-    private var localVisibleLimit: Int {
-        max(0, visibleLimit - records.count)
-    }
-
-    private func associatedRecord(for record: NinebotRideRecord) -> NinebotRecordedRide? {
-        recordedRides.first { ride in
-            ride.associatedRideID == record.id && (vehicleSN == nil || ride.vehicleSN == nil || ride.vehicleSN == vehicleSN)
-        }
-    }
-}
-
-
-private struct LocalRecordedRideRow: View {
-    var record: NinebotRecordedRide
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.teslaGreen.opacity(0.14))
-                    Image(systemName: "map.fill")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(Color.teslaGreen)
-                }
-                .frame(width: 42, height: 42)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(formatRideDate(record.startedAt))
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(Color.teslaPrimaryText)
-                        .lineLimit(1)
-                    Text("自动骑行 · 已保存轨迹回放")
-                        .font(.caption)
-                        .foregroundStyle(Color.teslaSecondaryText)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.teslaSecondaryText)
-            }
-
-            HStack(spacing: 12) {
-                Label(formatDistance(record.distanceKilometers), systemImage: "road.lanes")
-                Label(formatSpeed(record.maxSpeedKmh), systemImage: "gauge.with.dots.needle.67percent")
-                Label("\(record.points.count) 点", systemImage: "point.3.connected.trianglepath.dotted")
-            }
-            .font(.caption.weight(.medium))
-            .foregroundStyle(Color.teslaSecondaryText)
-        }
-        .padding(14)
-        .background(Color.teslaCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.teslaHairline, lineWidth: 1)
         }
     }
 }
@@ -6098,17 +5935,16 @@ private struct NinebotRideDetailView: View {
     @ObservedObject var model: NinebotViewModel
     var vehicleSN: String?
     var record: NinebotRideRecord
-    var localRecord: NinebotRecordedRide?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                RideDetailHero(record: effectiveRecord, localRecord: localRecord)
+                RideDetailHero(record: effectiveRecord)
 
-                if let localRecord {
-                    RideTrackMapPanel(record: localRecord)
-                } else if !interfaceTrackPoints.isEmpty {
+                if !interfaceTrackPoints.isEmpty {
                     InterfaceRideTrackMapPanel(points: interfaceTrackPoints)
+                } else if remoteDetail != nil {
+                    RideTrackUnavailableNotice()
                 }
 
                 DetailSection(title: "接口行程") {
@@ -6149,8 +5985,7 @@ private struct NinebotRideDetailView: View {
     }
 
     private var interfaceTrackPoints: [NinebotInterfaceTrackPoint] {
-        guard localRecord == nil else { return [] }
-        return remoteDetail?.interfaceTrackPoints ?? []
+        remoteDetail?.interfaceTrackPoints ?? []
     }
 
     private func loadRemoteDetailIfNeeded() async {
@@ -6159,9 +5994,36 @@ private struct NinebotRideDetailView: View {
     }
 }
 
+private struct RideTrackUnavailableNotice: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "map.slash")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(Color.teslaSecondaryText)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("官方行程未返回轨迹")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.teslaPrimaryText)
+                Text("本应用不会记录或保存本机 GPS 轨迹。只有接口详情返回路线点时，才会显示起点到终点的回放。")
+                    .font(.caption)
+                    .foregroundStyle(Color.teslaSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(Color.teslaCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.teslaHairline, lineWidth: 1)
+        }
+    }
+}
+
 private struct RideDetailHero: View {
     var record: NinebotRideRecord
-    var localRecord: NinebotRecordedRide?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -6170,173 +6032,46 @@ private struct RideDetailHero: View {
                     Text(record.startedAt.map(formatRideDate) ?? "行程详情")
                         .font(.headline)
                         .foregroundStyle(Color.teslaPrimaryText)
-                    if localRecord != nil {
-                        Text("已关联本地轨迹")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(Color.teslaGreen)
-                    }
-                }
-
-                Spacer()
-
-                if localRecord != nil {
-                    Image(systemName: "map.fill")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(Color.teslaGreen)
-                }
-            }
-
-            HStack(alignment: .lastTextBaseline, spacing: 8) {
-                Text(formatDistance(record.mileage))
-                    .font(.system(size: 40, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(Color.teslaPrimaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                Text("里程")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Color.teslaSecondaryText)
-            }
-
-            if !metrics.isEmpty {
-                LazyVGrid(
-                    columns: gridColumns,
-                    spacing: 10
-                ) {
-                    ForEach(metrics) { metric in
-                        BasicInfoTile(title: metric.title, value: metric.value, systemImage: metric.systemImage)
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .background(Color.teslaCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(color: Color.black.opacity(0.04), radius: 14, x: 0, y: 8)
-    }
-
-    private var gridColumns: [GridItem] {
-        if metrics.count <= 1 {
-            return [GridItem(.flexible(), spacing: 10)]
-        }
-        return [
-            GridItem(.flexible(), spacing: 10),
-            GridItem(.flexible(), spacing: 10)
-        ]
-    }
-
-    private var metrics: [RideDisplayMetric] {
-        var result: [RideDisplayMetric] = [
-            record.maximumSpeed.map { RideDisplayMetric(title: "接口最高速度", value: formatSpeed($0), systemImage: "gauge.with.dots.needle.67percent") },
-            record.consumedEnergyWh.map { RideDisplayMetric(title: "本次用电", value: formatEnergyWh($0), systemImage: "bolt.fill") },
-            record.energyPerKmWh.map { RideDisplayMetric(title: "能耗", value: formatEnergyPerKm($0), systemImage: "leaf.fill") },
-            record.resolvedDurationMinutes.map { RideDisplayMetric(title: "骑行时间", value: formatDuration($0), systemImage: "timer") }
-        ].compactMap { $0 }
-
-        if let localRecord {
-            result.append(contentsOf: [
-                RideDisplayMetric(title: "本地极速", value: formatSpeed(localRecord.maxSpeedKmh), systemImage: "gauge.with.dots.needle.67percent"),
-                RideDisplayMetric(title: "最大 G", value: formatAccelerationG(localRecord.maxAccelerationG), systemImage: "bolt.circle.fill"),
-                RideDisplayMetric(title: "轨迹点", value: "\(localRecord.points.count) 个", systemImage: "point.3.connected.trianglepath.dotted")
-            ])
-        }
-
-        return result
-    }
-}
-
-private struct RideTrackMapPanel: View {
-    var record: NinebotRecordedRide
-    @State private var cameraPosition: MapCameraPosition
-
-    init(record: NinebotRecordedRide) {
-        self.record = record
-        _cameraPosition = State(initialValue: .region(Self.region(for: record.speedTrackCoordinates)))
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("本地轨迹")
-                        .font(.headline)
-                    Text("\(formatDate(record.startedAt)) - \(formatDate(record.endedAt))")
+                    Text(record.endedAt.map { "结束 \($0.formatted(.dateTime.hour().minute()))" } ?? "结束时间未知")
                         .font(.caption)
                         .foregroundStyle(Color.teslaSecondaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
                 }
-
                 Spacer()
-
-                Text(formatDistance(record.distanceKilometers))
-                    .font(.headline.monospacedDigit().weight(.semibold))
+                Image(systemName: "road.lanes")
+                    .font(.title2.weight(.semibold))
                     .foregroundStyle(Color.teslaGreen)
             }
 
-            Map(position: $cameraPosition) {
-                ForEach(record.speedTrackSegments) { segment in
-                    MapPolyline(coordinates: segment.coordinates)
-                        .stroke(segment.color, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
-                }
-
-                if let maxSpeedPoint = record.maxSpeedTrackPoint {
-                    Annotation("最快", coordinate: maxSpeedPoint.coordinate) {
-                        TrackMaxSpeedBadge(speed: maxSpeedPoint.speedKmh)
-                    }
-                }
-            }
-            .frame(height: 240)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-
-            TrackSpeedLegend()
+            Text(formatDistance(record.mileage))
+                .font(.system(size: 42, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Color.teslaPrimaryText)
 
             LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 10),
-                    GridItem(.flexible(), spacing: 10)
-                ],
+                columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                 spacing: 10
             ) {
-                RideMetric(title: "开始", value: formatTime(record.startedAt), systemImage: "play.fill")
-                RideMetric(title: "结束", value: formatTime(record.endedAt), systemImage: "stop.fill")
-                RideMetric(title: "最快", value: formatSpeed(record.maxSpeedKmh), systemImage: "speedometer")
-                RideMetric(title: "最大 G", value: formatAccelerationG(record.maxAccelerationG), systemImage: "bolt.circle.fill")
+                RideMetric(title: "骑行时间", value: formatDuration(record.resolvedDurationMinutes), systemImage: "timer")
+                RideMetric(title: "最高速度", value: formatSpeed(record.maximumSpeed), systemImage: "speedometer")
+                RideMetric(title: "本次用电", value: formatEnergyWh(record.consumedEnergyWh), systemImage: "bolt.fill")
+                RideMetric(title: "能耗", value: formatEnergyPerKm(record.energyPerKmWh), systemImage: "leaf.fill")
             }
         }
-        .padding(16)
+        .padding(18)
         .background(Color.teslaCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(color: Color.black.opacity(0.04), radius: 14, x: 0, y: 8)
-    }
-
-    private static func region(for coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
-        guard !coordinates.isEmpty else {
-            return MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: 31.2304, longitude: 121.4737),
-                span: MKCoordinateSpan(latitudeDelta: 0.03, longitudeDelta: 0.03)
-            )
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.teslaHairline, lineWidth: 1)
         }
-
-        let minLatitude = coordinates.map(\.latitude).min() ?? coordinates[0].latitude
-        let maxLatitude = coordinates.map(\.latitude).max() ?? coordinates[0].latitude
-        let minLongitude = coordinates.map(\.longitude).min() ?? coordinates[0].longitude
-        let maxLongitude = coordinates.map(\.longitude).max() ?? coordinates[0].longitude
-        let center = CLLocationCoordinate2D(
-            latitude: (minLatitude + maxLatitude) / 2,
-            longitude: (minLongitude + maxLongitude) / 2
-        )
-        let span = MKCoordinateSpan(
-            latitudeDelta: max((maxLatitude - minLatitude) * 1.5, 0.006),
-            longitudeDelta: max((maxLongitude - minLongitude) * 1.5, 0.006)
-        )
-        return MKCoordinateRegion(center: center, span: span)
     }
 }
 
 private struct InterfaceRideTrackMapPanel: View {
     var points: [NinebotInterfaceTrackPoint]
     @State private var cameraPosition: MapCameraPosition
+    @State private var playbackIndex = 0
+    @State private var isPlaying = false
 
     init(points: [NinebotInterfaceTrackPoint]) {
         self.points = points
@@ -6345,201 +6080,119 @@ private struct InterfaceRideTrackMapPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("接口轨迹")
-                .font(.headline)
-                .foregroundStyle(Color.teslaPrimaryText)
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("接口轨迹回放")
+                        .font(.headline)
+                        .foregroundStyle(Color.teslaPrimaryText)
+                    Text("起点 → 终点 · \(points.count) 个路线点")
+                        .font(.caption)
+                        .foregroundStyle(Color.teslaSecondaryText)
+                }
+                Spacer()
+                Text("\(playbackIndex + 1)/\(points.count)")
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(Color.teslaGreen)
+            }
 
             Map(position: $cameraPosition) {
-                ForEach(speedSegments) { segment in
-                    MapPolyline(coordinates: segment.coordinates)
-                        .stroke(segment.color, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+                MapPolyline(coordinates: coordinates)
+                    .stroke(Color.teslaSecondaryText.opacity(0.28), style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+
+                if playedCoordinates.count > 1 {
+                    MapPolyline(coordinates: playedCoordinates)
+                        .stroke(Color.teslaGreen, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
                 }
 
-                if let maxSpeedPoint {
-                    Annotation("最快", coordinate: maxSpeedPoint.coordinate) {
-                        TrackMaxSpeedBadge(speed: maxSpeedPoint.speedKmh)
+                if let start = coordinates.first {
+                    Marker("起点", systemImage: "flag.fill", coordinate: start)
+                        .tint(.green)
+                }
+                if let end = coordinates.last {
+                    Marker("终点", systemImage: "mappin.and.ellipse", coordinate: end)
+                        .tint(.red)
+                }
+                if let current = coordinates[safe: playbackIndex] {
+                    Annotation("回放位置", coordinate: current) {
+                        Image(systemName: "scooter")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(8)
+                            .background(Color.teslaGreen)
+                            .clipShape(Circle())
+                            .shadow(color: .black.opacity(0.22), radius: 6, x: 0, y: 3)
                     }
                 }
             }
-            .frame(height: 240)
+            .frame(height: 260)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
-            TrackSpeedLegend()
+            HStack(spacing: 10) {
+                Button {
+                    if playbackIndex >= points.count - 1 { playbackIndex = 0 }
+                    isPlaying.toggle()
+                } label: {
+                    Label(isPlaying ? "暂停" : (playbackIndex >= points.count - 1 ? "重新播放" : "播放回放"), systemImage: isPlaying ? "pause.fill" : "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.teslaGreen)
+
+                Button {
+                    isPlaying = false
+                    playbackIndex = 0
+                } label: {
+                    Image(systemName: "backward.end.fill")
+                }
+                .buttonStyle(.bordered)
+
+                Slider(
+                    value: Binding(
+                        get: { Double(playbackIndex) },
+                        set: { playbackIndex = min(max(Int($0.rounded()), 0), max(points.count - 1, 0)) }
+                    ),
+                    in: 0...Double(max(points.count - 1, 0)),
+                    step: 1
+                )
+                .tint(Color.teslaGreen)
+            }
         }
         .padding(16)
         .background(Color.teslaCardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 14, x: 0, y: 8)
-    }
-
-    private var speedPoints: [TrackSpeedPoint] {
-        points.enumerated().map { index, point in
-            TrackSpeedPoint(
-                id: point.id.isEmpty ? "interface-\(index)" : point.id,
-                coordinate: point.coordinate,
-                speedKmh: point.speedKmh
-            )
+        .task(id: isPlaying) {
+            guard isPlaying else { return }
+            while isPlaying && playbackIndex < points.count - 1 && !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(180))
+                guard !Task.isCancelled else { return }
+                playbackIndex += 1
+            }
+            if playbackIndex >= points.count - 1 { isPlaying = false }
         }
+        .onDisappear { isPlaying = false }
     }
 
-    private var speedSegments: [TrackSpeedSegment] {
-        makeSpeedTrackSegments(from: speedPoints)
-    }
-
-    private var maxSpeedPoint: TrackSpeedPoint? {
-        bestSpeedTrackPoint(from: speedPoints)
-    }
+    private var coordinates: [CLLocationCoordinate2D] { points.map(\.coordinate) }
+    private var playedCoordinates: [CLLocationCoordinate2D] { Array(coordinates.prefix(playbackIndex + 1)) }
 
     private static func region(for coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
         guard !coordinates.isEmpty else {
-            return MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: 31.2304, longitude: 121.4737),
-                span: MKCoordinateSpan(latitudeDelta: 0.03, longitudeDelta: 0.03)
-            )
+            return MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 31.2304, longitude: 121.4737), span: MKCoordinateSpan(latitudeDelta: 0.03, longitudeDelta: 0.03))
         }
-
         let minLatitude = coordinates.map(\.latitude).min() ?? coordinates[0].latitude
         let maxLatitude = coordinates.map(\.latitude).max() ?? coordinates[0].latitude
         let minLongitude = coordinates.map(\.longitude).min() ?? coordinates[0].longitude
         let maxLongitude = coordinates.map(\.longitude).max() ?? coordinates[0].longitude
-        let center = CLLocationCoordinate2D(
-            latitude: (minLatitude + maxLatitude) / 2,
-            longitude: (minLongitude + maxLongitude) / 2
-        )
-        let span = MKCoordinateSpan(
-            latitudeDelta: max((maxLatitude - minLatitude) * 1.5, 0.006),
-            longitudeDelta: max((maxLongitude - minLongitude) * 1.5, 0.006)
-        )
-        return MKCoordinateRegion(center: center, span: span)
-    }
-}
-
-private struct TrackSpeedPoint: Identifiable {
-    var id: String
-    var coordinate: CLLocationCoordinate2D
-    var speedKmh: Double?
-}
-
-private struct TrackSpeedSegment: Identifiable {
-    var id: String
-    var coordinates: [CLLocationCoordinate2D]
-    var speedKmh: Double?
-
-    var color: Color {
-        speedTrackColor(speedKmh)
-    }
-}
-
-private struct TrackMaxSpeedBadge: View {
-    var speed: Double?
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "speedometer")
-                .font(.caption2.weight(.bold))
-            Text(formatSpeed(speed))
-                .font(.caption2.monospacedDigit().weight(.bold))
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(Color.red)
-        .clipShape(Capsule())
-        .shadow(color: Color.black.opacity(0.24), radius: 8, x: 0, y: 4)
-    }
-}
-
-private struct TrackSpeedLegend: View {
-    var body: some View {
-        HStack(spacing: 10) {
-            legendItem(color: .cyan, title: "低速")
-            legendItem(color: Color.teslaGreen, title: "巡航")
-            legendItem(color: .orange, title: "较快")
-            legendItem(color: .red, title: "最快")
-            Spacer(minLength: 0)
-        }
-        .font(.caption2.weight(.medium))
-        .foregroundStyle(Color.teslaSecondaryText)
-    }
-
-    private func legendItem(color: Color, title: String) -> some View {
-        HStack(spacing: 4) {
-            Capsule()
-                .fill(color)
-                .frame(width: 16, height: 4)
-            Text(title)
-        }
-    }
-}
-
-private extension NinebotRecordedRide {
-    var coordinates: [CLLocationCoordinate2D] {
-        trackCoordinates
-    }
-
-    var speedTrackPoints: [TrackSpeedPoint] {
-        points
-            .sorted { $0.date < $1.date }
-            .filter {
-                (-90...90).contains($0.latitude)
-                    && (-180...180).contains($0.longitude)
-                    && (($0.horizontalAccuracy ?? 0) <= 120)
-            }
-            .enumerated()
-            .map { index, point in
-                TrackSpeedPoint(
-                    id: point.id.isEmpty ? "local-\(index)" : point.id,
-                    coordinate: NinebotCoordinateTransform.mapKitCoordinate(latitude: point.latitude, longitude: point.longitude),
-                    speedKmh: point.speedKmh
-                )
-            }
-    }
-
-    var speedTrackCoordinates: [CLLocationCoordinate2D] {
-        speedTrackPoints.map(\.coordinate)
-    }
-
-    var speedTrackSegments: [TrackSpeedSegment] {
-        makeSpeedTrackSegments(from: speedTrackPoints)
-    }
-
-    var maxSpeedTrackPoint: TrackSpeedPoint? {
-        bestSpeedTrackPoint(from: speedTrackPoints)
-    }
-}
-
-private func makeSpeedTrackSegments(from points: [TrackSpeedPoint]) -> [TrackSpeedSegment] {
-    guard points.count > 1 else { return [] }
-
-    return (0..<(points.count - 1)).map { index in
-        let start = points[index]
-        let end = points[index + 1]
-        let speed = end.speedKmh ?? start.speedKmh
-        return TrackSpeedSegment(
-            id: "\(start.id)-\(end.id)-\(index)",
-            coordinates: [start.coordinate, end.coordinate],
-            speedKmh: speed
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: (minLatitude + maxLatitude) / 2, longitude: (minLongitude + maxLongitude) / 2),
+            span: MKCoordinateSpan(latitudeDelta: max((maxLatitude - minLatitude) * 1.5, 0.006), longitudeDelta: max((maxLongitude - minLongitude) * 1.5, 0.006))
         )
     }
 }
 
-private func bestSpeedTrackPoint(from points: [TrackSpeedPoint]) -> TrackSpeedPoint? {
-    points
-        .filter { ($0.speedKmh ?? 0) > 0.5 }
-        .max { ($0.speedKmh ?? 0) < ($1.speedKmh ?? 0) }
-}
-
-private func speedTrackColor(_ speed: Double?) -> Color {
-    guard let speed else { return Color.teslaGreen }
-    switch speed {
-    case ..<8:
-        return .cyan
-    case ..<25:
-        return Color.teslaGreen
-    case ..<40:
-        return .orange
-    default:
-        return .red
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 

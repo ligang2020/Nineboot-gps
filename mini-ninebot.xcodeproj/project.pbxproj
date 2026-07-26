@@ -11,7 +11,6 @@
 		B20000000000000000000001 /* NinebotAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000105 /* NinebotAppIntents.swift */; };
 		B20000000000000000000002 /* NinebotDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000106 /* NinebotDashboardView.swift */; };
 		B20000000000000000000003 /* NinebotPushManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000107 /* NinebotPushManager.swift */; };
-		B20000000000000000000004 /* NinebotRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000108 /* NinebotRecordingView.swift */; };
 		B20000000000000000000005 /* NinebotChargeLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000109 /* NinebotChargeLiveActivityManager.swift */; };
 		B20000000000000000000006 /* NinebotSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010A /* NinebotSettingsView.swift */; };
 		B20000000000000000000007 /* NinebotViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010B /* NinebotViewModel.swift */; };
@@ -30,8 +29,6 @@
 		B20000000000000000000014 /* NinebotAntiTheftLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000110 /* NinebotAntiTheftLiveActivityManager.swift */; };
 		B20000000000000000000015 /* NinebotAntiTheftView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000112 /* NinebotAntiTheftView.swift */; };
 		B20000000000000000000016 /* NinebotAntiTheftActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000207 /* NinebotAntiTheftActivityAttributes.swift */; };
-		B20000000000000000000017 /* RideSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000113 /* RideSummaryView.swift */; };
-		B20000000000000000000018 /* NinebotOfflineRideTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000114 /* NinebotOfflineRideTracking.swift */; };
 		B30000000000000000000001 /* NinebotWidgetConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000301 /* NinebotWidgetConfiguration.swift */; };
 		B30000000000000000000002 /* NinebotWidgetProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000302 /* NinebotWidgetProvider.swift */; };
 		B30000000000000000000003 /* NinebotWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000303 /* NinebotWidgets.swift */; };
@@ -80,7 +77,6 @@
 		B100000000000000000000105 /* NinebotAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotAppIntents.swift"; sourceTree = "<group>"; };
 		B100000000000000000000106 /* NinebotDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotDashboardView.swift"; sourceTree = "<group>"; };
 		B100000000000000000000107 /* NinebotPushManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotPushManager.swift"; sourceTree = "<group>"; };
-		B100000000000000000000108 /* NinebotRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotRecordingView.swift"; sourceTree = "<group>"; };
 		B100000000000000000000109 /* NinebotChargeLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotChargeLiveActivityManager.swift"; sourceTree = "<group>"; };
 		B10000000000000000000010C /* NinebotRideLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotRideLiveActivityManager.swift"; sourceTree = "<group>"; };
 		B10000000000000000000010D /* NinebotNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotNotificationManager.swift"; sourceTree = "<group>"; };
@@ -88,8 +84,6 @@
 		B10000000000000000000010F /* NinebotGeofenceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotGeofenceManager.swift"; sourceTree = "<group>"; };
 		B100000000000000000000110 /* NinebotAntiTheftLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotAntiTheftLiveActivityManager.swift"; sourceTree = "<group>"; };
 		B100000000000000000000112 /* NinebotAntiTheftView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotAntiTheftView.swift"; sourceTree = "<group>"; };
-		B100000000000000000000113 /* RideSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RideSummaryView.swift"; sourceTree = "<group>"; };
-		B100000000000000000000114 /* NinebotOfflineRideTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotOfflineRideTracking.swift"; sourceTree = "<group>"; };
 		B10000000000000000000010A /* NinebotSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotSettingsView.swift"; sourceTree = "<group>"; };
 		B10000000000000000000010B /* NinebotViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotViewModel.swift"; sourceTree = "<group>"; };
 		B100000000000000000000201 /* NinebotCoordinateTransform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NinebotCoordinateTransform.swift"; sourceTree = "<group>"; };
@@ -157,7 +151,6 @@
 				B100000000000000000000105 /* NinebotAppIntents.swift */,
 				B100000000000000000000106 /* NinebotDashboardView.swift */,
 				B100000000000000000000107 /* NinebotPushManager.swift */,
-				B100000000000000000000108 /* NinebotRecordingView.swift */,
 				B100000000000000000000109 /* NinebotChargeLiveActivityManager.swift */,
 				B10000000000000000000010C /* NinebotRideLiveActivityManager.swift */,
 				B10000000000000000000010D /* NinebotNotificationManager.swift */,
@@ -165,8 +158,6 @@
 				B10000000000000000000010F /* NinebotGeofenceManager.swift */,
 				B100000000000000000000110 /* NinebotAntiTheftLiveActivityManager.swift */,
 				B100000000000000000000112 /* NinebotAntiTheftView.swift */,
-				B100000000000000000000113 /* RideSummaryView.swift */,
-				B100000000000000000000114 /* NinebotOfflineRideTracking.swift */,
 				B10000000000000000000010A /* NinebotSettingsView.swift */,
 				B10000000000000000000010B /* NinebotViewModel.swift */,
 			);
@@ -323,7 +314,6 @@
 				B20000000000000000000001 /* NinebotAppIntents.swift in Sources */,
 				B20000000000000000000002 /* NinebotDashboardView.swift in Sources */,
 				B20000000000000000000003 /* NinebotPushManager.swift in Sources */,
-				B20000000000000000000004 /* NinebotRecordingView.swift in Sources */,
 				B20000000000000000000005 /* NinebotChargeLiveActivityManager.swift in Sources */,
 				B20000000000000000000010 /* NinebotRideLiveActivityManager.swift in Sources */,
 				B20000000000000000000011 /* NinebotNotificationManager.swift in Sources */,
@@ -342,8 +332,6 @@
 				B2000000000000000000000E /* NinebotSharedStore.swift in Sources */,
 				B2000000000000000000000F /* NinebotRideActivityAttributes.swift in Sources */,
 				B20000000000000000000016 /* NinebotAntiTheftActivityAttributes.swift in Sources */,
-				B20000000000000000000017 /* RideSummaryView.swift in Sources */,
-				B20000000000000000000018 /* NinebotOfflineRideTracking.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -503,7 +491,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "mini-ninebot/mini-ninebot.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 43;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -517,7 +505,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.42;
+				MARKETING_VERSION = 1.2.43;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -537,7 +525,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "mini-ninebot/mini-ninebot.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 43;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -551,7 +539,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.42;
+				MARKETING_VERSION = 1.2.43;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -570,7 +558,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = NinebotWidgets/NinebotWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 43;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -582,7 +570,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.42;
+				MARKETING_VERSION = 1.2.43;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ.NinebotWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -599,7 +587,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = NinebotWidgets/NinebotWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 43;
 				DEVELOPMENT_TEAM = 36K6L4C2YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -611,7 +599,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.42;
+				MARKETING_VERSION = 1.2.43;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ninebot.live.36K6L4C2YJ.NinebotWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

@@ -66,46 +66,23 @@ extension Comparable {
     }
 }
 
-/// 车辆位置和轨迹记录。车辆 GPS 通过 BLE/服务端上传时调用 `ingest`；
-/// iPhone CoreLocation 只用于选择围栏中心和将来系统区域监控的授权，不会误把手机位置当车辆位置。
+/// 车辆位置缓存。仅保留每辆车最新一次服务端/BLE 坐标，不保存本地轨迹。
 @MainActor
 final class NinebotVehicleLocationManager: ObservableObject {
     static let shared = NinebotVehicleLocationManager()
 
     @Published private(set) var latestLocations: [String: NinebotVehicleLocation] = [:]
-    @Published private(set) var tracks: [String: [NinebotVehicleLocation]] = [:]
-
     private let defaults = UserDefaults(suiteName: NinebotAppGroup.identifier) ?? .standard
-    private let tracksKey = "ninebot.antitheft.vehicle.tracks"
+    private let legacyTracksKey = "ninebot.antitheft.vehicle.tracks"
 
     private init() {
-        if let data = defaults.data(forKey: tracksKey),
-           let saved = try? JSONDecoder().decode([String: [NinebotVehicleLocation]].self, from: data) {
-            tracks = saved
-            latestLocations = saved.compactMapValues(\.last)
-        }
+        // v1.2.43 removes local vehicle/GPS trajectory persistence.
+        defaults.removeObject(forKey: legacyTracksKey)
     }
 
-    func ingest(_ location: NinebotVehicleLocation, vehicleSN: String, isRiding: Bool) {
+    func ingest(_ location: NinebotVehicleLocation, vehicleSN: String, isRiding _: Bool) {
         guard location.isValid else { return }
         latestLocations[vehicleSN] = location
-        guard isRiding else { return }
-
-        var values = tracks[vehicleSN] ?? []
-        // 每 10 秒或移动 15 米记录一个点；既保证轨迹可用，也避免每秒 I/O。
-        if let last = values.last,
-           location.updatedAt.timeIntervalSince(last.updatedAt) < 10,
-           Self.distanceMeters(last, location) < 15 {
-            return
-        }
-        values.append(location)
-        tracks[vehicleSN] = Array(values.suffix(2_000))
-        persistTracks()
-    }
-
-    func clearTrack(vehicleSN: String) {
-        tracks.removeValue(forKey: vehicleSN)
-        persistTracks()
     }
 
     func mapItem(for location: NinebotVehicleLocation, name: String) -> MKMapItem {
@@ -116,15 +93,9 @@ final class NinebotVehicleLocationManager: ObservableObject {
         return item
     }
 
-    static func distanceMeters(_ lhs: NinebotVehicleLocation, _ rhs: NinebotVehicleLocation) -> Double {
-        let first = CLLocation(latitude: lhs.latitude, longitude: lhs.longitude)
-        let second = CLLocation(latitude: rhs.latitude, longitude: rhs.longitude)
-        return first.distance(from: second)
-    }
-
-    private func persistTracks() {
-        guard let data = try? JSONEncoder().encode(tracks) else { return }
-        defaults.set(data, forKey: tracksKey)
+    static func distanceMeters(_ lhs: NinebotVehicleLocation, _ rhs: NinebotVehicleLocation) -> CLLocationDistance {
+        CLLocation(latitude: lhs.latitude, longitude: lhs.longitude)
+            .distance(from: CLLocation(latitude: rhs.latitude, longitude: rhs.longitude))
     }
 }
 

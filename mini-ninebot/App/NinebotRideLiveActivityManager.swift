@@ -37,35 +37,6 @@ enum NinebotRideLiveActivityManager {
         #endif
     }
 
-    /// 仅使用 iPhone 本地 GPS 时的 Live Activity。该入口没有云端/BLE 依赖。
-    static func syncLocalRide(
-        id: String,
-        startedAt: Date,
-        speedKmh: Double,
-        distanceMeters: Double,
-        pointCount: Int
-    ) {
-        #if canImport(ActivityKit)
-        guard #available(iOS 18.0, *) else { return }
-        Task {
-            await NinebotRideLiveActivityController.shared.syncLocalRide(
-                id: id,
-                startedAt: startedAt,
-                speedKmh: speedKmh,
-                distanceMeters: distanceMeters,
-                pointCount: pointCount
-            )
-        }
-        #endif
-    }
-
-    static func endLocalRide(id: String) {
-        #if canImport(ActivityKit)
-        guard #available(iOS 18.0, *) else { return }
-        Task { await NinebotRideLiveActivityController.shared.end(vehicleSN: "offline-\(id)") }
-        #endif
-    }
-
     /// 给 BLE 接入层使用的高保真入口。每收到一帧（通常每秒一次）即可调用。
     static func sync(
         session: NinebotActiveRideSession?,
@@ -139,38 +110,6 @@ private actor NinebotRideLiveActivityController {
         }
         lastSubmittedState = nil
         lastSubmissionDate = .distantPast
-    }
-
-    func syncLocalRide(
-        id: String,
-        startedAt: Date,
-        speedKmh: Double,
-        distanceMeters: Double,
-        pointCount: Int
-    ) async {
-        let session = NinebotActiveRideSession(
-            vehicleSN: "offline-\(id)",
-            vehicleName: "本地离线骑行",
-            vehicleModel: "iPhone GPS",
-            startedAt: startedAt,
-            latestSpeedKmh: speedKmh,
-            maximumSpeedKmh: speedKmh,
-            distanceMeters: distanceMeters
-        )
-        let state = NinebotRideActivityContentState(
-            vehicleLocationText: "本地 GPS 轨迹 · \(pointCount) 个点",
-            batteryPercent: 0,
-            remainingRangeKm: 0,
-            todayDistanceKm: 0,
-            totalDistanceKm: 0,
-            rideDistanceKm: distanceMeters / 1_000,
-            mode: .drive,
-            isBluetoothConnected: false,
-            isGPSAvailable: true,
-            isLocked: false,
-            isCharging: false
-        )
-        await startOrUpdate(session: session, state: state)
     }
 
     private func startOrUpdate(

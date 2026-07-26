@@ -2,7 +2,7 @@ import CoreLocation
 import MapKit
 import SwiftUI
 
-/// 防盗中心：集中显示实时安全状态、车辆定位、电子围栏、查找车辆和本地轨迹。
+/// 防盗中心：集中显示实时安全状态、车辆定位、电子围栏和查找车辆。
 struct NinebotAntiTheftView: View {
     @ObservedObject var model: NinebotViewModel
     @ObservedObject private var alarmManager = NinebotAlarmManager.shared
@@ -11,7 +11,6 @@ struct NinebotAntiTheftView: View {
     @ObservedObject private var findVehicleManager = NinebotFindVehicleManager.shared
 
     @State private var isShowingFenceEditor = false
-    @State private var isShowingTrack = false
 
     private var snapshot: NinebotVehicleSnapshot? { model.dashboard.primaryVehicle }
     private var vehicleSN: String? { snapshot?.vehicle.sn }
@@ -163,19 +162,6 @@ struct NinebotAntiTheftView: View {
                 }
             }
 
-            Section("历史轨迹") {
-                Button {
-                    isShowingTrack = true
-                } label: {
-                    Label("查看本次/本地记录轨迹", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
-                }
-                if let vehicleSN {
-                    let points = locationManager.tracks[vehicleSN] ?? []
-                    LabeledContent("记录点") { Text("\(points.count) 个") }
-                    LabeledContent("轨迹距离") { Text(trackDistance(points)) }
-                    LabeledContent("平均速度") { Text(averageSpeed(points)) }
-                }
-            }
         }
         .navigationTitle("车辆安全")
         .navigationBarTitleDisplayMode(.large)
@@ -194,9 +180,6 @@ struct NinebotAntiTheftView: View {
                     )
                 }
             }
-        }
-        .sheet(isPresented: $isShowingTrack) {
-            NinebotVehicleTrackHistoryView(vehicleName: vehicleName, points: vehicleSN.flatMap { locationManager.tracks[$0] } ?? [])
         }
     }
 
@@ -277,16 +260,6 @@ struct NinebotAntiTheftView: View {
         NinebotCoordinateTransform.mapKitCoordinate(latitude: location.latitude, longitude: location.longitude)
     }
 
-    private func trackDistance(_ points: [NinebotVehicleLocation]) -> String {
-        let meters = zip(points, points.dropFirst()).reduce(0.0) { $0 + NinebotVehicleLocationManager.distanceMeters($1.0, $1.1) }
-        return meters >= 1_000 ? String(format: "%.1f km", meters / 1_000) : "\(Int(meters)) 米"
-    }
-
-    private func averageSpeed(_ points: [NinebotVehicleLocation]) -> String {
-        guard let first = points.first, let last = points.last, last.updatedAt > first.updatedAt else { return "--" }
-        let meters = zip(points, points.dropFirst()).reduce(0.0) { $0 + NinebotVehicleLocationManager.distanceMeters($1.0, $1.1) }
-        return String(format: "%.1f km/h", (meters / 1_000) / (last.updatedAt.timeIntervalSince(first.updatedAt) / 3_600))
-    }
 }
 
 /// 围栏中心固定为车辆当前位置；用户只需双指缩放地图，就能以直观的圆形范围调整安全区域。
@@ -399,35 +372,6 @@ private struct NinebotGeofenceEditorSheet: View {
             center: center,
             span: MKCoordinateSpan(latitudeDelta: latitudeDelta, longitudeDelta: longitudeDelta)
         )
-    }
-}
-
-private struct NinebotVehicleTrackHistoryView: View {
-    @Environment(\.dismiss) private var dismiss
-    let vehicleName: String
-    let points: [NinebotVehicleLocation]
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if let last = points.last {
-                    Map(initialPosition: .region(MKCoordinateRegion(
-                        center: NinebotCoordinateTransform.mapKitCoordinate(latitude: last.latitude, longitude: last.longitude),
-                        span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
-                    ))) {
-                        ForEach(Array(points.enumerated()), id: \.offset) { index, point in
-                            if index == 0 || index == points.count - 1 {
-                                Marker(index == 0 ? "开始" : "结束", coordinate: NinebotCoordinateTransform.mapKitCoordinate(latitude: point.latitude, longitude: point.longitude))
-                            }
-                        }
-                    }
-                } else {
-                    ContentUnavailableView("暂无轨迹", systemImage: "point.topleft.down.curvedto.point.bottomright.up", description: Text("骑行中收到有效车辆 GPS 后，会按节能规则记录轨迹。"))
-                }
-            }
-            .navigationTitle("\(vehicleName) 轨迹")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
-        }
     }
 }
 

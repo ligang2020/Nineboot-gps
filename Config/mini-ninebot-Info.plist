@@ -32,7 +32,7 @@
 	<key>NSSiriUsageDescription</key>
 	<string>用于通过 Siri 和快捷指令刷新车况、查询电量、查询位置、寻车铃、开座桶、上电和熄火。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>用于记录骑行轨迹、实时速度和加速 G 值。</string>
+	<string>用于在车辆位置页面显示你与车辆的距离。</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
@@ -60,13 +60,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>用于在后台自动检测骑行、记录本地离线轨迹，并在骑行结束后生成路线回放。</string>
-	<key>NSMotionUsageDescription</key>
-	<string>用于低功耗识别骑行或静止状态，减少后台定位耗电。</string>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.ninebot.live.offlineRideMaintenance</string>
-	</array>
+	<string>用于你主动设置并辅助电子围栏。</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>用于连接车辆、接收车辆安全状态和发送寻车指令。</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
@@ -74,7 +68,6 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
-		<string>location</string>
 		<string>remote-notification</string>
 	</array>
 </dict>

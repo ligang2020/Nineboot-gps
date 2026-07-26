@@ -13,7 +13,6 @@ struct NinebotSharedStore {
         static let historyPrefix = "ninebot.vehicle.history."
         static let interfaceRidePrefix = "ninebot.vehicle.interface.rides."
         static let vehicleImagePrefix = "ninebot.vehicle.image."
-        static let recordedRides = "ninebot.recorded.rides"
         static let activeRideSession = "ninebot.active.ride.session"
         static let pushDeviceToken = "ninebot.push.device.token"
     }
@@ -26,6 +25,15 @@ struct NinebotSharedStore {
         self.defaults = UserDefaults(suiteName: suiteName) ?? .standard
         self.encoder = JSONEncoder()
         self.decoder = JSONDecoder()
+    }
+
+
+    /// v1.2.43 no longer keeps iPhone GPS ride trajectories.
+    /// Remove legacy local route payloads without touching server trip data.
+    func removeLegacyLocalRideTrajectoryData() {
+        defaults.removeObject(forKey: "ninebot.recorded.rides")
+        defaults.removeObject(forKey: "ninebot.offline.ride.draft")
+        defaults.removeObject(forKey: "ninebot.ride.history.records")
     }
 
     func loadConfiguration() -> NinebotProxyConfiguration? {
@@ -127,34 +135,6 @@ struct NinebotSharedStore {
         defaults.removeObject(forKey: Key.activeRideSession)
     }
 
-    func loadRecordedRides() -> [NinebotRecordedRide] {
-        guard let data = defaults.data(forKey: Key.recordedRides),
-              let rides = try? decoder.decode([NinebotRecordedRide].self, from: data) else {
-            return []
-        }
-        return rides.sorted { $0.startedAt > $1.startedAt }
-    }
-
-    func saveRecordedRides(_ rides: [NinebotRecordedRide]) {
-        let limited = Array(rides.sorted { $0.startedAt > $1.startedAt }.prefix(120))
-        guard let data = try? encoder.encode(limited) else { return }
-        defaults.set(data, forKey: Key.recordedRides)
-    }
-
-    func upsertRecordedRide(_ ride: NinebotRecordedRide) {
-        var rides = loadRecordedRides()
-        if let index = rides.firstIndex(where: { $0.id == ride.id }) {
-            rides[index] = ride
-        } else {
-            rides.insert(ride, at: 0)
-        }
-        saveRecordedRides(rides)
-    }
-
-    func deleteRecordedRide(id: String) {
-        let rides = loadRecordedRides().filter { $0.id != id }
-        saveRecordedRides(rides)
-    }
 
     func saveLastError(_ message: String) {
         defaults.set(message, forKey: Key.lastError)
@@ -197,9 +177,6 @@ struct NinebotSharedStore {
         saveInterfaceRideRecords(mergedRecords, sn: sn)
     }
 
-    func recordedRideCount() -> Int {
-        loadRecordedRides().count
-    }
 
     func storedDashboardByteCount() -> Int {
         defaults.data(forKey: Key.dashboard)?.count ?? 0
