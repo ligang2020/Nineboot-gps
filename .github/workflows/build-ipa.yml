@@ -6,15 +6,15 @@ on:
       publish_release:
         description: 'Also upload the IPA to a GitHub Release'
         required: false
-        default: 'false'
+        default: 'true'
         type: choice
         options:
           - 'false'
           - 'true'
       release_tag:
-        description: 'Release tag to create/update when publish_release=true'
+        description: 'Optional release tag; blank uses the app version (for example v1.2.45)'
         required: false
-        default: 'latest-unsigned-ipa'
+        default: ''
   push:
     branches: [main, master]
     tags: ['v*']
@@ -82,12 +82,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          VERSION="$(awk -F ' = ' '/MARKETING_VERSION = / { gsub(/;/, "", $2); print $2; exit }' mini-ninebot.xcodeproj/project.pbxproj)"
+          EXPECTED_TAG="v${VERSION}"
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            test "$GITHUB_REF_NAME" = "$EXPECTED_TAG"
             echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "tag=${EXPECTED_TAG}" >> "$GITHUB_OUTPUT"
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish_release }}" == "true" ]]; then
+            REQUESTED_TAG="${{ inputs.release_tag }}"
+            if [[ -n "$REQUESTED_TAG" ]]; then
+              test "$REQUESTED_TAG" = "$EXPECTED_TAG"
+            fi
             echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${EXPECTED_TAG}" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "tag=" >> "$GITHUB_OUTPUT"

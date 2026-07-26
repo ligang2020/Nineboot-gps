@@ -78,5 +78,10 @@ ditto "$APP_PATH" "$WORK_DIR/Payload/${SCHEME}.app"
   cd "$WORK_DIR"
   /usr/bin/zip -qry "$IPA_PATH" Payload
 )
-shasum -a 256 "$IPA_PATH" > "$IPA_PATH.sha256"
+# Store only the IPA basename in the checksum file. This makes the checksum
+# valid after GitHub Actions uploads it and a user downloads it elsewhere.
+(
+  cd "$OUTPUT_DIR"
+  shasum -a 256 "$(basename "$IPA_PATH")" > "$(basename "$IPA_PATH").sha256"
+)
 printf '%s\n' "$IPA_PATH"
