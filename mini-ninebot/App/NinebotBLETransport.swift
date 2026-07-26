@@ -163,8 +163,13 @@ struct NinebotBLEReadOnlyProfile: Hashable, Sendable {
         let advertisedName = (advertisementData[CBAdvertisementDataLocalNameKey] as? String)
             ?? peripheral.name
             ?? ""
-        let matchesName = advertisedNamePrefixes.contains {
-            advertisedName.localizedCaseInsensitiveHasPrefix($0)
+        let matchesName = advertisedNamePrefixes.contains { prefix in
+            advertisedName.range(
+                of: prefix,
+                options: [.caseInsensitive, .anchored],
+                range: nil,
+                locale: .current
+            ) != nil
         }
         let advertisedServices = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID]) ?? []
         let matchesService = !Set(advertisedServices).isDisjoint(with: Set(serviceUUIDs))
