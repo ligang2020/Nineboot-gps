@@ -6090,18 +6090,28 @@ private struct InterfaceRideTrackMapPanel: View {
                         .foregroundStyle(Color.teslaSecondaryText)
                 }
                 Spacer()
-                Text("\(playbackIndex + 1)/\(points.count)")
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(Color.teslaGreen)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(playbackIndex + 1)/\(points.count)")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(Color.teslaGreen)
+                    Text(currentSpeedAccessibilityText)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(currentSpeedColor)
+                }
             }
 
             Map(position: $cameraPosition) {
-                MapPolyline(coordinates: coordinates)
-                    .stroke(Color.teslaSecondaryText.opacity(0.28), style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
-
-                if playedCoordinates.count > 1 {
-                    MapPolyline(coordinates: playedCoordinates)
-                        .stroke(Color.teslaGreen, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+                // Each pair of API track points is rendered separately so the
+                // route colour reflects that part of the ride: green is slow,
+                // yellow is medium, and red is fast. Segments ahead of the
+                // scooter remain visible but are dimmed during playback.
+                ForEach(routeSegments) { segment in
+                    MapPolyline(coordinates: segment.coordinates)
+                        .stroke(
+                            speedColor(for: segment.speedKmh)
+                                .opacity(segment.index < playbackIndex ? 1 : 0.42),
+                            style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+                        )
                 }
 
                 if let start = coordinates.first {
@@ -6114,18 +6124,41 @@ private struct InterfaceRideTrackMapPanel: View {
                 }
                 if let current = coordinates[safe: playbackIndex] {
                     Annotation("回放位置", coordinate: current) {
-                        Image(systemName: "scooter")
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(8)
-                            .background(Color.teslaGreen)
-                            .clipShape(Circle())
-                            .shadow(color: .black.opacity(0.22), radius: 6, x: 0, y: 3)
+                        VStack(spacing: 3) {
+                            Image(systemName: "scooter")
+                                .font(.headline.weight(.bold))
+                            Text(currentSpeedMarkerText)
+                                .font(.caption2.monospacedDigit().weight(.bold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(currentSpeedColor)
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.22), radius: 6, x: 0, y: 3)
                     }
                 }
             }
             .frame(height: 260)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+            HStack(spacing: 8) {
+                Image(systemName: "gauge.with.dots.needle.67percent")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(currentSpeedColor)
+                Text("当前速度")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.teslaSecondaryText)
+                Text(currentSpeedText)
+                    .font(.subheadline.monospacedDigit().weight(.bold))
+                    .foregroundStyle(Color.teslaPrimaryText)
+                Spacer(minLength: 8)
+                SpeedRouteLegend()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color.teslaControlBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             HStack(spacing: 10) {
                 Button {
@@ -6153,7 +6186,7 @@ private struct InterfaceRideTrackMapPanel: View {
                     in: 0...Double(max(points.count - 1, 0)),
                     step: 1
                 )
-                .tint(Color.teslaGreen)
+                .tint(currentSpeedColor)
             }
         }
         .padding(16)
@@ -6173,7 +6206,77 @@ private struct InterfaceRideTrackMapPanel: View {
     }
 
     private var coordinates: [CLLocationCoordinate2D] { points.map(\.coordinate) }
-    private var playedCoordinates: [CLLocationCoordinate2D] { Array(coordinates.prefix(playbackIndex + 1)) }
+
+    private var routeSegments: [RideTrackSpeedSegment] {
+        guard points.count > 1 else { return [] }
+        return (0..<(points.count - 1)).map { index in
+            let start = points[index]
+            let end = points[index + 1]
+            let speeds = [start.speedKmh, end.speedKmh].compactMap { speed -> Double? in
+                guard let speed, speed.isFinite, speed >= 0 else { return nil }
+                return speed
+            }
+            return RideTrackSpeedSegment(
+                index: index,
+                coordinates: [start.coordinate, end.coordinate],
+                speedKmh: speeds.isEmpty ? nil : speeds.reduce(0, +) / Double(speeds.count)
+            )
+        }
+    }
+
+    private var currentSpeedKmh: Double? {
+        guard let speed = points[safe: playbackIndex]?.speedKmh,
+              speed.isFinite,
+              speed >= 0 else {
+            return nil
+        }
+        return speed
+    }
+
+    private var currentSpeedText: String {
+        guard let currentSpeedKmh else { return "接口未提供" }
+        return String(format: "%.1f km/h", currentSpeedKmh)
+    }
+
+    private var currentSpeedMarkerText: String {
+        guard let currentSpeedKmh else { return "-- km/h" }
+        return String(format: "%.0f km/h", currentSpeedKmh)
+    }
+
+    private var currentSpeedAccessibilityText: String {
+        currentSpeedKmh.map { String(format: "%.1f km/h", $0) } ?? "速度未提供"
+    }
+
+    private var validSpeeds: [Double] {
+        points.compactMap { point in
+            guard let speed = point.speedKmh, speed.isFinite, speed >= 0 else { return nil }
+            return speed
+        }
+    }
+
+    private func speedColor(for speed: Double?) -> Color {
+        guard let speed, speed.isFinite, speed >= 0 else {
+            return Color.teslaSecondaryText.opacity(0.45)
+        }
+        let progress = normalizedSpeedProgress(for: speed)
+        // Hue 0.333 is green, 0.167 is yellow and 0 is red.
+        return Color(hue: 0.333 * (1 - progress), saturation: 0.88, brightness: 0.9)
+    }
+
+    private var currentSpeedColor: Color {
+        speedColor(for: currentSpeedKmh)
+    }
+
+    private func normalizedSpeedProgress(for speed: Double) -> Double {
+        guard let minimum = validSpeeds.min(), let maximum = validSpeeds.max() else { return 0 }
+        let range = maximum - minimum
+        if range > 0.1 {
+            return min(max((speed - minimum) / range, 0), 1)
+        }
+        // When the API reports only one speed, retain the same slow-to-fast
+        // language instead of always treating that route as slow.
+        return min(max(speed / 45, 0), 1)
+    }
 
     private static func region(for coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
         guard !coordinates.isEmpty else {
@@ -6187,6 +6290,35 @@ private struct InterfaceRideTrackMapPanel: View {
             center: CLLocationCoordinate2D(latitude: (minLatitude + maxLatitude) / 2, longitude: (minLongitude + maxLongitude) / 2),
             span: MKCoordinateSpan(latitudeDelta: max((maxLatitude - minLatitude) * 1.5, 0.006), longitudeDelta: max((maxLongitude - minLongitude) * 1.5, 0.006))
         )
+    }
+}
+
+private struct RideTrackSpeedSegment: Identifiable {
+    var index: Int
+    var coordinates: [CLLocationCoordinate2D]
+    var speedKmh: Double?
+
+    var id: Int { index }
+}
+
+private struct SpeedRouteLegend: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("慢")
+                .foregroundStyle(Color.teslaSecondaryText)
+            LinearGradient(
+                colors: [.green, .yellow, .red],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: 52, height: 5)
+            .clipShape(Capsule())
+            Text("快")
+                .foregroundStyle(Color.teslaSecondaryText)
+        }
+        .font(.caption2.weight(.medium))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("路线速度颜色：绿色表示慢，红色表示快")
     }
 }
 
