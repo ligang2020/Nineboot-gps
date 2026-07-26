@@ -1464,6 +1464,9 @@ private struct VehicleMotionScene: View {
         // polling. Five minutes keeps the UI current without creating an
         // unnecessary request for every animation frame.
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in
+            // Keep phone fallback location fresh too. Vehicle GPS remains the
+            // priority, but a parked/charging vehicle can have an old GPS fix.
+            weatherLocation.requestCurrentLocation()
             Task {
                 await rideWeather.refresh(
                     latitude: weatherCoordinate?.latitude,
@@ -1819,12 +1822,28 @@ private struct RideWeatherSnapshot: Equatable {
     var temperatureCelsius: Double?
     var ultravioletIndex: Double?
     var airQualityIndex: Int?
+    var precipitationMillimeters: Double?
+    var windSpeedKPH: Double?
+    var windGustsKPH: Double?
+    var windDirectionDegrees: Double?
     var isBlizzard: Bool
 
     var isNight: Bool { !isDay }
+    /// Every detected rain code deliberately uses a high-density downpour.
+    /// In the small vehicle scene, light rain is otherwise too subtle to read.
     var hasRain: Bool { condition == .rain || condition == .storm }
+    /// Product requirement: rain includes a visible lightning effect, while
+    /// storm weather intensifies the same effect.
     var hasLightning: Bool { condition == .storm || condition == .rain }
     var hasSnow: Bool { condition == .snow }
+    var effectiveWindKPH: Double {
+        max(windSpeedKPH ?? 0, windGustsKPH ?? 0)
+    }
+    var hasWind: Bool { effectiveWindKPH >= 18 }
+    var windText: String {
+        guard effectiveWindKPH.isFinite, effectiveWindKPH >= 1 else { return "--" }
+        return String(format: "%.0f km/h", effectiveWindKPH)
+    }
 
     var temperatureText: String {
         guard let temperatureCelsius,
@@ -1864,6 +1883,10 @@ private struct RideWeatherSnapshot: Equatable {
             temperatureCelsius: nil,
             ultravioletIndex: nil,
             airQualityIndex: nil,
+            precipitationMillimeters: nil,
+            windSpeedKPH: nil,
+            windGustsKPH: nil,
+            windDirectionDegrees: nil,
             isBlizzard: false
         )
     }
@@ -1874,6 +1897,10 @@ private struct RideWeatherSnapshot: Equatable {
         temperatureCelsius: Double?,
         ultravioletIndex: Double?,
         airQualityIndex: Int?,
+        precipitationMillimeters: Double?,
+        windSpeedKPH: Double?,
+        windGustsKPH: Double?,
+        windDirectionDegrees: Double?,
         observedAt: Date
     ) -> RideWeatherSnapshot {
         let condition: Condition
@@ -1896,6 +1923,10 @@ private struct RideWeatherSnapshot: Equatable {
             temperatureCelsius: temperatureCelsius,
             ultravioletIndex: ultravioletIndex,
             airQualityIndex: airQualityIndex,
+            precipitationMillimeters: precipitationMillimeters,
+            windSpeedKPH: windSpeedKPH,
+            windGustsKPH: windGustsKPH,
+            windDirectionDegrees: windDirectionDegrees,
             isBlizzard: [75, 77, 86].contains(weatherCode)
         )
     }
@@ -1961,6 +1992,12 @@ private struct RideWeatherCache: Codable {
     var temperatureCelsius: Double?
     var ultravioletIndex: Double?
     var airQualityIndex: Int?
+    // Optional for backwards-compatible decoding of caches produced before
+    // the app tracked precipitation and wind measurements.
+    var precipitationMillimeters: Double?
+    var windSpeedKPH: Double?
+    var windGustsKPH: Double?
+    var windDirectionDegrees: Double?
     var isBlizzard: Bool
 
     init(coordinate: CLLocationCoordinate2D, snapshot: RideWeatherSnapshot) {
@@ -1978,6 +2015,10 @@ private struct RideWeatherCache: Codable {
         temperatureCelsius = snapshot.temperatureCelsius
         ultravioletIndex = snapshot.ultravioletIndex
         airQualityIndex = snapshot.airQualityIndex
+        precipitationMillimeters = snapshot.precipitationMillimeters
+        windSpeedKPH = snapshot.windSpeedKPH
+        windGustsKPH = snapshot.windGustsKPH
+        windDirectionDegrees = snapshot.windDirectionDegrees
         isBlizzard = snapshot.isBlizzard
     }
 
@@ -1997,6 +2038,10 @@ private struct RideWeatherCache: Codable {
             temperatureCelsius: temperatureCelsius,
             ultravioletIndex: ultravioletIndex,
             airQualityIndex: airQualityIndex,
+            precipitationMillimeters: precipitationMillimeters,
+            windSpeedKPH: windSpeedKPH,
+            windGustsKPH: windGustsKPH,
+            windDirectionDegrees: windDirectionDegrees,
             isBlizzard: isBlizzard
         )
     }
@@ -2074,6 +2119,10 @@ private final class RideWeatherProvider: ObservableObject {
                 temperatureCelsius: current?.temperature2M ?? currentWeather?.temperature,
                 ultravioletIndex: current?.uvIndex,
                 airQualityIndex: preservedAirQualityIndex,
+                precipitationMillimeters: current?.precipitation ?? current?.rain,
+                windSpeedKPH: current?.windSpeed10M ?? currentWeather?.windSpeed,
+                windGustsKPH: current?.windGusts10M,
+                windDirectionDegrees: current?.windDirection10M ?? currentWeather?.windDirection,
                 observedAt: .now
             )
             lastCoordinate = coordinate
@@ -2153,8 +2202,8 @@ private final class RideWeatherProvider: ObservableObject {
     ) async throws -> OpenMeteoRideWeatherResponse {
         var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
         let currentVariables = includesCurrentUV
-            ? "weather_code,is_day,temperature_2m,uv_index"
-            : "weather_code,is_day,temperature_2m"
+            ? "weather_code,is_day,temperature_2m,uv_index,precipitation,rain,wind_speed_10m,wind_gusts_10m,wind_direction_10m"
+            : "weather_code,is_day,temperature_2m,precipitation,rain,wind_speed_10m,wind_gusts_10m,wind_direction_10m"
         components?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
@@ -2238,12 +2287,22 @@ private struct OpenMeteoRideWeatherResponse: Decodable {
         let isDay: Int
         let temperature2M: Double?
         let uvIndex: Double?
+        let precipitation: Double?
+        let rain: Double?
+        let windSpeed10M: Double?
+        let windGusts10M: Double?
+        let windDirection10M: Double?
 
         enum CodingKeys: String, CodingKey {
             case weatherCode = "weather_code"
             case isDay = "is_day"
             case temperature2M = "temperature_2m"
             case uvIndex = "uv_index"
+            case precipitation
+            case rain
+            case windSpeed10M = "wind_speed_10m"
+            case windGusts10M = "wind_gusts_10m"
+            case windDirection10M = "wind_direction_10m"
         }
     }
 
@@ -2251,11 +2310,15 @@ private struct OpenMeteoRideWeatherResponse: Decodable {
         let temperature: Double?
         let weatherCode: Int
         let isDay: Int?
+        let windSpeed: Double?
+        let windDirection: Double?
 
         enum CodingKeys: String, CodingKey {
             case temperature
             case weatherCode = "weathercode"
             case isDay = "is_day"
+            case windSpeed = "windspeed"
+            case windDirection = "winddirection"
         }
     }
 
@@ -2359,6 +2422,13 @@ private struct LiveRideEnvironment: View {
                 citySkyline(size: size, phase: animatesRoadAndCity ? phase : 0)
                 road(size: size, phase: animatesRoadAndCity ? phase : 0)
                 streetLights(size: size, phase: animatesRoadAndCity ? phase : 0)
+
+                // Weather animation is deliberately independent from road/city
+                // motion, so riding, charging, and a stationary vehicle all
+                // show the same live wind, rain, snow, and lightning state.
+                if weather.hasWind {
+                    wind(size: size, phase: phase)
+                }
 
                 if weather.hasRain {
                     rain(size: size, drift: precipitationDrift, phase: phase)
@@ -2945,16 +3015,75 @@ private struct LiveRideEnvironment: View {
         .frame(width: height * 0.48, height: height + 9)
     }
 
+    private func wind(size: CGSize, phase: TimeInterval) -> some View {
+        let normalizedStrength = min(max((weather.effectiveWindKPH - 18) / 42, 0), 1)
+        let windStrength = CGFloat(normalizedStrength)
+        let directionRadians = (weather.windDirectionDegrees ?? 270) * .pi / 180
+        let directionalComponent = CGFloat(sin(directionRadians))
+        let travelDirection: CGFloat = abs(directionalComponent) < 0.20
+            ? 1
+            : (directionalComponent < 0 ? -1 : 1)
+        let gust = 0.68 + CGFloat(sin(phase * 2.75) + sin(phase * 1.12 + 0.8)) * 0.16
+        let opacity = 0.17 + normalizedStrength * 0.23
+
+        return ZStack {
+            Canvas { context, canvasSize in
+                for layer in 0..<3 {
+                    let count = 7 + layer * 4
+                    let speed = (0.13 + Double(layer) * 0.055) * (1 + Double(normalizedStrength) * 1.35)
+                    for index in 0..<count {
+                        let progress = (phase * speed + Double(index * 31 + layer * 17) / 100.0)
+                            .truncatingRemainder(dividingBy: 1.0)
+                        let x = (CGFloat(progress) * (canvasSize.width + 130) - 65) * travelDirection
+                        let y = canvasSize.height * (0.18 + CGFloat((index * 37 + layer * 11) % 62) / 100.0)
+                        let length = (18 + CGFloat(layer) * 11 + windStrength * 22) * gust
+                        let arc = CGFloat(sin(phase * 2.1 + Double(index))) * 4
+
+                        var stream = Path()
+                        stream.move(to: CGPoint(x: x - travelDirection * length * 0.5, y: y - arc * 0.3))
+                        stream.addQuadCurve(
+                            to: CGPoint(x: x + travelDirection * length * 0.5, y: y + arc * 0.3),
+                            control: CGPoint(x: x, y: y - arc)
+                        )
+                        context.stroke(
+                            stream,
+                            with: .color(Color.white.opacity(opacity * (0.45 + Double(layer) * 0.18))),
+                            style: StrokeStyle(lineWidth: 0.65 + CGFloat(layer) * 0.22, lineCap: .round)
+                        )
+                    }
+                }
+            }
+
+            // A few high-contrast leaves make wind visible even when clouds
+            // have little contrast, without covering the vehicle or HUD.
+            ForEach(0..<7, id: \.self) { index in
+                let progress = (phase * (0.12 + Double(index % 3) * 0.035) + Double(index) * 0.19)
+                    .truncatingRemainder(dividingBy: 1.0)
+                let x = (CGFloat(progress) * 1.24 - 0.12) * size.width * travelDirection
+                let y = size.height * (0.34 + CGFloat((index * 19) % 46) / 100.0)
+                let rotation = Double(travelDirection) * (phase * 180 + Double(index) * 51)
+
+                Image(systemName: "leaf.fill")
+                    .font(.system(size: 5 + CGFloat(index % 3), weight: .medium))
+                    .foregroundStyle(Color(red: 0.66, green: 0.77, blue: 0.48).opacity(0.34 + normalizedStrength * 0.35))
+                    .rotationEffect(.degrees(rotation))
+                    .offset(x: x, y: y)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipped()
+    }
+
     private func rain(size: CGSize, drift: CGFloat, phase: TimeInterval) -> some View {
         // The compact scene needs a true downpour density for both rain codes;
         // otherwise normal rain becomes nearly invisible behind the vehicle.
         let isStorm = weather.condition == .storm || weather.condition == .rain
-        let baseOpacity = weather.isNight ? 0.74 : 0.62
-        // Rain and snow should fall from the sky to the road. Keep only a
-        // tiny natural sway so particles do not inherit the horizontal riding
-        // wind direction.
+        let baseOpacity = weather.isNight ? 0.78 : 0.68
+        let windIntensity = min(max((weather.effectiveWindKPH - 8) / 52, 0), 1)
+        let directionRadians = (weather.windDirectionDegrees ?? 270) * .pi / 180
+        let crossWind = CGFloat(sin(directionRadians)) * CGFloat(windIntensity)
         let verticalSway = CGFloat(sin(phase * 1.35) + sin(phase * 0.41 + 1.2)) * size.width * 0.004
-        let splashSpeed = isStorm ? 2.4 : 1.9
+        let splashSpeed = isStorm ? 2.8 : 2.2
 
         return ZStack {
             // Canvas keeps the dense multi-depth rain smooth at the scene's
@@ -2971,16 +3100,19 @@ private struct LiveRideEnvironment: View {
                         let cycle = (seed + phase * layerSpeeds[layer] * 0.34 + Double(drift) * 0.11)
                             .truncatingRemainder(dividingBy: 1.0)
                         let xSeed = CGFloat((index * 67 + layer * 23) % 109) / 109.0
-                        let x = xSeed * (canvasSize.width + 80) - 40 + verticalSway * CGFloat(layer + 1) * 0.42
                         let y = CGFloat(cycle) * (canvasSize.height + 90) - 62
                         let length = layerLengths[layer] * max(0.82, size.height / 218)
+                        let windOffset = crossWind * (CGFloat(cycle) * 34 + length * 0.86)
+                        let x = xSeed * (canvasSize.width + 80) - 40
+                            + verticalSway * CGFloat(layer + 1) * 0.42
+                            + windOffset
                         let fallWobble = CGFloat(sin(phase * 1.8 + Double(index * 13 + layer * 7))) * min(1.6, length * 0.08)
 
                         var drop = Path()
                         drop.move(to: CGPoint(x: x, y: y))
-                        // Precipitation falls top-to-bottom; only a subtle
-                        // micro-wobble prevents the rain from looking static.
-                        drop.addLine(to: CGPoint(x: x + fallWobble, y: y + length))
+                        // Rain always falls toward the road; real live wind
+                        // provides the lateral lean and increases its speed.
+                        drop.addLine(to: CGPoint(x: x + fallWobble + crossWind * length * 0.42, y: y + length))
                         context.stroke(
                             drop,
                             with: .color(Color.white.opacity(baseOpacity * (0.38 + Double(layer) * 0.24))),
@@ -3054,14 +3186,39 @@ private struct LiveRideEnvironment: View {
     }
 
     private func lightning(size: CGSize, opacity: Double) -> some View {
-        Path { path in
-            path.move(to: CGPoint(x: size.width * 0.71, y: size.height * 0.10))
-            path.addLine(to: CGPoint(x: size.width * 0.63, y: size.height * 0.34))
-            path.addLine(to: CGPoint(x: size.width * 0.70, y: size.height * 0.33))
-            path.addLine(to: CGPoint(x: size.width * 0.59, y: size.height * 0.56))
+        ZStack {
+            lightningBolt(
+                points: [
+                    CGPoint(x: size.width * 0.71, y: size.height * 0.08),
+                    CGPoint(x: size.width * 0.62, y: size.height * 0.33),
+                    CGPoint(x: size.width * 0.70, y: size.height * 0.32),
+                    CGPoint(x: size.width * 0.58, y: size.height * 0.58)
+                ],
+                opacity: opacity
+            )
+
+            if weather.condition == .storm {
+                lightningBolt(
+                    points: [
+                        CGPoint(x: size.width * 0.34, y: size.height * 0.14),
+                        CGPoint(x: size.width * 0.39, y: size.height * 0.31),
+                        CGPoint(x: size.width * 0.34, y: size.height * 0.30),
+                        CGPoint(x: size.width * 0.42, y: size.height * 0.48)
+                    ],
+                    opacity: opacity * 0.70
+                )
+            }
         }
-        .stroke(Color.white.opacity(opacity), style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round))
-        .shadow(color: Color.white.opacity(opacity), radius: 9)
+    }
+
+    private func lightningBolt(points: [CGPoint], opacity: Double) -> some View {
+        Path { path in
+            guard let first = points.first else { return }
+            path.move(to: first)
+            for point in points.dropFirst() { path.addLine(to: point) }
+        }
+        .stroke(Color.white.opacity(opacity), style: StrokeStyle(lineWidth: 2.35, lineCap: .round, lineJoin: .round))
+        .shadow(color: Color(red: 0.72, green: 0.85, blue: 1.0).opacity(opacity), radius: 12)
     }
 }
 
@@ -3223,6 +3380,7 @@ private struct CityEnvironmentReadout: View {
 
             VStack(alignment: .trailing, spacing: 3) {
                 metric(icon: "thermometer.medium", title: "气温", value: weather.temperatureText, foreground: foreground, secondary: secondary, fontSize: labelSize)
+                metric(icon: "wind", title: "风速", value: weather.windText, foreground: foreground, secondary: secondary, fontSize: labelSize)
                 metric(icon: "sun.max", title: "紫外线", value: weather.ultravioletText, foreground: foreground, secondary: secondary, fontSize: labelSize)
                 metric(icon: "aqi.medium", title: "空气质量", value: weather.airQualityText, foreground: foreground, secondary: secondary, fontSize: labelSize)
             }
