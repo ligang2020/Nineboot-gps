@@ -159,8 +159,14 @@ final class NinebotViewModel: ObservableObject {
     @Published private(set) var rideDetails: [String: NinebotRideDetail] = [:]
     @Published private(set) var loadingRideDetailKeys: Set<String> = []
     @Published private(set) var syncingTravelMonth: String?
+    /// 安全只读 BLE 基础层的实时状态；它不会表示账号绑定或远程服务在线状态。
+    @Published private(set) var bleConnectionState: NinebotBLEConnectionState = .idle
+    @Published private(set) var discoveredBLEPeripherals: [NinebotBLEDiscoveredPeripheral] = []
+    @Published private(set) var lastBLETelemetryAt: Date?
 
     private let store = NinebotSharedStore()
+    private let bleTransport = NinebotBLETransport()
+    private var bleCancellables = Set<AnyCancellable>()
     private var lastAutomaticRefreshAt: Date?
     private var lastWidgetTimelineRefreshAt: Date?
     /// 最近一帧 BLE 遥测；仅用于避免网络轮询覆盖正在进行的本地骑行。
@@ -188,6 +194,30 @@ final class NinebotViewModel: ObservableObject {
         self.resolvedAddresses = store.loadResolvedAddresses().filter { $0.value.source == Self.addressGeocodingSource }
         self.activeRideSession = store.loadActiveRideSession()
         reconcileRideSession(with: self.dashboard)
+
+        bleTransport.$connectionState
+            .receive(on: RunLoop.main)
+            .sink { [weak self] state in
+                self?.bleConnectionState = state
+            }
+            .store(in: &bleCancellables)
+        bleTransport.$discoveredPeripherals
+            .receive(on: RunLoop.main)
+            .sink { [weak self] peripherals in
+                self?.discoveredBLEPeripherals = peripherals
+            }
+            .store(in: &bleCancellables)
+        bleTransport.$lastTelemetryAt
+            .receive(on: RunLoop.main)
+            .sink { [weak self] date in
+                self?.lastBLETelemetryAt = date
+            }
+            .store(in: &bleCancellables)
+        bleTransport.onTelemetry = { [weak self] telemetry in
+            // NinebotBLETransport is intentionally created on the main queue.
+            // Keep the UI / Live Activity bridge on the MainActor as well.
+            self?.ingestBLETelemetry(telemetry)
+        }
     }
 
     var hasConfiguration: Bool {
@@ -646,6 +676,68 @@ final class NinebotViewModel: ObservableObject {
             store.clearActiveRideSession()
         }
         NinebotRideLiveActivityManager.end(vehicleSN: resolvedVehicleSN)
+    }
+
+    // MARK: - Safe BLE transport
+
+    var bleStatusTitle: String { bleConnectionState.title }
+
+    var bleStatusDetail: String { bleConnectionState.detail }
+
+    var isBLEScanningOrConnecting: Bool { bleConnectionState.isBusy }
+
+    var isBLEScanning: Bool {
+        bleTransport.isScanning
+    }
+
+    var isBLEConnecting: Bool {
+        switch bleConnectionState {
+        case .connecting, .discoveringServices, .subscribing:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var isBLEConnected: Bool {
+        if case .connected = bleConnectionState { return true }
+        return false
+    }
+
+    var canConnectAuthorizedBLEVehicle: Bool {
+        bleTransport.hasAuthorizedReadOnlyProfile
+    }
+
+    /// 仅扫描附近的 BLE 广播；不会自动连接、配对、发送控制命令或写入车辆特征。
+    func scanForNearbyBLEDevices() {
+        bleTransport.startDiscovery()
+    }
+
+    func stopBLEDiscovery() {
+        bleTransport.stopDiscovery()
+    }
+
+    /// 仅在上层已注入厂商授权的 service / characteristic / decoder / trusted peripheral
+    /// 配置后才会生效；没有配置时传输层会拒绝连接。
+    func connectAuthorizedBLEVehicle() {
+        bleTransport.connectTrustedVehicle()
+    }
+
+    func disconnectBLEVehicle() {
+        bleTransport.disconnect()
+    }
+
+    /// BLE 适配器的唯一安装点。调用方必须使用厂商授权的只读 GATT 定义和解码器，
+    /// 不允许在这里放入私有密钥、蓝牙钥匙、控制指令或 OTA 数据。
+    func configureAuthorizedBLEReadOnlyProfile(
+        _ profile: NinebotBLEReadOnlyProfile,
+        decoder: @escaping NinebotBLETransport.TelemetryDecoder
+    ) {
+        bleTransport.configureAuthorizedReadOnlyProfile(profile, decoder: decoder)
+    }
+
+    func clearAuthorizedBLEReadOnlyProfile() {
+        bleTransport.clearAuthorizedProfile()
     }
 
     /// BLE 层每秒解析一帧后调用此方法。该方法是 BLE 与 Live Activity 之间的

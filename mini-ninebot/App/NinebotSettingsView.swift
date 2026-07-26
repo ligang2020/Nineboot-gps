@@ -41,6 +41,11 @@ struct NinebotSettingsView: View {
                         .ninePlusCard(cornerRadius: 24)
                 }
 
+                BLETransportSettingsCard(model: model)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .ninePlusCard(cornerRadius: 24)
+
                 if model.errorMessage != nil || model.statusMessage != nil {
                     SettingsStatusBanner(
                         errorMessage: model.errorMessage,
@@ -240,6 +245,147 @@ struct NinebotSettingsView: View {
             if model.dataSourceMode == .platform {
                 Task { await model.syncPushDeviceTokenIfPossible() }
             }
+        }
+    }
+}
+
+private struct BLETransportSettingsCard: View {
+    @ObservedObject var model: NinebotViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: model.bleConnectionState.systemImage)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(statusColor)
+                    .frame(width: 34, height: 34)
+                    .background(statusColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("车辆蓝牙（安全只读）")
+                        .font(.headline)
+                    Text(model.bleStatusTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(statusColor)
+                    Text(model.bleStatusDetail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 9) {
+                Label("不自动连接", systemImage: "hand.raised.fill")
+                Label("不发送控制", systemImage: "lock.fill")
+                Label("只订阅遥测", systemImage: "waveform.path.ecg")
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+
+            if let lastTelemetryAt = model.lastBLETelemetryAt {
+                Label {
+                    Text("最近遥测更新 ") + Text(lastTelemetryAt, style: .relative)
+                } icon: {
+                    Image(systemName: "clock.arrow.circlepath")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                if model.isBLEScanning {
+                    Button {
+                        model.stopBLEDiscovery()
+                    } label: {
+                        SettingsCompactButtonLabel(title: "停止扫描", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button {
+                        model.scanForNearbyBLEDevices()
+                    } label: {
+                        SettingsCompactButtonLabel(title: "扫描附近设备", systemImage: "dot.radiowaves.left.and.right")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isBLEScanningOrConnecting)
+                }
+
+                if model.isBLEConnected {
+                    Button {
+                        model.disconnectBLEVehicle()
+                    } label: {
+                        SettingsCompactButtonLabel(title: "断开", systemImage: "link.badge.minus")
+                    }
+                    .buttonStyle(.bordered)
+                } else if model.isBLEConnecting && !model.isBLEScanning {
+                    Button {
+                        model.disconnectBLEVehicle()
+                    } label: {
+                        SettingsCompactButtonLabel(title: "取消连接", systemImage: "xmark.circle")
+                    }
+                    .buttonStyle(.bordered)
+                } else if model.canConnectAuthorizedBLEVehicle {
+                    Button {
+                        model.connectAuthorizedBLEVehicle()
+                    } label: {
+                        SettingsCompactButtonLabel(title: "连接授权车辆", systemImage: "link")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isBLEScanningOrConnecting)
+                }
+            }
+            .font(.subheadline.weight(.semibold))
+
+            if !model.discoveredBLEPeripherals.isEmpty {
+                Divider()
+
+                Text("附近 BLE 设备")
+                    .font(.subheadline.weight(.semibold))
+
+                ForEach(model.discoveredBLEPeripherals.prefix(5)) { peripheral in
+                    HStack(spacing: 10) {
+                        Image(systemName: peripheral.matchesAuthorizedProfile ? "checkmark.shield.fill" : "dot.radiowaves.left.and.right")
+                            .foregroundStyle(peripheral.matchesAuthorizedProfile ? Color.green : Color.secondary)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(peripheral.displayName)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            Text("\(peripheral.signalTitle) · \(peripheral.rssi) dBm · \(peripheral.id.uuidString.prefix(8))")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        if peripheral.matchesAuthorizedProfile {
+                            Text("已匹配")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.green)
+                        }
+                    }
+                }
+            }
+
+            Text("扫描结果仅在本次运行中显示。未配置厂商授权的 GATT 服务、遥测特征、解码器和受信任外设标识前，App 不会连接任何车辆。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("车辆蓝牙，\(model.bleStatusTitle)，\(model.bleStatusDetail)")
+    }
+
+    private var statusColor: Color {
+        switch model.bleConnectionState {
+        case .connected:
+            return .green
+        case .failed, .bluetoothUnavailable:
+            return .orange
+        case .scanning, .connecting, .discoveringServices, .subscribing:
+            return .blue
+        default:
+            return .secondary
         }
     }
 }
@@ -1412,8 +1558,8 @@ private struct ProfileAvatar: View {
 /// “我的”页面底部的版本信息，读取 App 配置，避免版本号在界面中硬编码。
 private struct AppVersionFooter: View {
     private var versionText: String {
-        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.40"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "40"
+        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.46"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "46"
         return "Ninebot Live v\(shortVersion) (\(build))"
     }
 
