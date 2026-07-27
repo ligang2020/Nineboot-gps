@@ -1558,8 +1558,8 @@ private struct ProfileAvatar: View {
 /// “我的”页面底部的版本信息，读取 App 配置，避免版本号在界面中硬编码。
 private struct AppVersionFooter: View {
     private var versionText: String {
-        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.46"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "46"
+        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.47"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "47"
         return "Ninebot Live v\(shortVersion) (\(build))"
     }
 

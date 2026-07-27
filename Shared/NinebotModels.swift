@@ -325,6 +325,16 @@ struct NinebotRideDetail: Codable, Equatable, Identifiable {
     var fetchedAt: Date
     var raw: JSONValue
     var parsedRecord: NinebotRideRecord?
+    /// Parsed once when the response arrives. Route parsing walks the complete
+    /// JSON tree, so repeating it during every SwiftUI update made long trips
+    /// feel as though the detail request itself was slow.
+    var preparedTrackPoints: [NinebotInterfaceTrackPoint]?
+    /// End-to-end time spent waiting for the proxy / platform response. This
+    /// is intentionally kept with the in-memory detail so support can tell a
+    /// slow service response apart from map rendering work in the app.
+    var responseDuration: TimeInterval?
+    /// Time spent parsing and preparing the returned route for presentation.
+    var trackPreparationDuration: TimeInterval?
 
     var id: String {
         "\(vehicleSN)|\(rideID)"
@@ -335,7 +345,7 @@ struct NinebotRideDetail: Codable, Equatable, Identifiable {
     }
 }
 
-struct NinebotInterfaceTrackPoint: Equatable, Identifiable {
+struct NinebotInterfaceTrackPoint: Codable, Equatable, Identifiable {
     var id: String
     var latitude: Double
     var longitude: Double
@@ -349,11 +359,15 @@ struct NinebotInterfaceTrackPoint: Equatable, Identifiable {
 
 extension NinebotRideDetail {
     var interfaceTrackPoints: [NinebotInterfaceTrackPoint] {
+        if let preparedTrackPoints {
+            return preparedTrackPoints
+        }
+
         let points = Self.bestTrackPoints(from: raw)
         if !points.isEmpty {
             return points
         }
-        return interfaceTrackCoordinates.enumerated().map { index, coordinate in
+        return Self.bestTrackCoordinates(from: raw).enumerated().map { index, coordinate in
             Self.interfaceTrackPoint(
                 coordinate: coordinate,
                 speedKmh: nil,
@@ -364,11 +378,7 @@ extension NinebotRideDetail {
     }
 
     var interfaceTrackCoordinates: [CLLocationCoordinate2D] {
-        let points = Self.bestTrackPoints(from: raw)
-        if !points.isEmpty {
-            return points.map(\.coordinate)
-        }
-        return Self.bestTrackCoordinates(from: raw)
+        interfaceTrackPoints.map(\.coordinate)
     }
 
     private static func bestTrackPoints(from value: JSONValue) -> [NinebotInterfaceTrackPoint] {
@@ -599,10 +609,16 @@ extension NinebotRideDetail {
               let coordinate = coordinate(fromPair: [.number(numbers[0]), .number(numbers[1])]) else {
             return nil
         }
+
+        // An unnamed third value in generic coordinate arrays is commonly a
+        // timestamp, elapsed seconds, altitude or heading. Treating it as a
+        // speed produced believable-looking but false speed labels. Only the
+        // documented official `trail` layout and explicitly named object
+        // fields are allowed to supply a displayed speed.
         return interfaceTrackPoint(
             coordinate: coordinate,
-            speedKmh: normalizedSpeed(numbers.count >= 3 ? numbers[2] : nil),
-            auxiliaryValue: numbers.count >= 4 ? numbers[3] : nil,
+            speedKmh: nil,
+            auxiliaryValue: numbers.count >= 3 ? numbers[2] : nil,
             index: index
         )
     }

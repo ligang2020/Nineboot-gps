@@ -227,18 +227,30 @@ struct NinebotProxyClient {
     }
 
     func fetchTravelDetail(sn: String, travelID: String) async throws -> NinebotRideDetail {
+        let responseStartedAt = Date()
         let payload = try await request(
             method: "GET",
             path: ["vehicles", sn, "travel", travelID]
         )
+        let responseDuration = Date().timeIntervalSince(responseStartedAt)
 
-        return NinebotRideDetail(
+        // Prepare the route once. Previously SwiftUI recomputed the recursive
+        // route extraction every time the detail view updated, which is very
+        // expensive for a travel response containing thousands of GPS points.
+        let preparationStartedAt = Date()
+        var detail = NinebotRideDetail(
             vehicleSN: sn,
             rideID: travelID,
             fetchedAt: Date(),
             raw: payload,
-            parsedRecord: Self.rideRecord(from: payload, index: 0)
+            parsedRecord: Self.rideRecord(from: payload, index: 0),
+            preparedTrackPoints: nil,
+            responseDuration: responseDuration,
+            trackPreparationDuration: nil
         )
+        detail.preparedTrackPoints = detail.interfaceTrackPoints
+        detail.trackPreparationDuration = Date().timeIntervalSince(preparationStartedAt)
+        return detail
     }
 
     func syncTravelMonth(sn: String, month: String, pageSize: Int = 20) async throws -> NinebotTravelPage {

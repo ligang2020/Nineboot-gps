@@ -6103,6 +6103,8 @@ private struct NinebotRideDetailView: View {
                     InterfaceRideTrackMapPanel(points: interfaceTrackPoints)
                 } else if remoteDetail != nil {
                     RideTrackUnavailableNotice()
+                } else if isLoadingRemoteDetail {
+                    RideDetailLoadingNotice()
                 }
 
                 DetailSection(title: "接口行程") {
@@ -6114,6 +6116,13 @@ private struct NinebotRideDetailView: View {
                     DetailRow(title: "本次用电", value: formatEnergyWh(effectiveRecord.consumedEnergyWh), systemImage: "bolt.fill")
                     DetailRow(title: "能耗", value: formatEnergyPerKm(effectiveRecord.energyPerKmWh), systemImage: "leaf.fill")
                     DetailRow(title: "行程 ID", value: record.id, systemImage: "number")
+                }
+
+                if let remoteDetail {
+                    DetailSection(title: "加载诊断") {
+                        DetailRow(title: "接口响应", value: formatElapsedTime(remoteDetail.responseDuration), systemImage: "network")
+                        DetailRow(title: "路线准备", value: formatElapsedTime(remoteDetail.trackPreparationDuration), systemImage: "cpu")
+                    }
                 }
 
                 RawJSONSection(title: "行程详情完整返回值", value: remoteDetail?.raw)
@@ -6146,9 +6155,41 @@ private struct NinebotRideDetailView: View {
         remoteDetail?.interfaceTrackPoints ?? []
     }
 
+    private var isLoadingRemoteDetail: Bool {
+        guard let vehicleSN else { return false }
+        return model.isLoadingRideDetail(vehicleSN: vehicleSN, rideID: record.id)
+    }
+
     private func loadRemoteDetailIfNeeded() async {
         guard let vehicleSN, canLoadRemoteDetail else { return }
         await model.refreshRideDetail(vehicleSN: vehicleSN, rideID: record.id)
+    }
+}
+
+private struct RideDetailLoadingNotice: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.small)
+                .tint(Color.teslaGreen)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("正在读取行程详情")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.teslaPrimaryText)
+                Text("正在等待行程服务返回路线；长路线会在返回后一次性完成本地解析。")
+                    .font(.caption)
+                    .foregroundStyle(Color.teslaSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color.teslaCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.teslaHairline, lineWidth: 1)
+        }
     }
 }
 
@@ -6226,14 +6267,20 @@ private struct RideDetailHero: View {
 }
 
 private struct InterfaceRideTrackMapPanel: View {
+    /// MapKit becomes slow when every raw GPS point is rendered as an
+    /// individual overlay. Keep the source points for the count, but use a
+    /// deterministic sample for the visual replay so opening a long trip stays
+    /// responsive and the route still retains its start and end positions.
     var points: [NinebotInterfaceTrackPoint]
+    var sourcePointCount: Int
     @State private var cameraPosition: MapCameraPosition
     @State private var playbackIndex = 0
     @State private var isPlaying = false
 
     init(points: [NinebotInterfaceTrackPoint]) {
-        self.points = points
-        _cameraPosition = State(initialValue: .region(Self.region(for: points.map(\.coordinate))))
+        self.sourcePointCount = points.count
+        self.points = Self.sampledForPlayback(points)
+        _cameraPosition = State(initialValue: .region(Self.region(for: self.points.map(\.coordinate))))
     }
 
     var body: some View {
@@ -6243,7 +6290,7 @@ private struct InterfaceRideTrackMapPanel: View {
                     Text("接口轨迹回放")
                         .font(.headline)
                         .foregroundStyle(Color.teslaPrimaryText)
-                    Text("起点 → 终点 · \(points.count) 个路线点")
+                    Text(routePointSummary)
                         .font(.caption)
                         .foregroundStyle(Color.teslaSecondaryText)
                 }
@@ -6311,7 +6358,7 @@ private struct InterfaceRideTrackMapPanel: View {
                     .font(.subheadline.monospacedDigit().weight(.bold))
                     .foregroundStyle(Color.teslaPrimaryText)
                 Spacer(minLength: 8)
-                SpeedRouteLegend()
+                SpeedRouteLegend(hasInterfaceSpeed: !validSpeeds.isEmpty)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -6361,6 +6408,13 @@ private struct InterfaceRideTrackMapPanel: View {
             if playbackIndex >= points.count - 1 { isPlaying = false }
         }
         .onDisappear { isPlaying = false }
+    }
+
+    private var routePointSummary: String {
+        if sourcePointCount == points.count {
+            return "起点 → 终点 · \(points.count) 个路线点"
+        }
+        return "起点 → 终点 · \(sourcePointCount) 个路线点（回放抽样为 \(points.count) 个）"
     }
 
     private var coordinates: [CLLocationCoordinate2D] { points.map(\.coordinate) }
@@ -6436,6 +6490,31 @@ private struct InterfaceRideTrackMapPanel: View {
         return min(max(speed / 45, 0), 1)
     }
 
+    private static func sampledForPlayback(
+        _ source: [NinebotInterfaceTrackPoint],
+        maximumPointCount: Int = 480
+    ) -> [NinebotInterfaceTrackPoint] {
+        guard source.count > maximumPointCount, maximumPointCount >= 2 else { return source }
+
+        let lastIndex = source.count - 1
+        let interval = Double(lastIndex) / Double(maximumPointCount - 1)
+        var sampled: [NinebotInterfaceTrackPoint] = []
+        sampled.reserveCapacity(maximumPointCount)
+        var previousIndex = -1
+
+        for sampleIndex in 0..<maximumPointCount {
+            let index = min(Int((Double(sampleIndex) * interval).rounded()), lastIndex)
+            guard index != previousIndex else { continue }
+            sampled.append(source[index])
+            previousIndex = index
+        }
+
+        if sampled.last?.id != source.last?.id, let last = source.last {
+            sampled.append(last)
+        }
+        return sampled
+    }
+
     private static func region(for coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
         guard !coordinates.isEmpty else {
             return MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 31.2304, longitude: 121.4737), span: MKCoordinateSpan(latitudeDelta: 0.03, longitudeDelta: 0.03))
@@ -6460,23 +6539,32 @@ private struct RideTrackSpeedSegment: Identifiable {
 }
 
 private struct SpeedRouteLegend: View {
+    var hasInterfaceSpeed: Bool
+
     var body: some View {
-        HStack(spacing: 4) {
-            Text("慢")
-                .foregroundStyle(Color.teslaSecondaryText)
-            LinearGradient(
-                colors: [.green, .yellow, .red],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: 52, height: 5)
-            .clipShape(Capsule())
-            Text("快")
-                .foregroundStyle(Color.teslaSecondaryText)
+        Group {
+            if hasInterfaceSpeed {
+                HStack(spacing: 4) {
+                    Text("慢")
+                        .foregroundStyle(Color.teslaSecondaryText)
+                    LinearGradient(
+                        colors: [.green, .yellow, .red],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 52, height: 5)
+                    .clipShape(Capsule())
+                    Text("快")
+                        .foregroundStyle(Color.teslaSecondaryText)
+                }
+            } else {
+                Text("接口未提供可信速度")
+                    .foregroundStyle(Color.teslaSecondaryText)
+            }
         }
         .font(.caption2.weight(.medium))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("路线速度颜色：绿色表示慢，红色表示快")
+        .accessibilityLabel(hasInterfaceSpeed ? "路线速度颜色：绿色表示慢，红色表示快" : "接口未提供可信速度，路线不按速度着色")
     }
 }
 
@@ -6911,6 +6999,14 @@ private func formatPercent(_ value: Double?) -> String {
 
 private func formatSpeed(_ value: Double?) -> String {
     formatNumber(value, unit: " km/h", maximumFractionDigits: 1)
+}
+
+private func formatElapsedTime(_ value: TimeInterval?) -> String {
+    guard let value, value.isFinite, value >= 0 else { return "--" }
+    if value < 1 {
+        return String(format: "%.0f ms", value * 1_000)
+    }
+    return String(format: "%.2f 秒", value)
 }
 
 private func formatAccelerationG(_ value: Double?) -> String {
