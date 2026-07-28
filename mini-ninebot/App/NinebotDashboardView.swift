@@ -6351,14 +6351,14 @@ private struct InterfaceRideTrackMapPanel: View {
                 Image(systemName: "gauge.with.dots.needle.67percent")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(currentSpeedColor)
-                Text("当前速度")
+                Text("回放速度")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Color.teslaSecondaryText)
                 Text(currentSpeedText)
                     .font(.subheadline.monospacedDigit().weight(.bold))
                     .foregroundStyle(Color.teslaPrimaryText)
                 Spacer(minLength: 8)
-                SpeedRouteLegend(hasInterfaceSpeed: !validSpeeds.isEmpty)
+                SpeedRouteLegend(hasEstimatedSpeed: !validSpeeds.isEmpty)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -6446,7 +6446,7 @@ private struct InterfaceRideTrackMapPanel: View {
     }
 
     private var currentSpeedText: String {
-        guard let currentSpeedKmh else { return "接口未提供" }
+        guard let currentSpeedKmh else { return "轨迹时间不足" }
         return String(format: "%.1f km/h", currentSpeedKmh)
     }
 
@@ -6456,7 +6456,7 @@ private struct InterfaceRideTrackMapPanel: View {
     }
 
     private var currentSpeedAccessibilityText: String {
-        currentSpeedKmh.map { String(format: "%.1f km/h", $0) } ?? "速度未提供"
+        currentSpeedKmh.map { String(format: "%.1f km/h", $0) } ?? "无法根据轨迹时间计算速度"
     }
 
     private var validSpeeds: [Double] {
@@ -6512,7 +6512,35 @@ private struct InterfaceRideTrackMapPanel: View {
         if sampled.last?.id != source.last?.id, let last = source.last {
             sampled.append(last)
         }
-        return sampled
+        return recomputingPlaybackSpeeds(in: sampled)
+    }
+
+    /// Sampling can skip many raw GPS points. Recalculate each retained
+    /// segment from its own elapsed interval so the replay never displays a
+    /// speed copied from an unrelated part of the route.
+    private static func recomputingPlaybackSpeeds(in source: [NinebotInterfaceTrackPoint]) -> [NinebotInterfaceTrackPoint] {
+        guard source.count > 1 else { return source }
+
+        var points = source
+        for index in points.indices {
+            let segmentIndex = index == 0 ? 0 : index - 1
+            guard segmentIndex < source.count - 1,
+                  let startElapsed = source[segmentIndex].elapsedSeconds,
+                  let endElapsed = source[segmentIndex + 1].elapsedSeconds else {
+                // Non-`trail` responses can provide an explicitly named speed
+                // but no elapsed timestamps. Preserve that value.
+                continue
+            }
+
+            let elapsed = endElapsed - startElapsed
+            let start = source[segmentIndex]
+            let end = source[segmentIndex + 1]
+            let distanceMeters = CLLocation(latitude: start.latitude, longitude: start.longitude)
+                .distance(from: CLLocation(latitude: end.latitude, longitude: end.longitude))
+            let speedKmh = elapsed > 0 && elapsed <= 15 * 60 ? distanceMeters / elapsed * 3.6 : .nan
+            points[index].speedKmh = speedKmh.isFinite && speedKmh >= 0 && speedKmh <= 120 ? speedKmh : nil
+        }
+        return points
     }
 
     private static func region(for coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
@@ -6539,11 +6567,11 @@ private struct RideTrackSpeedSegment: Identifiable {
 }
 
 private struct SpeedRouteLegend: View {
-    var hasInterfaceSpeed: Bool
+    var hasEstimatedSpeed: Bool
 
     var body: some View {
         Group {
-            if hasInterfaceSpeed {
+            if hasEstimatedSpeed {
                 HStack(spacing: 4) {
                     Text("慢")
                         .foregroundStyle(Color.teslaSecondaryText)
@@ -6558,13 +6586,13 @@ private struct SpeedRouteLegend: View {
                         .foregroundStyle(Color.teslaSecondaryText)
                 }
             } else {
-                Text("接口未提供可信速度")
+                Text("轨迹时间不足，未估算速度")
                     .foregroundStyle(Color.teslaSecondaryText)
             }
         }
         .font(.caption2.weight(.medium))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(hasInterfaceSpeed ? "路线速度颜色：绿色表示慢，红色表示快" : "接口未提供可信速度，路线不按速度着色")
+        .accessibilityLabel(hasEstimatedSpeed ? "路线速度按相邻轨迹点距离和时间计算：绿色表示慢，红色表示快" : "轨迹时间不足，路线不按速度着色")
     }
 }
 

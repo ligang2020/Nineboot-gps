@@ -349,7 +349,12 @@ struct NinebotInterfaceTrackPoint: Codable, Equatable, Identifiable {
     var id: String
     var latitude: Double
     var longitude: Double
+    /// A speed calculated from two trusted track timestamps and their GPS distance,
+    /// or an explicitly named speed field supplied by the interface.
     var speedKmh: Double?
+    /// Elapsed seconds from the beginning of the ride when supplied by the
+    /// official `trail` payload. It is never displayed as a speed.
+    var elapsedSeconds: Double?
     var auxiliaryValue: Double?
 
     var coordinate: CLLocationCoordinate2D {
@@ -371,6 +376,7 @@ extension NinebotRideDetail {
             Self.interfaceTrackPoint(
                 coordinate: coordinate,
                 speedKmh: nil,
+                elapsedSeconds: nil,
                 auxiliaryValue: nil,
                 index: index
             )
@@ -382,12 +388,12 @@ extension NinebotRideDetail {
     }
 
     private static func bestTrackPoints(from value: JSONValue) -> [NinebotInterfaceTrackPoint] {
-        // The official Ninebot `travel-info` response exposes the route as
-        // `trail`: `longitude,latitude,elapsedSeconds,speedKmh;...`.
-        // Prefer it over generic numeric-track parsing so the elapsed time is
-        // not incorrectly rendered as the vehicle speed.
+        // Official ride details expose the route as a compact `trail` string.
+        // Its third number is an elapsed time, but the meaning/unit of later
+        // anonymous values is not stable across vehicle services. Calculate the
+        // displayed speed only from GPS distance and consecutive elapsed times.
         let officialTrailCandidates = officialTrailValues(from: value)
-            .map { officialTrailTrackPoints(from: $0) }
+            .map { derivedSpeeds(for: officialTrailTrackPoints(from: $0)) }
             .filter { $0.count > 1 }
         if let officialTrail = officialTrailCandidates.max(by: { $0.count < $1.count }) {
             return officialTrail
@@ -496,8 +502,12 @@ extension NinebotRideDetail {
 
             return interfaceTrackPoint(
                 coordinate: coordinate,
-                speedKmh: normalizedSpeed(numbers.count >= 4 ? numbers[3] : nil),
-                auxiliaryValue: numbers.count >= 3 ? numbers[2] : nil,
+                // Do not interpret an anonymous fourth `trail` number as km/h.
+                // It has varied between platform payloads and caused plausible
+                // but false readings in the replay UI.
+                speedKmh: nil,
+                elapsedSeconds: normalizedElapsedSeconds(numbers.count >= 3 ? numbers[2] : nil),
+                auxiliaryValue: numbers.count >= 4 ? numbers[3] : nil,
                 index: index
             )
         }
@@ -563,6 +573,7 @@ extension NinebotRideDetail {
         return interfaceTrackPoint(
             coordinate: coordinate,
             speedKmh: normalizedSpeed(firstDouble(["speed", "spd", "speed_kmh", "speedKmh", "velocity", "v"], in: object)),
+            elapsedSeconds: normalizedElapsedSeconds(firstDouble(["elapsed", "elapsed_seconds", "elapsedSeconds"], in: object)),
             auxiliaryValue: firstDouble(["direction", "bearing", "heading", "course", "angle", "aux", "auxiliary"], in: object),
             index: index
         )
@@ -618,6 +629,7 @@ extension NinebotRideDetail {
         return interfaceTrackPoint(
             coordinate: coordinate,
             speedKmh: nil,
+            elapsedSeconds: nil,
             auxiliaryValue: numbers.count >= 3 ? numbers[2] : nil,
             index: index
         )
@@ -626,6 +638,7 @@ extension NinebotRideDetail {
     private static func interfaceTrackPoint(
         coordinate: CLLocationCoordinate2D,
         speedKmh: Double?,
+        elapsedSeconds: Double?,
         auxiliaryValue: Double?,
         index: Int
     ) -> NinebotInterfaceTrackPoint {
@@ -634,8 +647,51 @@ extension NinebotRideDetail {
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
             speedKmh: speedKmh,
+            elapsedSeconds: elapsedSeconds,
             auxiliaryValue: auxiliaryValue
         )
+    }
+
+    /// Returns an honest per-point replay speed. A value is available only
+    /// when the interface supplied a monotonically increasing elapsed time and
+    /// the GPS segment is physically plausible; otherwise it remains nil.
+    private static func derivedSpeeds(for points: [NinebotInterfaceTrackPoint]) -> [NinebotInterfaceTrackPoint] {
+        guard points.count > 1 else { return points }
+
+        var segmentSpeeds = Array<Double?>(repeating: nil, count: points.count - 1)
+        for index in 1..<points.count {
+            let previous = points[index - 1]
+            let current = points[index]
+            guard let previousElapsed = previous.elapsedSeconds,
+                  let currentElapsed = current.elapsedSeconds else {
+                continue
+            }
+
+            let elapsed = currentElapsed - previousElapsed
+            // A non-positive interval, or a large gap in an otherwise sampled
+            // trace, cannot describe an instantaneous route speed.
+            guard elapsed > 0, elapsed <= 15 * 60 else { continue }
+
+            let distanceMeters = CLLocation(latitude: previous.latitude, longitude: previous.longitude)
+                .distance(from: CLLocation(latitude: current.latitude, longitude: current.longitude))
+            guard distanceMeters.isFinite else { continue }
+
+            let speedKmh = distanceMeters / elapsed * 3.6
+            // Ignore coordinate jumps rather than clamping them into a speed
+            // that looks real. This safely covers every current Ninebot model
+            // while retaining valid stopped (0 km/h) segments.
+            guard speedKmh.isFinite, speedKmh <= 120 else { continue }
+            segmentSpeeds[index - 1] = speedKmh
+        }
+
+        var result = points
+        for index in result.indices {
+            // A point represents the vehicle after travelling the preceding
+            // segment. For the first point, use the immediately following one.
+            let estimatedSpeed = index == 0 ? segmentSpeeds.first ?? nil : segmentSpeeds[index - 1]
+            result[index].speedKmh = estimatedSpeed
+        }
+        return result
     }
 
     private static func trackCoordinates(from value: JSONValue) -> [CLLocationCoordinate2D] {
@@ -843,6 +899,11 @@ extension NinebotRideDetail {
 
     private static func normalizedSpeed(_ value: Double?) -> Double? {
         guard let value, value >= 0, value <= 160 else { return nil }
+        return value
+    }
+
+    private static func normalizedElapsedSeconds(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, value >= 0 else { return nil }
         return value
     }
 

@@ -90,7 +90,7 @@ The workflow at `.github/workflows/build-ipa.yml` runs for pushes to `main` / `m
 2. Packages the versioned `NinePlus-LiveRide-v<version>-unsigned.ipa`.
 3. Verifies the compiled App Icon, main app bundle, and Widget extension before packaging.
 4. Uploads the IPA and a SHA-256 checksum as a 30-day workflow artifact.
-5. When the matching version tag is pushed (for example source version `1.2.47` with tag `v1.2.47`), creates or updates that GitHub Release and attaches both files. A manual run publishes the current source version by default.
+5. When the matching version tag is pushed (for example source version `1.2.48` with tag `v1.2.48`), creates or updates that GitHub Release and attaches both files. A manual run publishes the current source version by default.
 
 Download the artifact from the GitHub Actions run, or open the GitHub Release for a version tag. Because it is unsigned, it still needs to be signed using your own permitted installation method before an iPhone can install it.
 
