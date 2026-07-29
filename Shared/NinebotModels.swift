@@ -1221,7 +1221,7 @@ struct NinebotTireReading: Codable, Equatable, Identifiable {
 struct NinebotTireTelemetry: Codable, Equatable {
     var readings: [NinebotTireReading]
 
-    var hasReadings: Bool { readings.contains(\.hasReading) }
+    var hasReadings: Bool { readings.contains(where: \.hasReading) }
 }
 
 struct NinebotVehicleState: Codable, Equatable {
