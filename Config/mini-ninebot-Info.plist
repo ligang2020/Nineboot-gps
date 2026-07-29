@@ -32,7 +32,7 @@
 	<key>NSSiriUsageDescription</key>
 	<string>用于通过 Siri 和快捷指令刷新车况、查询电量、查询位置、寻车铃、开座桶、上电和熄火。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>用于在车辆位置页面显示你与车辆的距离。</string>
+	<string>用于显示你与车辆的距离，并在你主动开始记录时记录骑行轨迹。</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
@@ -60,7 +60,9 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>用于你主动设置并辅助电子围栏。</string>
+	<string>用于你主动设置并辅助电子围栏，以及在你主动记录时持续记录骑行轨迹。</string>
+	<key>NSMotionUsageDescription</key>
+	<string>用于在你主动记录行程时计算车辆加速度和 G 值。</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>用于连接车辆、接收车辆安全状态和发送寻车指令。</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>

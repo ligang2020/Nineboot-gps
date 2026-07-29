@@ -157,6 +157,7 @@ final class NinebotViewModel: ObservableObject {
     @Published private(set) var resolvedAddresses: [String: NinebotResolvedAddress] = [:]
     @Published private(set) var activeRideSession: NinebotActiveRideSession?
     @Published private(set) var rideDetails: [String: NinebotRideDetail] = [:]
+    @Published private(set) var recordedRides: [NinebotRecordedRide] = []
     @Published private(set) var loadingRideDetailKeys: Set<String> = []
     @Published private(set) var syncingTravelMonth: String?
     /// 安全只读 BLE 基础层的实时状态；它不会表示账号绑定或远程服务在线状态。
@@ -178,7 +179,6 @@ final class NinebotViewModel: ObservableObject {
     private var manuallyEndedRideVehicleSN: String?
 
     init() {
-        store.removeLegacyLocalRideTrajectoryData()
         let configuration = store.loadConfiguration()
         let loginResult = store.loadLoginResult()
         self.dataSourceMode = store.loadDataSourceMode()
@@ -193,6 +193,7 @@ final class NinebotViewModel: ObservableObject {
         self.history = Self.historyMap(for: self.dashboard, store: store)
         self.resolvedAddresses = store.loadResolvedAddresses().filter { $0.value.source == Self.addressGeocodingSource }
         self.activeRideSession = store.loadActiveRideSession()
+        self.recordedRides = store.loadRecordedRides()
         reconcileRideSession(with: self.dashboard)
 
         bleTransport.$connectionState
@@ -561,6 +562,25 @@ final class NinebotViewModel: ObservableObject {
 
     func history(for sn: String) -> [NinebotVehicleHistoryPoint] {
         history[sn] ?? []
+    }
+
+    func recordedRides(for sn: String?) -> [NinebotRecordedRide] {
+        guard let sn, !sn.isEmpty else { return recordedRides }
+        return recordedRides.filter { $0.vehicleSN == nil || $0.vehicleSN == sn }
+    }
+
+    func saveRecordedRide(_ ride: NinebotRecordedRide) {
+        store.upsertRecordedRide(ride)
+        recordedRides = store.loadRecordedRides()
+    }
+
+    func deleteRecordedRide(id: String) {
+        store.deleteRecordedRide(id: id)
+        recordedRides = store.loadRecordedRides()
+    }
+
+    func reloadLocalRideRecords() {
+        recordedRides = store.loadRecordedRides()
     }
 
     func rideDetail(vehicleSN: String, rideID: String) -> NinebotRideDetail? {

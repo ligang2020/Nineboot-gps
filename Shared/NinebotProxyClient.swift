@@ -663,6 +663,11 @@ private extension NinebotProxyClient {
             ),
             totalMileage: firstDouble(["total_mileage", "totalMileage", "total_mileages"], in: statusObject)
                 ?? firstDouble(["total_mileage", "totalMileage"], in: travelObject),
+            distanceSinceLastCharge: normalizedDistanceSinceCharge(firstDouble([
+                "mileage_since_last_charge", "mileageSinceLastCharge", "distance_since_charge", "distanceSinceCharge",
+                "last_charge_distance", "lastChargeDistance", "charge_mileage", "chargeMileage"
+            ], in: [statusObject, batteryPayloadObject, batteryListObject, batteryMainObject])),
+            tireTelemetry: tireTelemetry(in: [statusObject, batteryPayloadObject, batteryListObject, batteryMainObject]),
             monthMileage: firstDouble(["total_mileages", "monthMileage", "month_mileage"], in: travelObject),
             monthEnergy: firstDouble([
                 "ec", "monthEnergy", "month_energy", "monthElectricity",
@@ -839,6 +844,62 @@ private extension NinebotProxyClient {
             }
         }
         return nil
+    }
+
+    static func normalizedDistanceSinceCharge(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, value >= 0 else { return nil }
+        // Some firmwares expose metres while the vehicle API otherwise uses km.
+        return value > 10_000 ? value / 1_000 : value
+    }
+
+    static func tireTelemetry(in sources: [[String: JSONValue]]) -> NinebotTireTelemetry? {
+        let nestedKeys = ["tpms", "TPMS", "tire", "tires", "tire_info", "tireInfo", "tire_status", "tireStatus", "wheel", "wheels"]
+        var objects = sources
+        for source in sources {
+            for key in nestedKeys {
+                if let object = source[key]?.objectValue { objects.append(object) }
+            }
+        }
+
+        func reading(
+            _ position: NinebotTirePosition,
+            pressureKeys: [String],
+            temperatureKeys: [String],
+            pressureStatusKeys: [String],
+            temperatureStatusKeys: [String]
+        ) -> NinebotTireReading? {
+            let pressure = normalizedTirePressure(firstDouble(pressureKeys, in: objects))
+            let temperature = normalizedTireTemperature(firstDouble(temperatureKeys, in: objects))
+            let pressureStatus = firstString(pressureStatusKeys, in: objects.first ?? [:])
+                ?? objects.compactMap { firstString(pressureStatusKeys, in: $0) }.first
+            let temperatureStatus = firstString(temperatureStatusKeys, in: objects.first ?? [:])
+                ?? objects.compactMap { firstString(temperatureStatusKeys, in: $0) }.first
+            let value = NinebotTireReading(position: position, pressureKPa: pressure, temperatureC: temperature, pressureStatus: pressureStatus, temperatureStatus: temperatureStatus)
+            return value.hasReading || !(value.statusText.isEmpty) ? value : nil
+        }
+
+        let readings = [
+            reading(.front, pressureKeys: ["front_pressure", "frontPressure", "front_tire_pressure", "frontTirePressure", "frontTyrePressure"], temperatureKeys: ["front_temperature", "frontTemperature", "front_tire_temperature", "frontTireTemperature", "frontTyreTemperature"], pressureStatusKeys: ["front_pressure_status", "frontPressureStatus"], temperatureStatusKeys: ["front_tire_temperature_status", "frontTireTemperatureStatus"]),
+            reading(.rear, pressureKeys: ["rear_pressure", "rearPressure", "rear_tire_pressure", "rearTirePressure", "rearTyrePressure"], temperatureKeys: ["rear_temperature", "rearTemperature", "rear_tire_temperature", "rearTireTemperature", "rearTyreTemperature"], pressureStatusKeys: ["rear_pressure_status", "rearPressureStatus"], temperatureStatusKeys: ["rear_tire_temperature_status", "rearTireTemperatureStatus", "rightBehindTireTemperatureStatus"]),
+            reading(.leftFront, pressureKeys: ["left_front_pressure", "leftFrontPressure", "left_front_tire_pressure", "leftFrontTirePressure"], temperatureKeys: ["left_front_temperature", "leftFrontTemperature", "left_front_tire_temperature", "leftFrontTireTemperature"], pressureStatusKeys: ["left_front_pressure_status", "leftFrontPressureStatus"], temperatureStatusKeys: ["left_front_tire_temperature_status", "leftFrontTireTemperatureStatus", "isLeftFrontTireTemperatureStatus"]),
+            reading(.rightFront, pressureKeys: ["right_front_pressure", "rightFrontPressure", "right_front_tire_pressure", "rightFrontTirePressure"], temperatureKeys: ["right_front_temperature", "rightFrontTemperature", "right_front_tire_temperature", "rightFrontTireTemperature"], pressureStatusKeys: ["right_front_pressure_status", "rightFrontPressureStatus"], temperatureStatusKeys: ["right_front_tire_temperature_status", "rightFrontTireTemperatureStatus"]),
+            reading(.leftRear, pressureKeys: ["left_rear_pressure", "leftRearPressure", "left_behind_pressure", "leftBehindPressure"], temperatureKeys: ["left_rear_temperature", "leftRearTemperature", "left_behind_tire_temperature", "leftBehindTireTemperature"], pressureStatusKeys: ["left_rear_pressure_status", "leftRearPressureStatus"], temperatureStatusKeys: ["left_rear_tire_temperature_status", "leftRearTireTemperatureStatus"]),
+            reading(.rightRear, pressureKeys: ["right_rear_pressure", "rightRearPressure", "right_behind_pressure", "rightBehindPressure"], temperatureKeys: ["right_rear_temperature", "rightRearTemperature", "right_behind_tire_temperature", "rightBehindTireTemperature"], pressureStatusKeys: ["right_rear_pressure_status", "rightRearPressureStatus"], temperatureStatusKeys: ["right_rear_tire_temperature_status", "rightRearTireTemperatureStatus", "rightBehindTireTemperatureStatus"])
+        ].compactMap { $0 }
+        return readings.isEmpty ? nil : NinebotTireTelemetry(readings: readings)
+    }
+
+    static func normalizedTirePressure(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, value > 0 else { return nil }
+        if value <= 6 { return value * 100 } // bar → kPa
+        if value <= 80 { return value * 6.89476 } // psi → kPa
+        return value <= 1_200 ? value : nil
+    }
+
+    static func normalizedTireTemperature(_ value: Double?) -> Double? {
+        guard let value, value.isFinite else { return nil }
+        let celsius = value > 150 ? value / 10 : value
+        return (-50...180).contains(celsius) ? celsius : nil
     }
 
     static func normalizedBatteryVoltage(_ value: Double?) -> Double? {

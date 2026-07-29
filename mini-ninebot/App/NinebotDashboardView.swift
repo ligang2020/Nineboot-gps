@@ -64,6 +64,15 @@ struct NinebotDashboardView: View {
                                 performVehicleAction(action, sn: primary.vehicle.sn)
                             }
                             .padding(.top, primary.state.isCharging == true && !primary.state.isFullyCharged ? -8 : 0)
+                            if primary.state.isCharging == true {
+                                ChargingSinceLastChargePanel(
+                                    state: primary.state,
+                                    history: model.history(for: primary.vehicle.sn)
+                                )
+                                .padding(.horizontal, 16)
+                            }
+                            TireTelemetryPanel(state: primary.state)
+                                .padding(.horizontal, 16)
                             VehicleLocationRideSummaryPanel(
                                 snapshot: primary,
                                 resolvedAddress: model.resolvedAddressText(for: primary),
@@ -899,6 +908,7 @@ private struct NinebotTripsView: View {
                     model: model,
                     records: filteredRecords,
                     vehicleSN: snapshot.vehicle.sn,
+                    vehicleTotalMileage: snapshot.state.totalMileage,
                     selectedMonth: selectedMonth
                 )
             }
@@ -4533,9 +4543,9 @@ private struct TripHeroPanel: View {
                 ],
                 spacing: 10
             ) {
+                BasicInfoTile(title: "车辆总里程", value: snapshot.state.totalMileageText, systemImage: "odometer")
                 BasicInfoTile(title: "今日里程", value: snapshot.state.todayMileageText, systemImage: "sun.max.fill")
                 BasicInfoTile(title: "最高速度", value: snapshot.state.maximumSpeedText, systemImage: "gauge.with.dots.needle.67percent")
-                BasicInfoTile(title: "有效样本", value: "\(snapshot.state.observedRangeSampleCount) 次", systemImage: "scope")
                 BasicInfoTile(title: "本月日均", value: snapshot.state.dailyAverageMileageText, systemImage: "calendar")
             }
 
@@ -5719,6 +5729,111 @@ private struct SlideActionControl: View {
     }
 }
 
+private struct ChargingSinceLastChargePanel: View {
+    var state: NinebotVehicleState
+    var history: [NinebotVehicleHistoryPoint]
+
+    private var distance: Double? {
+        if let direct = state.distanceSinceLastCharge, direct >= 0 { return direct }
+        guard let current = state.totalMileage else { return nil }
+        let lastChargeMileage = history
+            .filter { $0.isCharging == true && $0.totalMileage != nil }
+            .sorted { $0.date > $1.date }
+            .first?
+            .totalMileage
+        guard let lastChargeMileage, current >= lastChargeMileage else { return nil }
+        return current - lastChargeMileage
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Color.teslaGreen.opacity(0.14))
+                Image(systemName: "bolt.car.fill")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(Color.teslaGreen)
+            }
+            .frame(width: 42, height: 42)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("距离上次充电行驶")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.teslaPrimaryText)
+                Text(distance == nil ? "等待车辆接口返回充电里程" : "车辆正在充电，数据会随状态刷新更新")
+                    .font(.caption)
+                    .foregroundStyle(Color.teslaSecondaryText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(distance.map { formatDistance($0) } ?? "同步中")
+                .font(.title3.monospacedDigit().weight(.bold))
+                .foregroundStyle(Color.teslaPrimaryText)
+                .lineLimit(1)
+        }
+        .padding(16)
+        .background(Color.teslaCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.teslaHairline, lineWidth: 1) }
+    }
+}
+
+private struct TireTelemetryPanel: View {
+    var state: NinebotVehicleState
+
+    private var readings: [NinebotTireReading] { state.tireTelemetry?.readings ?? [] }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("胎压胎温监测", systemImage: "gauge.with.needle.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.teslaPrimaryText)
+                Spacer()
+                HStack(spacing: 4) {
+                    Circle().fill(readings.isEmpty ? Color.teslaSecondaryText : Color.teslaGreen).frame(width: 6, height: 6)
+                    Text(readings.isEmpty ? "等待数据" : "实时同步")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.teslaSecondaryText)
+            }
+
+            if readings.isEmpty {
+                Text("车辆接口暂未返回 TPMS 字段；前台会随车辆状态自动刷新。")
+                    .font(.caption)
+                    .foregroundStyle(Color.teslaSecondaryText)
+            } else {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                    ForEach(readings) { reading in
+                        VStack(alignment: .leading, spacing: 7) {
+                            Label(reading.position.title, systemImage: reading.position.systemImage)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.teslaSecondaryText)
+                            Text(reading.pressureText)
+                                .font(.subheadline.monospacedDigit().weight(.bold))
+                                .foregroundStyle(Color.teslaPrimaryText)
+                            Text("\(reading.temperatureText)\(reading.statusText.isEmpty ? "" : " · \(reading.statusText)")")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(Color.teslaSecondaryText)
+                                .lineLimit(1)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.teslaControlBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    }
+                }
+            }
+            Text("更新 \(formatTime(state.updatedAt))")
+                .font(.caption2)
+                .foregroundStyle(Color.teslaSecondaryText)
+        }
+        .padding(16)
+        .background(Color.teslaCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.teslaHairline, lineWidth: 1) }
+    }
+}
+
 private struct VehicleBasicsPanel: View {
     var snapshot: NinebotVehicleSnapshot
 
@@ -5940,6 +6055,7 @@ private struct RideListSection: View {
     @ObservedObject var model: NinebotViewModel
     var records: [NinebotRideRecord]
     var vehicleSN: String?
+    var vehicleTotalMileage: Double?
     var selectedMonth: String
     @State private var visibleLimit = 30
 
@@ -5983,7 +6099,7 @@ private struct RideListSection: View {
                 VStack(spacing: 10) {
                     ForEach(Array(records.prefix(visibleLimit).enumerated()), id: \.element.id) { index, record in
                         NavigationLink {
-                            NinebotRideDetailView(model: model, vehicleSN: vehicleSN, record: record)
+                            NinebotRideDetailView(model: model, vehicleSN: vehicleSN, vehicleTotalMileage: vehicleTotalMileage, record: record)
                         } label: {
                             RideRecordRow(record: record, index: index)
                         }
@@ -6092,6 +6208,7 @@ private struct RideDisplayMetric: Identifiable {
 private struct NinebotRideDetailView: View {
     @ObservedObject var model: NinebotViewModel
     var vehicleSN: String?
+    var vehicleTotalMileage: Double?
     var record: NinebotRideRecord
 
     var body: some View {
@@ -6110,7 +6227,8 @@ private struct NinebotRideDetailView: View {
                 DetailSection(title: "接口行程") {
                     DetailRow(title: "开始时间", value: effectiveRecord.startedAt.map(formatDate) ?? "--", systemImage: "play.fill")
                     DetailRow(title: "结束时间", value: effectiveRecord.endedAt.map(formatDate) ?? "--", systemImage: "stop.fill")
-                    DetailRow(title: "里程", value: formatDistance(effectiveRecord.mileage), systemImage: "road.lanes")
+                    DetailRow(title: "本次里程", value: formatDistance(effectiveRecord.mileage), systemImage: "road.lanes")
+                    DetailRow(title: "车辆总里程", value: formatDistance(vehicleTotalMileage), systemImage: "odometer")
                     DetailRow(title: "骑行时间", value: formatDuration(effectiveRecord.resolvedDurationMinutes), systemImage: "timer")
                     DetailRow(title: "最高速度", value: formatSpeed(effectiveRecord.maximumSpeed), systemImage: "gauge.with.dots.needle.67percent")
                     DetailRow(title: "本次用电", value: formatEnergyWh(effectiveRecord.consumedEnergyWh), systemImage: "bolt.fill")
@@ -6307,7 +6425,9 @@ private struct InterfaceRideTrackMapPanel: View {
                     MapPolyline(coordinates: segment.coordinates)
                         .stroke(
                             speedColor(for: segment.speedKmh),
-                            style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+                            // A slightly wider overlapping stroke hides MapKit hairline seams
+                            // between adjacent speed samples without changing route geometry.
+                            style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round)
                         )
                 }
 
@@ -6359,28 +6479,67 @@ private struct InterfaceRideTrackMapPanel: View {
             : "路线按速度由慢到快着色"
     }
 
+    /// Every displayed segment receives a speed when the official response
+    /// contains *any* usable speed sample. Missing samples are linearly
+    /// bridged from their nearest neighbours, so MapKit never leaves coloured
+    /// hairline gaps in an otherwise valid official route.
     private var routeSegments: [RideTrackSpeedSegment] {
         guard points.count > 1 else { return [] }
         return (0..<(points.count - 1)).map { index in
             let start = points[index]
             let end = points[index + 1]
-            let speeds = [start.speedKmh, end.speedKmh].compactMap { speed -> Double? in
-                guard let speed, speed.isFinite, speed >= 0 else { return nil }
-                return speed
-            }
+            let speed = resolvedSegmentSpeed(at: index)
+            // Include neighbouring vertices where possible. Consecutive
+            // polylines overlap by one small segment, eliminating rendering
+            // seams while retaining the original official geometry.
+            let lower = max(index - 1, 0)
+            let upper = min(index + 2, points.count - 1)
             return RideTrackSpeedSegment(
                 index: index,
-                coordinates: [start.coordinate, end.coordinate],
-                speedKmh: speeds.isEmpty ? nil : speeds.reduce(0, +) / Double(speeds.count)
+                coordinates: Array(points[lower...upper].map(\.coordinate)),
+                speedKmh: speed
             )
         }
     }
 
     private var validSpeeds: [Double] {
-        routeSegments.compactMap { segment in
-            guard let speed = segment.speedKmh, speed.isFinite, speed >= 0 else { return nil }
-            return speed
+        routeSegments.compactMap(\.speedKmh)
+    }
+
+    private func resolvedSegmentSpeed(at index: Int) -> Double? {
+        let endpointSpeeds = [points[index].speedKmh, points[index + 1].speedKmh].compactMap(Self.usableSpeed)
+        if !endpointSpeeds.isEmpty {
+            return endpointSpeeds.reduce(0, +) / Double(endpointSpeeds.count)
         }
+
+        var before: (index: Int, speed: Double)?
+        for candidate in stride(from: index - 1, through: 0, by: -1) {
+            if let speed = Self.usableSpeed(points[candidate].speedKmh) {
+                before = (candidate, speed)
+                break
+            }
+        }
+        var after: (index: Int, speed: Double)?
+        for candidate in (index + 2)..<points.count {
+            if let speed = Self.usableSpeed(points[candidate].speedKmh) {
+                after = (candidate, speed)
+                break
+            }
+        }
+
+        switch (before, after) {
+        case let (.some(left), .some(right)):
+            let position = Double(index + 1 - left.index) / Double(right.index - left.index)
+            return left.speed + (right.speed - left.speed) * position
+        case let (.some(left), .none): return left.speed
+        case let (.none, .some(right)): return right.speed
+        case (.none, .none): return nil
+        }
+    }
+
+    private static func usableSpeed(_ speed: Double?) -> Double? {
+        guard let speed, speed.isFinite, (0...120).contains(speed) else { return nil }
+        return speed
     }
 
     private func speedColor(for speed: Double?) -> Color {

@@ -8,6 +8,7 @@ import SwiftUI
 private enum NinebotRootTab: Hashable {
     case dashboard
     case trips
+    case recording
     case security
     case settings
 }
@@ -42,6 +43,13 @@ struct ContentView: View {
             }
             .tag(NinebotRootTab.trips)
 
+            NavigationStack {
+                NinebotRecordingView(model: model)
+            }
+            .tabItem {
+                Label("记录", systemImage: "gauge.with.dots.needle.67percent")
+            }
+            .tag(NinebotRootTab.recording)
 
             NavigationStack {
                 NinebotAntiTheftView(model: model)
