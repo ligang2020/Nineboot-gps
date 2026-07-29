@@ -71,8 +71,6 @@ struct NinebotDashboardView: View {
                                 )
                                 .padding(.horizontal, 16)
                             }
-                            TireTelemetryPanel(state: primary.state)
-                                .padding(.horizontal, 16)
                             VehicleLocationRideSummaryPanel(
                                 snapshot: primary,
                                 resolvedAddress: model.resolvedAddressText(for: primary),
@@ -5078,7 +5076,7 @@ private struct TripTrendAnalysis {
         }
 
         if let averageUsedElectricity, averageUsedElectricity > 12 {
-            result.append("最近单次平均用电偏高，可以关注胎压、载重和急加速。")
+            result.append("最近单次平均用电偏高，可以关注载重和急加速。")
         }
 
         if let energyPerKm, energyPerKm > 35 {
@@ -5777,67 +5775,6 @@ private struct ChargingSinceLastChargePanel: View {
     }
 }
 
-private struct TireTelemetryPanel: View {
-    var state: NinebotVehicleState
-
-    private var readings: [NinebotTireReading] { state.tireTelemetry?.readings ?? [] }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack(alignment: .firstTextBaseline) {
-                Label("胎压胎温监测", systemImage: "gauge.with.needle.fill")
-                    .font(.headline)
-                    .foregroundStyle(Color.teslaPrimaryText)
-                Spacer()
-                HStack(spacing: 4) {
-                    Circle().fill(readings.isEmpty ? Color.teslaSecondaryText : Color.teslaGreen).frame(width: 6, height: 6)
-                    Text(readings.isEmpty ? "等待数据" : "实时同步")
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.teslaSecondaryText)
-            }
-
-            if readings.isEmpty {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("当前未收到胎压监测器数据")
-                        .font(.caption.weight(.semibold))
-                    Text("官方 Android App 需先绑定 PN/MAC 胎压监测器，并通过专用蓝牙事件同步；常规车辆云端车况接口通常不返回该实时数据。本 App 会兼容云端字段，并在接入授权的只读蓝牙数据后实时显示。")
-                        .font(.caption)
-                }
-                .foregroundStyle(Color.teslaSecondaryText)
-            } else {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                    ForEach(readings) { reading in
-                        VStack(alignment: .leading, spacing: 7) {
-                            Label(reading.position.title, systemImage: reading.position.systemImage)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(Color.teslaSecondaryText)
-                            Text(reading.pressureText)
-                                .font(.subheadline.monospacedDigit().weight(.bold))
-                                .foregroundStyle(Color.teslaPrimaryText)
-                            Text("\(reading.temperatureText)\(reading.statusText.isEmpty ? "" : " · \(reading.statusText)")")
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(Color.teslaSecondaryText)
-                                .lineLimit(1)
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.teslaControlBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                    }
-                }
-            }
-            Text("更新 \(formatTime(state.updatedAt))")
-                .font(.caption2)
-                .foregroundStyle(Color.teslaSecondaryText)
-        }
-        .padding(16)
-        .background(Color.teslaCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.teslaHairline, lineWidth: 1) }
-    }
-}
-
 private struct VehicleBasicsPanel: View {
     var snapshot: NinebotVehicleSnapshot
 
@@ -6391,7 +6328,7 @@ private struct RideDetailHero: View {
 private struct InterfaceRideTrackMapPanel: View {
     /// The map is a static rendering of the official trip-detail route. A
     /// bounded, deterministic sample keeps MapKit responsive for long routes
-    /// while preserving the official start, end, and speed variation.
+    /// while preserving the official start and end geometry.
     var points: [NinebotInterfaceTrackPoint]
     var sourcePointCount: Int
     /// Peak speed is calculated before map sampling, so a long route never
@@ -6420,15 +6357,15 @@ private struct InterfaceRideTrackMapPanel: View {
 
                 Spacer(minLength: 12)
 
-                Label("速度着色", systemImage: "paintpalette.fill")
+                Label(validSpeeds.isEmpty ? "原始路线" : "接口速度", systemImage: validSpeeds.isEmpty ? "point.topleft.down.to.point.bottomright.curvepath" : "paintpalette.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.teslaGreen)
+                    .foregroundStyle(validSpeeds.isEmpty ? Color.teslaSecondaryText : Color.teslaGreen)
             }
 
             Map(position: $cameraPosition) {
-                // Render each official route segment independently so its
-                // color describes that part of the journey: green is slower,
-                // yellow is medium, and red is faster.
+                // Color only segments that have a named speed in the official
+                // payload. Route timestamps and GPS distance are deliberately not
+                // converted into speed, because their sampling semantics vary.
                 ForEach(routeSegments) { segment in
                     MapPolyline(coordinates: segment.coordinates)
                         .stroke(
@@ -6510,8 +6447,8 @@ private struct InterfaceRideTrackMapPanel: View {
 
     private var speedColorDescription: String {
         validSpeeds.isEmpty
-            ? "轨迹未返回可用速度，路线显示为灰色"
-            : "路线按速度由慢到快着色"
+            ? "接口未返回可验证的逐点速度，路线显示为灰色"
+            : "仅按接口明确返回的速度着色（0–40+ km/h）"
     }
 
     private static func maximumSpeedMarker(in source: [NinebotInterfaceTrackPoint]) -> RideTrackSpeedMarker? {
@@ -6524,16 +6461,16 @@ private struct InterfaceRideTrackMapPanel: View {
         return fastest
     }
 
-    /// Every displayed segment receives a speed when the official response
-    /// contains *any* usable speed sample. Missing samples are linearly
-    /// bridged from their nearest neighbours, so MapKit never leaves coloured
-    /// hairline gaps in an otherwise valid official route.
+    /// A segment is coloured only when both ends carry an explicitly named
+    /// interface speed. We do not interpolate missing values or derive speed
+    /// from coordinate/time fields, which would create plausible but false
+    /// route colours.
     private var routeSegments: [RideTrackSpeedSegment] {
         guard points.count > 1 else { return [] }
         return (0..<(points.count - 1)).map { index in
             let start = points[index]
             let end = points[index + 1]
-            let speed = resolvedSegmentSpeed(at: index)
+            let speed = verifiedSegmentSpeed(at: index)
             // Include neighbouring vertices where possible. Consecutive
             // polylines overlap by one small segment, eliminating rendering
             // seams while retaining the original official geometry.
@@ -6551,35 +6488,14 @@ private struct InterfaceRideTrackMapPanel: View {
         routeSegments.compactMap(\.speedKmh)
     }
 
-    private func resolvedSegmentSpeed(at index: Int) -> Double? {
-        let endpointSpeeds = [points[index].speedKmh, points[index + 1].speedKmh].compactMap(Self.usableSpeed)
-        if !endpointSpeeds.isEmpty {
-            return endpointSpeeds.reduce(0, +) / Double(endpointSpeeds.count)
+    private func verifiedSegmentSpeed(at index: Int) -> Double? {
+        guard let startSpeed = Self.usableSpeed(points[index].speedKmh),
+              let endSpeed = Self.usableSpeed(points[index + 1].speedKmh) else {
+            return nil
         }
-
-        var before: (index: Int, speed: Double)?
-        for candidate in stride(from: index - 1, through: 0, by: -1) {
-            if let speed = Self.usableSpeed(points[candidate].speedKmh) {
-                before = (candidate, speed)
-                break
-            }
-        }
-        var after: (index: Int, speed: Double)?
-        for candidate in (index + 2)..<points.count {
-            if let speed = Self.usableSpeed(points[candidate].speedKmh) {
-                after = (candidate, speed)
-                break
-            }
-        }
-
-        switch (before, after) {
-        case let (.some(left), .some(right)):
-            let position = Double(index + 1 - left.index) / Double(right.index - left.index)
-            return left.speed + (right.speed - left.speed) * position
-        case let (.some(left), .none): return left.speed
-        case let (.none, .some(right)): return right.speed
-        case (.none, .none): return nil
-        }
+        // The route line lies between two official samples; use their mean
+        // without filling values from unrelated earlier/later samples.
+        return (startSpeed + endSpeed) / 2
     }
 
     private static func usableSpeed(_ speed: Double?) -> Double? {
@@ -6597,14 +6513,9 @@ private struct InterfaceRideTrackMapPanel: View {
     }
 
     private func normalizedSpeedProgress(for speed: Double) -> Double {
-        guard let minimum = validSpeeds.min(), let maximum = validSpeeds.max() else { return 0 }
-        let range = maximum - minimum
-        if range > 0.1 {
-            return min(max((speed - minimum) / range, 0), 1)
-        }
-        // If each official point has the same speed, keep a useful color
-        // instead of always describing the entire route as slow.
-        return min(max(speed / 45, 0), 1)
+        // Fixed km/h thresholds keep colour meaning stable across rides:
+        // 0 km/h is green, 20 km/h yellow, and 40 km/h or more red.
+        min(max(speed / 40, 0), 1)
     }
 
     private static func sampledForMap(
@@ -6629,35 +6540,7 @@ private struct InterfaceRideTrackMapPanel: View {
         if sampled.last?.id != source.last?.id, let last = source.last {
             sampled.append(last)
         }
-        return recomputingDisplaySpeeds(in: sampled)
-    }
-
-    /// Sampling can skip raw official points. Recalculate each retained
-    /// segment from its own timestamp interval so its displayed color remains
-    /// tied to the segment shown on the map.
-    private static func recomputingDisplaySpeeds(in source: [NinebotInterfaceTrackPoint]) -> [NinebotInterfaceTrackPoint] {
-        guard source.count > 1 else { return source }
-
-        var points = source
-        for index in points.indices {
-            let segmentIndex = index == 0 ? 0 : index - 1
-            guard segmentIndex < source.count - 1,
-                  let startElapsed = source[segmentIndex].elapsedSeconds,
-                  let endElapsed = source[segmentIndex + 1].elapsedSeconds else {
-                // Some official response shapes provide a named speed but no
-                // timestamps; retain that explicit value.
-                continue
-            }
-
-            let elapsed = endElapsed - startElapsed
-            let start = source[segmentIndex]
-            let end = source[segmentIndex + 1]
-            let distanceMeters = CLLocation(latitude: start.latitude, longitude: start.longitude)
-                .distance(from: CLLocation(latitude: end.latitude, longitude: end.longitude))
-            let speedKmh = elapsed > 0 && elapsed <= 15 * 60 ? distanceMeters / elapsed * 3.6 : .nan
-            points[index].speedKmh = speedKmh.isFinite && speedKmh >= 0 && speedKmh <= 120 ? speedKmh : nil
-        }
-        return points
+        return sampled
     }
 
     private static func region(for coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
@@ -6695,7 +6578,7 @@ private struct SpeedRouteLegend: View {
         Group {
             if hasSpeedData {
                 HStack(spacing: 4) {
-                    Text("慢")
+                    Text("0")
                         .foregroundStyle(Color.teslaSecondaryText)
                     LinearGradient(
                         colors: [.green, .yellow, .red],
@@ -6704,20 +6587,19 @@ private struct SpeedRouteLegend: View {
                     )
                     .frame(width: 52, height: 5)
                     .clipShape(Capsule())
-                    Text("快")
+                    Text("40+ km/h")
                         .foregroundStyle(Color.teslaSecondaryText)
                 }
             } else {
-                Text("无可用速度")
+                Text("无接口速度")
                     .foregroundStyle(Color.teslaSecondaryText)
             }
         }
         .font(.caption2.weight(.medium))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(hasSpeedData ? "路线按速度从慢到快着色：绿色表示慢，红色表示快" : "官方轨迹未返回可用速度，路线不按速度着色")
+        .accessibilityLabel(hasSpeedData ? "路线仅按接口明确返回的速度着色：0 公里每小时为绿色，20 公里每小时为黄色，40 公里每小时以上为红色" : "官方轨迹未返回可验证的逐点速度，路线使用统一颜色")
     }
 }
-
 
 private struct RideMetric: View {
     var title: String

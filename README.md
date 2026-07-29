@@ -6,10 +6,9 @@ This project is intended for personal builds. The bundled GitHub Action produces
 
 ## What is included
 
-- Vehicle dashboard: battery, estimated range, locking / power status, location, trip history, mileage trends, a real-time tire-pressure / tire-temperature monitor, and speed-colored official trip-detail route display with start/end markers and a red maximum-speed label in km/h.
+- Vehicle dashboard: battery, estimated range, locking / power status, location, trip history, mileage trends, and an official trip-detail route display with start/end markers and a maximum-speed label when the interface explicitly provides speed samples.
 - Restored on-device **记录** tab: manually record a ride with GPS speed, G-force, route replay, and locally stored summaries. The record is associated with a vehicle only on the device.
 - While charging, the dashboard shows distance driven since the last charge when supplied by the vehicle service (with a local history fallback).
-- TPMS parsing accepts common cloud and Android-named fields, including nested `tire_pressure` / `tp_temperature` records. Official Android analysis shows real-time TPMS also requires a PN/MAC-bound monitor and protected Bluetooth event stream; without an authorized read-only BLE profile, a cloud response can legitimately contain no TPMS reading.
 - Home Screen and Lock Screen widgets; each widget can be configured for a particular vehicle.
 - Dynamic Island / Live Activity for the active selected vehicle, including the Apple Watch Smart Stack charging view on supported systems.
 - 3D charging energy animation in the app and vehicle-alarm notifications with an actionable “查看车辆” button.
@@ -93,7 +92,7 @@ The workflow at `.github/workflows/build-ipa.yml` runs for pushes to `main` / `m
 2. Packages the versioned `NinePlus-LiveRide-v<version>-unsigned.ipa`.
 3. Verifies the compiled App Icon, main app bundle, and Widget extension before packaging.
 4. Uploads the IPA and a SHA-256 checksum as a 30-day workflow artifact.
-5. When the matching version tag is pushed (for example source version `1.2.51` with tag `v1.2.51`), creates or updates that GitHub Release and attaches both files. A manual run publishes the current source version by default.
+5. When the matching version tag is pushed (for example source version `1.2.512` with tag `v1.2.512`), creates or updates that GitHub Release and attaches both files. A manual run publishes the current source version by default.
 
 Download the artifact from the GitHub Actions run, or open the GitHub Release for a version tag. Because it is unsigned, it still needs to be signed using your own permitted installation method before an iPhone can install it.
 
