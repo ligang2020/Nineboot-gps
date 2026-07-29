@@ -1,12 +1,12 @@
 # NineBot+ Live Ride
 
-NineBot+ Live Ride is a personal iOS app for viewing and managing Ninebot vehicle status. It includes refined vehicle cards, Home Screen / Lock Screen widgets, Siri shortcuts, official trip-detail route playback, and an ActivityKit Live Activity designed for the Dynamic Island while riding.
+NineBot+ Live Ride is a personal iOS app for viewing and managing Ninebot vehicle status. It includes refined vehicle cards, Home Screen / Lock Screen widgets, Siri shortcuts, official trip-detail route display, and an ActivityKit Live Activity designed for the Dynamic Island while riding.
 
 This project is intended for personal builds. The bundled GitHub Action produces an **unsigned IPA**; it is not App Store or TestFlight distribution by itself.
 
 ## What is included
 
-- Vehicle dashboard: battery, estimated range, locking / power status, location, trip history, mileage trends, and start-to-finish route playback from official trip-detail API points.
+- Vehicle dashboard: battery, estimated range, locking / power status, location, trip history, mileage trends, and speed-colored official trip-detail route display with start and end markers.
 - Home Screen and Lock Screen widgets; each widget can be configured for a particular vehicle.
 - Dynamic Island / Live Activity for the active selected vehicle, including the Apple Watch Smart Stack charging view on supported systems.
 - 3D charging energy animation in the app and vehicle-alarm notifications with an actionable “查看车辆” button.
@@ -90,7 +90,7 @@ The workflow at `.github/workflows/build-ipa.yml` runs for pushes to `main` / `m
 2. Packages the versioned `NinePlus-LiveRide-v<version>-unsigned.ipa`.
 3. Verifies the compiled App Icon, main app bundle, and Widget extension before packaging.
 4. Uploads the IPA and a SHA-256 checksum as a 30-day workflow artifact.
-5. When the matching version tag is pushed (for example source version `1.2.48` with tag `v1.2.48`), creates or updates that GitHub Release and attaches both files. A manual run publishes the current source version by default.
+5. When the matching version tag is pushed (for example source version `1.2.49` with tag `v1.2.49`), creates or updates that GitHub Release and attaches both files. A manual run publishes the current source version by default.
 
 Download the artifact from the GitHub Actions run, or open the GitHub Release for a version tag. Because it is unsigned, it still needs to be signed using your own permitted installation method before an iPhone can install it.
 

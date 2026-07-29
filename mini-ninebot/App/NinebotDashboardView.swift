@@ -859,7 +859,7 @@ struct NinebotTripsTabView: View {
             ContentUnavailableView(
                 "暂无接口行程",
                 systemImage: "road.lanes",
-                description: Text("登录并刷新车辆数据后可查看服务端行程和路线回放。")
+                description: Text("登录并刷新车辆数据后可查看服务端行程与官方接口轨迹。")
             )
             .background(Color.teslaPageBackground.ignoresSafeArea())
         }
@@ -5950,7 +5950,7 @@ private struct RideListSection: View {
                     Text("行程列表")
                         .font(.headline)
                         .foregroundStyle(Color.teslaPrimaryText)
-                    Text("点击行程查看接口详情与路线回放")
+                    Text("点击行程查看接口详情与官方轨迹")
                         .font(.caption)
                         .foregroundStyle(Color.teslaSecondaryText)
                 }
@@ -6205,7 +6205,7 @@ private struct RideTrackUnavailableNotice: View {
                 Text("官方行程未返回轨迹")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.teslaPrimaryText)
-                Text("本应用不会记录或保存本机 GPS 轨迹。只有接口详情返回路线点时，才会显示起点到终点的回放。")
+                Text("本应用不会记录或保存本机 GPS 轨迹。只有接口详情返回路线点时，才会显示官方轨迹、起点和终点。")
                     .font(.caption)
                     .foregroundStyle(Color.teslaSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -6267,54 +6267,46 @@ private struct RideDetailHero: View {
 }
 
 private struct InterfaceRideTrackMapPanel: View {
-    /// MapKit becomes slow when every raw GPS point is rendered as an
-    /// individual overlay. Keep the source points for the count, but use a
-    /// deterministic sample for the visual replay so opening a long trip stays
-    /// responsive and the route still retains its start and end positions.
+    /// The map is a static rendering of the official trip-detail route. A
+    /// bounded, deterministic sample keeps MapKit responsive for long routes
+    /// while preserving the official start, end, and speed variation.
     var points: [NinebotInterfaceTrackPoint]
     var sourcePointCount: Int
     @State private var cameraPosition: MapCameraPosition
-    @State private var playbackIndex = 0
-    @State private var isPlaying = false
 
     init(points: [NinebotInterfaceTrackPoint]) {
         self.sourcePointCount = points.count
-        self.points = Self.sampledForPlayback(points)
-        _cameraPosition = State(initialValue: .region(Self.region(for: self.points.map(\.coordinate))))
+        self.points = Self.sampledForMap(points)
+        _cameraPosition = State(initialValue: .region(for: self.points.map(\.coordinate)))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("接口轨迹回放")
+                    Text("官方接口轨迹")
                         .font(.headline)
                         .foregroundStyle(Color.teslaPrimaryText)
                     Text(routePointSummary)
                         .font(.caption)
                         .foregroundStyle(Color.teslaSecondaryText)
                 }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(playbackIndex + 1)/\(points.count)")
-                        .font(.caption.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(Color.teslaGreen)
-                    Text(currentSpeedAccessibilityText)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(currentSpeedColor)
-                }
+
+                Spacer(minLength: 12)
+
+                Label("速度着色", systemImage: "paintpalette.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.teslaGreen)
             }
 
             Map(position: $cameraPosition) {
-                // Each pair of API track points is rendered separately so the
-                // route colour reflects that part of the ride: green is slow,
-                // yellow is medium, and red is fast. Segments ahead of the
-                // scooter remain visible but are dimmed during playback.
+                // Render each official route segment independently so its
+                // color describes that part of the journey: green is slower,
+                // yellow is medium, and red is faster.
                 ForEach(routeSegments) { segment in
                     MapPolyline(coordinates: segment.coordinates)
                         .stroke(
-                            speedColor(for: segment.speedKmh)
-                                .opacity(segment.index < playbackIndex ? 1 : 0.42),
+                            speedColor(for: segment.speedKmh),
                             style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
                         )
                 }
@@ -6323,101 +6315,49 @@ private struct InterfaceRideTrackMapPanel: View {
                     Marker("起点", systemImage: "flag.fill", coordinate: start)
                         .tint(.green)
                 }
-                if let end = coordinates.last {
+                if coordinates.count > 1, let end = coordinates.last {
                     Marker("终点", systemImage: "mappin.and.ellipse", coordinate: end)
                         .tint(.red)
-                }
-                if let current = coordinates[safe: playbackIndex] {
-                    Annotation("回放位置", coordinate: current) {
-                        VStack(spacing: 3) {
-                            Image(systemName: "scooter")
-                                .font(.headline.weight(.bold))
-                            Text(currentSpeedMarkerText)
-                                .font(.caption2.monospacedDigit().weight(.bold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(currentSpeedColor)
-                        .clipShape(Capsule())
-                        .shadow(color: .black.opacity(0.22), radius: 6, x: 0, y: 3)
-                    }
                 }
             }
             .frame(height: 260)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
             HStack(spacing: 8) {
-                Image(systemName: "gauge.with.dots.needle.67percent")
+                Image(systemName: "flag.checkered")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(currentSpeedColor)
-                Text("回放速度")
-                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(Color.teslaSecondaryText)
-                Text(currentSpeedText)
-                    .font(.subheadline.monospacedDigit().weight(.bold))
-                    .foregroundStyle(Color.teslaPrimaryText)
+                Text(speedColorDescription)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.teslaSecondaryText)
                 Spacer(minLength: 8)
-                SpeedRouteLegend(hasEstimatedSpeed: !validSpeeds.isEmpty)
+                SpeedRouteLegend(hasSpeedData: !validSpeeds.isEmpty)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .background(Color.teslaControlBackground)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-            HStack(spacing: 10) {
-                Button {
-                    if playbackIndex >= points.count - 1 { playbackIndex = 0 }
-                    isPlaying.toggle()
-                } label: {
-                    Label(isPlaying ? "暂停" : (playbackIndex >= points.count - 1 ? "重新播放" : "播放回放"), systemImage: isPlaying ? "pause.fill" : "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.teslaGreen)
-
-                Button {
-                    isPlaying = false
-                    playbackIndex = 0
-                } label: {
-                    Image(systemName: "backward.end.fill")
-                }
-                .buttonStyle(.bordered)
-
-                Slider(
-                    value: Binding(
-                        get: { Double(playbackIndex) },
-                        set: { playbackIndex = min(max(Int($0.rounded()), 0), max(points.count - 1, 0)) }
-                    ),
-                    in: 0...Double(max(points.count - 1, 0)),
-                    step: 1
-                )
-                .tint(currentSpeedColor)
-            }
         }
         .padding(16)
         .background(Color.teslaCardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 14, x: 0, y: 8)
-        .task(id: isPlaying) {
-            guard isPlaying else { return }
-            while isPlaying && playbackIndex < points.count - 1 && !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(180))
-                guard !Task.isCancelled else { return }
-                playbackIndex += 1
-            }
-            if playbackIndex >= points.count - 1 { isPlaying = false }
-        }
-        .onDisappear { isPlaying = false }
     }
 
     private var routePointSummary: String {
         if sourcePointCount == points.count {
-            return "起点 → 终点 · \(points.count) 个路线点"
+            return "起点 → 终点 · 官方接口返回 \(points.count) 个路线点"
         }
-        return "起点 → 终点 · \(sourcePointCount) 个路线点（回放抽样为 \(points.count) 个）"
+        return "起点 → 终点 · 官方接口返回 \(sourcePointCount) 个路线点（地图显示 \(points.count) 个）"
     }
 
     private var coordinates: [CLLocationCoordinate2D] { points.map(\.coordinate) }
+
+    private var speedColorDescription: String {
+        validSpeeds.isEmpty
+            ? "轨迹未返回可用速度，路线显示为灰色"
+            : "路线按速度由慢到快着色"
+    }
 
     private var routeSegments: [RideTrackSpeedSegment] {
         guard points.count > 1 else { return [] }
@@ -6436,32 +6376,9 @@ private struct InterfaceRideTrackMapPanel: View {
         }
     }
 
-    private var currentSpeedKmh: Double? {
-        guard let speed = points[safe: playbackIndex]?.speedKmh,
-              speed.isFinite,
-              speed >= 0 else {
-            return nil
-        }
-        return speed
-    }
-
-    private var currentSpeedText: String {
-        guard let currentSpeedKmh else { return "轨迹时间不足" }
-        return String(format: "%.1f km/h", currentSpeedKmh)
-    }
-
-    private var currentSpeedMarkerText: String {
-        guard let currentSpeedKmh else { return "-- km/h" }
-        return String(format: "%.0f km/h", currentSpeedKmh)
-    }
-
-    private var currentSpeedAccessibilityText: String {
-        currentSpeedKmh.map { String(format: "%.1f km/h", $0) } ?? "无法根据轨迹时间计算速度"
-    }
-
     private var validSpeeds: [Double] {
-        points.compactMap { point in
-            guard let speed = point.speedKmh, speed.isFinite, speed >= 0 else { return nil }
+        routeSegments.compactMap { segment in
+            guard let speed = segment.speedKmh, speed.isFinite, speed >= 0 else { return nil }
             return speed
         }
     }
@@ -6475,22 +6392,18 @@ private struct InterfaceRideTrackMapPanel: View {
         return Color(hue: 0.333 * (1 - progress), saturation: 0.88, brightness: 0.9)
     }
 
-    private var currentSpeedColor: Color {
-        speedColor(for: currentSpeedKmh)
-    }
-
     private func normalizedSpeedProgress(for speed: Double) -> Double {
         guard let minimum = validSpeeds.min(), let maximum = validSpeeds.max() else { return 0 }
         let range = maximum - minimum
         if range > 0.1 {
             return min(max((speed - minimum) / range, 0), 1)
         }
-        // When the API reports only one speed, retain the same slow-to-fast
-        // language instead of always treating that route as slow.
+        // If each official point has the same speed, keep a useful color
+        // instead of always describing the entire route as slow.
         return min(max(speed / 45, 0), 1)
     }
 
-    private static func sampledForPlayback(
+    private static func sampledForMap(
         _ source: [NinebotInterfaceTrackPoint],
         maximumPointCount: Int = 480
     ) -> [NinebotInterfaceTrackPoint] {
@@ -6512,13 +6425,13 @@ private struct InterfaceRideTrackMapPanel: View {
         if sampled.last?.id != source.last?.id, let last = source.last {
             sampled.append(last)
         }
-        return recomputingPlaybackSpeeds(in: sampled)
+        return recomputingDisplaySpeeds(in: sampled)
     }
 
-    /// Sampling can skip many raw GPS points. Recalculate each retained
-    /// segment from its own elapsed interval so the replay never displays a
-    /// speed copied from an unrelated part of the route.
-    private static func recomputingPlaybackSpeeds(in source: [NinebotInterfaceTrackPoint]) -> [NinebotInterfaceTrackPoint] {
+    /// Sampling can skip raw official points. Recalculate each retained
+    /// segment from its own timestamp interval so its displayed color remains
+    /// tied to the segment shown on the map.
+    private static func recomputingDisplaySpeeds(in source: [NinebotInterfaceTrackPoint]) -> [NinebotInterfaceTrackPoint] {
         guard source.count > 1 else { return source }
 
         var points = source
@@ -6527,8 +6440,8 @@ private struct InterfaceRideTrackMapPanel: View {
             guard segmentIndex < source.count - 1,
                   let startElapsed = source[segmentIndex].elapsedSeconds,
                   let endElapsed = source[segmentIndex + 1].elapsedSeconds else {
-                // Non-`trail` responses can provide an explicitly named speed
-                // but no elapsed timestamps. Preserve that value.
+                // Some official response shapes provide a named speed but no
+                // timestamps; retain that explicit value.
                 continue
             }
 
@@ -6567,11 +6480,11 @@ private struct RideTrackSpeedSegment: Identifiable {
 }
 
 private struct SpeedRouteLegend: View {
-    var hasEstimatedSpeed: Bool
+    var hasSpeedData: Bool
 
     var body: some View {
         Group {
-            if hasEstimatedSpeed {
+            if hasSpeedData {
                 HStack(spacing: 4) {
                     Text("慢")
                         .foregroundStyle(Color.teslaSecondaryText)
@@ -6586,21 +6499,16 @@ private struct SpeedRouteLegend: View {
                         .foregroundStyle(Color.teslaSecondaryText)
                 }
             } else {
-                Text("轨迹时间不足，未估算速度")
+                Text("无可用速度")
                     .foregroundStyle(Color.teslaSecondaryText)
             }
         }
         .font(.caption2.weight(.medium))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(hasEstimatedSpeed ? "路线速度按相邻轨迹点距离和时间计算：绿色表示慢，红色表示快" : "轨迹时间不足，路线不按速度着色")
+        .accessibilityLabel(hasSpeedData ? "路线按速度从慢到快着色：绿色表示慢，红色表示快" : "官方轨迹未返回可用速度，路线不按速度着色")
     }
 }
 
-private extension Array {
-    subscript(safe index: Int) -> Element? {
-        indices.contains(index) ? self[index] : nil
-    }
-}
 
 private struct RideMetric: View {
     var title: String

@@ -504,7 +504,7 @@ extension NinebotRideDetail {
                 coordinate: coordinate,
                 // Do not interpret an anonymous fourth `trail` number as km/h.
                 // It has varied between platform payloads and caused plausible
-                // but false readings in the replay UI.
+                // but false readings in the route display.
                 speedKmh: nil,
                 elapsedSeconds: normalizedElapsedSeconds(numbers.count >= 3 ? numbers[2] : nil),
                 auxiliaryValue: numbers.count >= 4 ? numbers[3] : nil,
@@ -652,7 +652,7 @@ extension NinebotRideDetail {
         )
     }
 
-    /// Returns an honest per-point replay speed. A value is available only
+    /// Returns an honest per-point route speed. A value is available only
     /// when the interface supplied a monotonically increasing elapsed time and
     /// the GPS segment is physically plausible; otherwise it remains nil.
     private static func derivedSpeeds(for points: [NinebotInterfaceTrackPoint]) -> [NinebotInterfaceTrackPoint] {
