@@ -6277,7 +6277,7 @@ private struct InterfaceRideTrackMapPanel: View {
     init(points: [NinebotInterfaceTrackPoint]) {
         self.sourcePointCount = points.count
         self.points = Self.sampledForMap(points)
-        _cameraPosition = State(initialValue: .region(for: self.points.map(\.coordinate)))
+        _cameraPosition = State(initialValue: MapCameraPosition.region(Self.region(for: self.points.map(\.coordinate))))
     }
 
     var body: some View {
