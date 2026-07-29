@@ -208,6 +208,18 @@ final class NinebotNotificationManager: NSObject, ObservableObject, UNUserNotifi
         UNUserNotificationCenter.current().add(request)
     }
 
+    /// 骑行结束后发送一次本地通知；通知内容与总结页核心数据保持一致。
+    func sendRideCompletedNotification(for ride: RideRecord) {
+        send(
+            category: .rideCompleted,
+            title: "🏁 骑行结束",
+            body: "本次骑行：\(String(format: "%.1f km", ride.distanceKilometers))\n\(ride.duration.notificationRideDurationText)\n最高速度：\(String(format: "%.0f km/h", ride.maxSpeedKmh))",
+            vehicleSN: ride.vehicleSN,
+            destination: .vehicleStatus,
+            dedupeInterval: 1
+        )
+    }
+
     /// 监听 BLE 电池与充电状态变化。安全异常由 `NinebotAlarmManager` 处理，
     /// 这里仅处理充电、低电量等非防盗类通知。
     func ingestVehicleTelemetry(_ telemetry: NinebotBLETelemetry, previous: NinebotBLETelemetry?) {
