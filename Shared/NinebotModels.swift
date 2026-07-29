@@ -1154,7 +1154,7 @@ struct NinebotRecordedRide: Codable, Equatable, Identifiable {
 }
 
 
-enum NinebotTirePosition: String, Codable, CaseIterable, Identifiable {
+enum NinebotTirePosition: String, Codable, CaseIterable, Identifiable, Hashable {
     case front
     case rear
     case leftFront

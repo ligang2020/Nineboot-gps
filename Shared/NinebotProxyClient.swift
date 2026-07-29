@@ -852,41 +852,166 @@ private extension NinebotProxyClient {
         return value > 10_000 ? value / 1_000 : value
     }
 
+    /// Extracts TPMS fields from regular vehicle responses. The official Android
+    /// app also receives sensor events after a PN/MAC-bound monitor is paired;
+    /// those protected BLE events are not assumed to exist in this cloud response.
     static func tireTelemetry(in sources: [[String: JSONValue]]) -> NinebotTireTelemetry? {
-        let nestedKeys = ["tpms", "TPMS", "tire", "tires", "tire_info", "tireInfo", "tire_status", "tireStatus", "wheel", "wheels"]
-        var objects = sources
-        for source in sources {
-            for key in nestedKeys {
-                if let object = source[key]?.objectValue { objects.append(object) }
+        func allObjects(in value: JSONValue, into result: inout [[String: JSONValue]]) {
+            switch value {
+            case .object(let object):
+                result.append(object)
+                for child in object.values {
+                    allObjects(in: child, into: &result)
+                }
+            case .array(let values):
+                for child in values {
+                    allObjects(in: child, into: &result)
+                }
+            default:
+                break
             }
+        }
+
+        var objects: [[String: JSONValue]] = []
+        for source in sources {
+            allObjects(in: .object(source), into: &objects)
+        }
+        guard !objects.isEmpty else { return nil }
+
+        func boolFlag(_ keys: [String], in object: [String: JSONValue]) -> Bool {
+            keys.contains { key in
+                guard let value = object[key] else { return false }
+                if let flag = value.boolValue { return flag }
+                return value.intValue == 1
+            }
+        }
+
+        func statusTexts(
+            in object: [String: JSONValue],
+            pressureStatusKeys: [String],
+            temperatureStatusKeys: [String]
+        ) -> (pressure: String?, temperature: String?) {
+            var stateObjects = [object]
+            for key in ["tp_state", "tpState", "tire_state", "tireState"] {
+                if let state = object[key]?.objectValue {
+                    stateObjects.append(state)
+                }
+            }
+
+            var pressure = firstString(pressureStatusKeys, in: object)
+            var temperature = firstString(temperatureStatusKeys, in: object)
+            var pressureWarnings: [String] = []
+            var temperatureWarnings: [String] = []
+            for state in stateObjects {
+                if boolFlag(["tp_low", "tpLow", "pressure_low", "pressureLow"], in: state) {
+                    pressureWarnings.append("胎压低")
+                }
+                if boolFlag(["tp_high", "tpHigh", "pressure_high", "pressureHigh"], in: state) {
+                    pressureWarnings.append("胎压高")
+                }
+                if boolFlag(["temperature_high", "temperatureHigh", "temp_high", "tempHigh"], in: state) {
+                    temperatureWarnings.append("胎温高")
+                }
+                if boolFlag(["battery_voltage_low", "batteryVoltageLow", "battery_low", "batteryLow"], in: state) {
+                    temperatureWarnings.append("传感器电量低")
+                }
+            }
+            if pressure == nil, !pressureWarnings.isEmpty {
+                pressure = Array(Set(pressureWarnings)).sorted().joined(separator: "、")
+            }
+            if temperature == nil, !temperatureWarnings.isEmpty {
+                temperature = Array(Set(temperatureWarnings)).sorted().joined(separator: "、")
+            }
+            return (pressure, temperature)
+        }
+
+        func position(in object: [String: JSONValue]) -> NinebotTirePosition? {
+            for key in ["tp_position", "tpPosition", "position", "tire_position", "tirePosition", "wheel_position", "wheelPosition"] {
+                guard let value = object[key] else { continue }
+                let name = value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                switch name {
+                case "front", "front_tire", "frontwheel", "前", "前轮": return .front
+                case "rear", "rear_tire", "rearwheel", "后", "后轮": return .rear
+                case "left_front", "leftfront", "lf", "左前", "左前轮": return .leftFront
+                case "right_front", "rightfront", "rf", "右前", "右前轮": return .rightFront
+                case "left_rear", "leftrear", "left_behind", "lr", "左后", "左后轮": return .leftRear
+                case "right_rear", "rightrear", "right_behind", "rr", "右后", "右后轮": return .rightRear
+                default:
+                    // Android naming confirms a position field but not its numeric
+                    // enum values. Keep the conservative compatibility mapping used
+                    // by common two-wheel TPMS payloads: 1 front, 2 rear.
+                    if let numeric = value.intValue {
+                        if numeric == 1 { return .front }
+                        if numeric == 2 { return .rear }
+                    }
+                }
+            }
+            return nil
         }
 
         func reading(
             _ position: NinebotTirePosition,
+            objects candidates: [[String: JSONValue]],
             pressureKeys: [String],
             temperatureKeys: [String],
             pressureStatusKeys: [String],
             temperatureStatusKeys: [String]
         ) -> NinebotTireReading? {
-            let pressure = normalizedTirePressure(firstDouble(pressureKeys, in: objects))
-            let temperature = normalizedTireTemperature(firstDouble(temperatureKeys, in: objects))
-            let pressureStatus = firstString(pressureStatusKeys, in: objects.first ?? [:])
-                ?? objects.compactMap { firstString(pressureStatusKeys, in: $0) }.first
-            let temperatureStatus = firstString(temperatureStatusKeys, in: objects.first ?? [:])
-                ?? objects.compactMap { firstString(temperatureStatusKeys, in: $0) }.first
+            let pressure = normalizedTirePressure(firstDouble(pressureKeys, in: candidates))
+            let temperature = normalizedTireTemperature(firstDouble(temperatureKeys, in: candidates))
+            let statuses = candidates.map {
+                statusTexts(in: $0, pressureStatusKeys: pressureStatusKeys, temperatureStatusKeys: temperatureStatusKeys)
+            }
+            let pressureStatus = statuses.compactMap { $0.pressure }.first
+            let temperatureStatus = statuses.compactMap { $0.temperature }.first
             let value = NinebotTireReading(position: position, pressureKPa: pressure, temperatureC: temperature, pressureStatus: pressureStatus, temperatureStatus: temperatureStatus)
-            return value.hasReading || !(value.statusText.isEmpty) ? value : nil
+            return value.hasReading || !value.statusText.isEmpty ? value : nil
         }
 
-        let readings = [
-            reading(.front, pressureKeys: ["front_pressure", "frontPressure", "front_tire_pressure", "frontTirePressure", "frontTyrePressure"], temperatureKeys: ["front_temperature", "frontTemperature", "front_tire_temperature", "frontTireTemperature", "frontTyreTemperature"], pressureStatusKeys: ["front_pressure_status", "frontPressureStatus"], temperatureStatusKeys: ["front_tire_temperature_status", "frontTireTemperatureStatus"]),
-            reading(.rear, pressureKeys: ["rear_pressure", "rearPressure", "rear_tire_pressure", "rearTirePressure", "rearTyrePressure"], temperatureKeys: ["rear_temperature", "rearTemperature", "rear_tire_temperature", "rearTireTemperature", "rearTyreTemperature"], pressureStatusKeys: ["rear_pressure_status", "rearPressureStatus"], temperatureStatusKeys: ["rear_tire_temperature_status", "rearTireTemperatureStatus", "rightBehindTireTemperatureStatus"]),
-            reading(.leftFront, pressureKeys: ["left_front_pressure", "leftFrontPressure", "left_front_tire_pressure", "leftFrontTirePressure"], temperatureKeys: ["left_front_temperature", "leftFrontTemperature", "left_front_tire_temperature", "leftFrontTireTemperature"], pressureStatusKeys: ["left_front_pressure_status", "leftFrontPressureStatus"], temperatureStatusKeys: ["left_front_tire_temperature_status", "leftFrontTireTemperatureStatus", "isLeftFrontTireTemperatureStatus"]),
-            reading(.rightFront, pressureKeys: ["right_front_pressure", "rightFrontPressure", "right_front_tire_pressure", "rightFrontTirePressure"], temperatureKeys: ["right_front_temperature", "rightFrontTemperature", "right_front_tire_temperature", "rightFrontTireTemperature"], pressureStatusKeys: ["right_front_pressure_status", "rightFrontPressureStatus"], temperatureStatusKeys: ["right_front_tire_temperature_status", "rightFrontTireTemperatureStatus"]),
-            reading(.leftRear, pressureKeys: ["left_rear_pressure", "leftRearPressure", "left_behind_pressure", "leftBehindPressure"], temperatureKeys: ["left_rear_temperature", "leftRearTemperature", "left_behind_tire_temperature", "leftBehindTireTemperature"], pressureStatusKeys: ["left_rear_pressure_status", "leftRearPressureStatus"], temperatureStatusKeys: ["left_rear_tire_temperature_status", "leftRearTireTemperatureStatus"]),
-            reading(.rightRear, pressureKeys: ["right_rear_pressure", "rightRearPressure", "right_behind_pressure", "rightBehindPressure"], temperatureKeys: ["right_rear_temperature", "rightRearTemperature", "right_behind_tire_temperature", "rightBehindTireTemperature"], pressureStatusKeys: ["right_rear_pressure_status", "rightRearPressureStatus"], temperatureStatusKeys: ["right_rear_tire_temperature_status", "rightRearTireTemperatureStatus", "rightBehindTireTemperatureStatus"])
-        ].compactMap { $0 }
-        return readings.isEmpty ? nil : NinebotTireTelemetry(readings: readings)
+        func merge(_ current: NinebotTireReading?, _ incoming: NinebotTireReading?) -> NinebotTireReading? {
+            guard var current = current else { return incoming }
+            guard let incoming = incoming else { return current }
+            current.pressureKPa = current.pressureKPa ?? incoming.pressureKPa
+            current.temperatureC = current.temperatureC ?? incoming.temperatureC
+            current.pressureStatus = current.pressureStatus ?? incoming.pressureStatus
+            current.temperatureStatus = current.temperatureStatus ?? incoming.temperatureStatus
+            return current
+        }
+
+        let directDefinitions: [(NinebotTirePosition, [String], [String], [String], [String])] = [
+            (.front, ["front_pressure", "frontPressure", "front_tire_pressure", "frontTirePressure", "frontTyrePressure"], ["front_temperature", "frontTemperature", "front_tire_temperature", "frontTireTemperature", "frontTyreTemperature"], ["front_pressure_status", "frontPressureStatus"], ["front_tire_temperature_status", "frontTireTemperatureStatus"]),
+            (.rear, ["rear_pressure", "rearPressure", "rear_tire_pressure", "rearTirePressure", "rearTyrePressure"], ["rear_temperature", "rearTemperature", "rear_tire_temperature", "rearTireTemperature", "rearTyreTemperature"], ["rear_pressure_status", "rearPressureStatus"], ["rear_tire_temperature_status", "rearTireTemperatureStatus", "rightBehindTireTemperatureStatus"]),
+            (.leftFront, ["left_front_pressure", "leftFrontPressure", "left_front_tire_pressure", "leftFrontTirePressure"], ["left_front_temperature", "leftFrontTemperature", "left_front_tire_temperature", "leftFrontTireTemperature"], ["left_front_pressure_status", "leftFrontPressureStatus"], ["left_front_tire_temperature_status", "leftFrontTireTemperatureStatus", "isLeftFrontTireTemperatureStatus"]),
+            (.rightFront, ["right_front_pressure", "rightFrontPressure", "right_front_tire_pressure", "rightFrontTirePressure"], ["right_front_temperature", "rightFrontTemperature", "right_front_tire_temperature", "rightFrontTireTemperature"], ["right_front_pressure_status", "rightFrontPressureStatus"], ["right_front_tire_temperature_status", "rightFrontTireTemperatureStatus"]),
+            (.leftRear, ["left_rear_pressure", "leftRearPressure", "left_behind_pressure", "leftBehindPressure", "left_behind_tire_pressure", "leftBehindTirePressure"], ["left_rear_temperature", "leftRearTemperature", "left_behind_tire_temperature", "leftBehindTireTemperature"], ["left_rear_pressure_status", "leftRearPressureStatus"], ["left_rear_tire_temperature_status", "leftRearTireTemperatureStatus", "leftBehindTireTemperatureStatus"]),
+            (.rightRear, ["right_rear_pressure", "rightRearPressure", "right_behind_pressure", "rightBehindPressure", "right_behind_tire_pressure", "rightBehindTirePressure"], ["right_rear_temperature", "rightRearTemperature", "right_behind_tire_temperature", "rightBehindTireTemperature"], ["right_rear_pressure_status", "rightRearPressureStatus"], ["right_rear_tire_temperature_status", "rightRearTireTemperatureStatus", "rightBehindTireTemperatureStatus"])
+        ]
+
+        var readings: [NinebotTirePosition: NinebotTireReading] = [:]
+        // Direct front/rear or four-wheel response shapes.
+        for definition in directDefinitions {
+            if let value = reading(definition.0, objects: objects, pressureKeys: definition.1, temperatureKeys: definition.2, pressureStatusKeys: definition.3, temperatureStatusKeys: definition.4) {
+                readings[definition.0] = value
+            }
+        }
+
+        // Android's bound-sensor payload names a single wheel with tp_position
+        // and tire_pressure/tp_temperature. Restrict generic fields to that
+        // object so one sensor cannot be copied to every wheel.
+        let genericPressureKeys = ["tire_pressure", "tirePressure", "tp_pressure", "tpPressure", "pressure"]
+        let genericTemperatureKeys = ["tp_temperature", "tpTemperature", "tire_temperature", "tireTemperature", "temperature", "temp"]
+        let genericPressureStatusKeys = ["tp_pressure_status", "tpPressureStatus", "pressure_status", "pressureStatus"]
+        let genericTemperatureStatusKeys = ["tp_temperature_status", "tpTemperatureStatus", "temperature_status", "temperatureStatus"]
+        for object in objects {
+            guard let wheel = position(in: object),
+                  let value = reading(wheel, objects: [object], pressureKeys: genericPressureKeys, temperatureKeys: genericTemperatureKeys, pressureStatusKeys: genericPressureStatusKeys, temperatureStatusKeys: genericTemperatureStatusKeys) else {
+                continue
+            }
+            readings[wheel] = merge(readings[wheel], value)
+        }
+
+        let ordered = NinebotTirePosition.allCases.compactMap { readings[$0] }
+        return ordered.isEmpty ? nil : NinebotTireTelemetry(readings: ordered)
     }
 
     static func normalizedTirePressure(_ value: Double?) -> Double? {

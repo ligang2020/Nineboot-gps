@@ -5798,9 +5798,13 @@ private struct TireTelemetryPanel: View {
             }
 
             if readings.isEmpty {
-                Text("车辆接口暂未返回 TPMS 字段；前台会随车辆状态自动刷新。")
-                    .font(.caption)
-                    .foregroundStyle(Color.teslaSecondaryText)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("当前未收到胎压监测器数据")
+                        .font(.caption.weight(.semibold))
+                    Text("官方 Android App 需先绑定 PN/MAC 胎压监测器，并通过专用蓝牙事件同步；常规车辆云端车况接口通常不返回该实时数据。本 App 会兼容云端字段，并在接入授权的只读蓝牙数据后实时显示。")
+                        .font(.caption)
+                }
+                .foregroundStyle(Color.teslaSecondaryText)
             } else {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                     ForEach(readings) { reading in
@@ -6390,10 +6394,14 @@ private struct InterfaceRideTrackMapPanel: View {
     /// while preserving the official start, end, and speed variation.
     var points: [NinebotInterfaceTrackPoint]
     var sourcePointCount: Int
+    /// Peak speed is calculated before map sampling, so a long route never
+    /// loses its actual official maximum-speed point in the display.
+    private let maximumSpeedMarker: RideTrackSpeedMarker?
     @State private var cameraPosition: MapCameraPosition
 
     init(points: [NinebotInterfaceTrackPoint]) {
         self.sourcePointCount = points.count
+        self.maximumSpeedMarker = Self.maximumSpeedMarker(in: points)
         self.points = Self.sampledForMap(points)
         _cameraPosition = State(initialValue: MapCameraPosition.region(Self.region(for: self.points.map(\.coordinate))))
     }
@@ -6439,6 +6447,26 @@ private struct InterfaceRideTrackMapPanel: View {
                     Marker("终点", systemImage: "mappin.and.ellipse", coordinate: end)
                         .tint(.red)
                 }
+                if let maximumSpeedMarker {
+                    Annotation("最高速度", coordinate: maximumSpeedMarker.coordinate, anchor: .bottom) {
+                        VStack(spacing: 2) {
+                            Text("最高速度")
+                                .font(.caption2.weight(.semibold))
+                            Text("\(maximumSpeedMarker.speedKmh, specifier: "%.1f") km/h")
+                                .font(.caption.monospacedDigit().weight(.bold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Color.red.gradient, in: Capsule())
+                        .overlay(alignment: .bottom) {
+                            Image(systemName: "triangle.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Color.red)
+                                .offset(y: 6)
+                        }
+                    }
+                }
             }
             .frame(height: 260)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -6450,7 +6478,14 @@ private struct InterfaceRideTrackMapPanel: View {
                 Text(speedColorDescription)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Color.teslaSecondaryText)
+                    .lineLimit(1)
                 Spacer(minLength: 8)
+                if let maximumSpeedMarker {
+                    Text("最高 \(maximumSpeedMarker.speedKmh, specifier: "%.1f") km/h")
+                        .font(.caption.monospacedDigit().weight(.bold))
+                        .foregroundStyle(.red)
+                        .lineLimit(1)
+                }
                 SpeedRouteLegend(hasSpeedData: !validSpeeds.isEmpty)
             }
             .padding(.horizontal, 12)
@@ -6477,6 +6512,16 @@ private struct InterfaceRideTrackMapPanel: View {
         validSpeeds.isEmpty
             ? "轨迹未返回可用速度，路线显示为灰色"
             : "路线按速度由慢到快着色"
+    }
+
+    private static func maximumSpeedMarker(in source: [NinebotInterfaceTrackPoint]) -> RideTrackSpeedMarker? {
+        guard let fastest = source.compactMap({ point -> RideTrackSpeedMarker? in
+            guard let speed = usableSpeed(point.speedKmh) else { return nil }
+            return RideTrackSpeedMarker(coordinate: point.coordinate, speedKmh: speed)
+        }).max(by: { $0.speedKmh < $1.speedKmh }) else {
+            return nil
+        }
+        return fastest
     }
 
     /// Every displayed segment receives a speed when the official response
@@ -6628,6 +6673,11 @@ private struct InterfaceRideTrackMapPanel: View {
             span: MKCoordinateSpan(latitudeDelta: max((maxLatitude - minLatitude) * 1.5, 0.006), longitudeDelta: max((maxLongitude - minLongitude) * 1.5, 0.006))
         )
     }
+}
+
+private struct RideTrackSpeedMarker {
+    var coordinate: CLLocationCoordinate2D
+    var speedKmh: Double
 }
 
 private struct RideTrackSpeedSegment: Identifiable {
