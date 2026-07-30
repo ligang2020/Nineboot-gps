@@ -6468,8 +6468,6 @@ private struct InterfaceRideTrackMapPanel: View {
     private var routeSegments: [RideTrackSpeedSegment] {
         guard points.count > 1 else { return [] }
         return (0..<(points.count - 1)).map { index in
-            let start = points[index]
-            let end = points[index + 1]
             let speed = verifiedSegmentSpeed(at: index)
             // Include neighbouring vertices where possible. Consecutive
             // polylines overlap by one small segment, eliminating rendering

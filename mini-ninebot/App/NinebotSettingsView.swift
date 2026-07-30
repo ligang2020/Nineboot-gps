@@ -353,7 +353,7 @@ private struct BLETransportSettingsCard: View {
                             Text(peripheral.displayName)
                                 .font(.subheadline)
                                 .lineLimit(1)
-                            Text("\(peripheral.signalTitle) · \(peripheral.rssi) dBm · \(peripheral.id.uuidString.prefix(8))")
+                            Text("\(peripheral.signalTitle) · \(peripheral.rssi) dBm · \(String(peripheral.id.uuidString.prefix(8)))")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
