@@ -389,8 +389,9 @@ extension NinebotRideDetail {
 
     private static func bestTrackPoints(from value: JSONValue) -> [NinebotInterfaceTrackPoint] {
         // Official ride details expose the route as a compact `trail` string.
-        // Its anonymous values are not a documented km/h field, so preserve the
-        // geometry but never derive a displayed speed from timestamps or GPS.
+        // The official trail layout is longitude, latitude, elapsed seconds and
+        // the recorded km/h speed. Preserve that server-supplied speed exactly;
+        // timestamps and coordinate distance are never used to manufacture one.
         let officialTrailCandidates = officialTrailValues(from: value)
             .map { officialTrailTrackPoints(from: $0) }
             .filter { $0.count > 1 }
@@ -501,12 +502,11 @@ extension NinebotRideDetail {
 
             return interfaceTrackPoint(
                 coordinate: coordinate,
-                // Do not interpret an anonymous fourth `trail` number as km/h.
-                // It has varied between platform payloads and caused plausible
-                // but false readings in the route display.
-                speedKmh: nil,
+                // The fourth value is the official service's recorded point
+                // speed in km/h. It is not inferred from the GPS geometry.
+                speedKmh: normalizedSpeed(numbers.count >= 4 ? numbers[3] : nil),
                 elapsedSeconds: normalizedElapsedSeconds(numbers.count >= 3 ? numbers[2] : nil),
-                auxiliaryValue: numbers.count >= 4 ? numbers[3] : nil,
+                auxiliaryValue: nil,
                 index: index
             )
         }

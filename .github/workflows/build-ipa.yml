@@ -12,7 +12,7 @@ on:
           - 'false'
           - 'true'
       release_tag:
-        description: 'Optional release tag; blank uses the app version (for example v1.2.52)'
+        description: 'Optional release tag; blank uses the app version (for example v1.2.53)'
         required: false
         default: ''
   push:
