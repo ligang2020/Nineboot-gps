@@ -152,7 +152,11 @@ struct NinebotProxyClient {
                 currentTravel: travel
             )
             var state = Self.vehicleState(status: status, travel: travel, battery: battery, updatedAt: Date())
-            if let totalMileage = Self.totalMileage(fromMonthlyTravels: monthlyTravels) {
+            // `total_mileage_odo` is the vehicle odometer used by the
+            // official app. Monthly travel history may be incomplete, so it
+            // is only a fallback when the vehicle does not provide an odometer.
+            if state.totalMileage == nil,
+               let totalMileage = Self.totalMileage(fromMonthlyTravels: monthlyTravels) {
                 state.totalMileage = totalMileage
             }
             let resolvedVehicle = Self.vehicleInfo(vehicle, addingImageFrom: status, battery: battery)
@@ -202,7 +206,9 @@ struct NinebotProxyClient {
                 battery: battery,
                 updatedAt: Date()
             )
-            refreshedState.totalMileage = cachedSnapshot.state.totalMileage
+            // Prefer the fresh vehicle odometer; keep the cached value only
+            // when this status response omitted it.
+            refreshedState.totalMileage = refreshedState.totalMileage ?? cachedSnapshot.state.totalMileage
             refreshedState.monthMileage = cachedSnapshot.state.monthMileage
             refreshedState.monthEnergy = cachedSnapshot.state.monthEnergy
             refreshedState.monthUsedElectricity = cachedSnapshot.state.monthUsedElectricity
@@ -661,7 +667,10 @@ private extension NinebotProxyClient {
                 firstDouble(["lon", "lng", "longitude", "gcj_lng", "gcjLng", "wgs_lng", "wgsLng", "x"], in: locationSources),
                 limit: 180
             ),
-            totalMileage: firstDouble(["total_mileage", "totalMileage", "total_mileages"], in: statusObject)
+            totalMileage: firstDouble([
+                "total_mileage_odo", "totalMileageOdo", "totalMileageODO",
+                "total_mileage", "totalMileage"
+            ], in: statusObject)
                 ?? firstDouble(["total_mileage", "totalMileage"], in: travelObject),
             distanceSinceLastCharge: normalizedDistanceSinceCharge(firstDouble([
                 "mileage_since_last_charge", "mileageSinceLastCharge", "distance_since_charge", "distanceSinceCharge",
