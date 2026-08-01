@@ -5732,7 +5732,7 @@ private struct ChargingSinceLastChargePanel: View {
     var history: [NinebotVehicleHistoryPoint]
 
     private var distance: Double? {
-        if let direct = state.distanceSinceLastCharge, direct >= 0 { return direct }
+        if let resolved = state.resolvedDistanceSinceLastCharge { return resolved }
         guard let current = state.totalMileage else { return nil }
         let lastChargeMileage = history
             .filter { $0.isCharging == true && $0.totalMileage != nil }

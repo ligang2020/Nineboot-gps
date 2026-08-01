@@ -572,7 +572,11 @@ extension NinebotRideDetail {
         guard let coordinate = coordinate(fromObject: object) else { return nil }
         return interfaceTrackPoint(
             coordinate: coordinate,
-            speedKmh: normalizedSpeed(firstDouble(["speed", "spd", "speed_kmh", "speedKmh", "velocity", "v"], in: object)),
+            speedKmh: normalizedSpeed(firstDouble([
+                "speed", "spd", "speed_kmh", "speedKmh", "speedKMH", "kmh",
+                "gps_speed", "gpsSpeed", "vehicle_speed", "vehicleSpeed",
+                "velocity", "v"
+            ], in: object)),
             elapsedSeconds: normalizedElapsedSeconds(firstDouble(["elapsed", "elapsed_seconds", "elapsedSeconds"], in: object)),
             auxiliaryValue: firstDouble(["direction", "bearing", "heading", "course", "angle", "aux", "auxiliary"], in: object),
             index: index
@@ -1206,8 +1210,35 @@ struct NinebotVehicleState: Codable, Equatable {
     }
 
     var distanceSinceLastChargeText: String {
-        guard let distanceSinceLastCharge, distanceSinceLastCharge >= 0 else { return "同步中" }
-        return "\(Self.numberText(distanceSinceLastCharge, maximumFractionDigits: 1)) km"
+        guard let resolvedDistanceSinceLastCharge else { return "同步中" }
+        return "\(Self.numberText(resolvedDistanceSinceLastCharge, maximumFractionDigits: 1)) km"
+    }
+
+    /// Distance displayed while charging. Some firmware resets the direct
+    /// distance-since-charge field to 0 as soon as charging starts; in that
+    /// state the latest completed ride is the value the official app shows.
+    var resolvedDistanceSinceLastCharge: Double? {
+        if let distanceSinceLastCharge,
+           distanceSinceLastCharge.isFinite,
+           distanceSinceLastCharge > 0 {
+            return distanceSinceLastCharge
+        }
+
+        if (isCharging == true || isFullyCharged),
+           let lastMileage,
+           lastMileage.isFinite,
+           lastMileage > 0 {
+            return lastMileage
+        }
+
+        if let distanceSinceLastCharge,
+           distanceSinceLastCharge.isFinite,
+           distanceSinceLastCharge == 0,
+           isCharging != true {
+            return distanceSinceLastCharge
+        }
+
+        return nil
     }
 
     var totalMileageText: String {

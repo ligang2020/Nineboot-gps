@@ -33,6 +33,42 @@ enum NinebotNotificationCategory: String, CaseIterable, Sendable {
     case sos = "NINEBOT_SOS"
     case rideCompleted = "NINEBOT_RIDE_COMPLETED"
 
+    static func remoteCategory(from rawValue: String?) -> NinebotNotificationCategory? {
+        guard let rawValue else { return nil }
+        let normalized = rawValue
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: " ", with: "")
+
+        if let category = allCases.first(where: {
+            $0.rawValue
+                .lowercased()
+                .replacingOccurrences(of: "-", with: "")
+                .replacingOccurrences(of: "_", with: "")
+                .replacingOccurrences(of: " ", with: "") == normalized
+        }) {
+            return category
+        }
+
+        switch normalized {
+        case "chargingstart", "chargingstarted", "chargestart", "chargeconnected", "chargingconnected", "vehiclechargingstarted":
+            return .chargingStarted
+        case "charginginterrupt", "charginginterrupted", "chargingstop", "chargingstopped", "chargedisconnect", "chargedisconnected", "powerdisconnected", "vehiclecharginginterrupted":
+            return .chargingInterrupted
+        case "chargingfull", "chargefull", "fullycharged", "vehiclechargingfull":
+            return .chargingFull
+        case "geofenceexit", "geofenceexited", "vehicleleftgeofence", "vehicleleftfence", "leavegeofence", "leftgeofence":
+            return .geofenceExited
+        case "geofenceenter", "geofenceentered", "vehicleenteredgeofence", "vehicleenteredfence", "entergeofence", "enteredgeofence":
+            return .geofenceEntered
+        case "vehiclealarm", "alarm", "alert", "securityalarm":
+            return .vehicleAlarm
+        default:
+            return nil
+        }
+    }
+
     var threadIdentifier: String {
         switch self {
         case .chargingStarted, .chargingFull, .chargingInterrupted:
@@ -74,7 +110,9 @@ final class NinebotNotificationRouter: ObservableObject {
     func route(userInfo: [AnyHashable: Any]) {
         let rawDestination = (userInfo["destination"] as? String)
             ?? (userInfo["ninebot_destination"] as? String)
-        let category = (userInfo["category"] as? String).flatMap(NinebotNotificationCategory.init(rawValue:))
+        let category = NinebotNotificationCategory.remoteCategory(
+            from: (userInfo["category"] as? String) ?? (userInfo["event"] as? String) ?? (userInfo["type"] as? String)
+        )
         destination = rawDestination.flatMap(NinebotNotificationDestination.init(rawValue:)) ?? category?.destination ?? .vehicle
         vehicleSN = (userInfo["vehicleSN"] as? String) ?? (userInfo["vehicle_sn"] as? String)
         routeToken = UUID()
@@ -278,10 +316,20 @@ final class NinebotNotificationManager: NSObject, ObservableObject, UNUserNotifi
 
     /// 统一处理服务端 APNs payload。服务端可传入 title/body/category/destination；缺失时按安全事件兜底。
     func handleRemotePayload(_ userInfo: [AnyHashable: Any]) {
-        let category = ((userInfo["category"] as? String) ?? (userInfo["event"] as? String))
-            .flatMap(NinebotNotificationCategory.init(rawValue:)) ?? .vehicleAlarm
-        let title = (userInfo["title"] as? String) ?? "🚨 车辆报警"
-        let body = (userInfo["body"] as? String) ?? "检测到车辆异常，请立即查看。"
+        let aps = userInfo["aps"] as? [AnyHashable: Any]
+        let alert = aps?["alert"] as? [AnyHashable: Any]
+        let category = NinebotNotificationCategory.remoteCategory(
+            from: (userInfo["category"] as? String)
+                ?? (userInfo["event"] as? String)
+                ?? (userInfo["type"] as? String)
+                ?? (aps?["category"] as? String)
+        ) ?? .vehicleAlarm
+        let title = (userInfo["title"] as? String)
+            ?? (alert?["title"] as? String)
+            ?? defaultRemoteTitle(for: category)
+        let body = (userInfo["body"] as? String)
+            ?? (alert?["body"] as? String)
+            ?? defaultRemoteBody(for: category)
         send(
             category: category,
             title: title,
@@ -289,6 +337,28 @@ final class NinebotNotificationManager: NSObject, ObservableObject, UNUserNotifi
             vehicleSN: (userInfo["vehicle_sn"] as? String) ?? (userInfo["vehicleSN"] as? String),
             isSilent: false
         )
+    }
+
+    private func defaultRemoteTitle(for category: NinebotNotificationCategory) -> String {
+        switch category {
+        case .chargingStarted: return "⚡ 开始充电"
+        case .chargingInterrupted: return "⚠️ 充电已断开"
+        case .chargingFull: return "🔋 已充满"
+        case .geofenceExited: return "📍 车辆已离开安全区域"
+        case .geofenceEntered: return "📍 车辆已进入安全区域"
+        default: return "🚨 车辆报警"
+        }
+    }
+
+    private func defaultRemoteBody(for category: NinebotNotificationCategory) -> String {
+        switch category {
+        case .chargingStarted: return "车辆已开始充电。"
+        case .chargingInterrupted: return "车辆充电已断开，请检查充电器连接。"
+        case .chargingFull: return "车辆已经充满电，可以拔掉充电器。"
+        case .geofenceExited: return "车辆已离开你设定的安全区域，请及时查看定位。"
+        case .geofenceEntered: return "车辆已进入你设定的安全区域。"
+        default: return "检测到车辆异常，请立即查看。"
+        }
     }
 
     func userNotificationCenter(
@@ -303,8 +373,13 @@ final class NinebotNotificationManager: NSObject, ObservableObject, UNUserNotifi
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        let content = response.notification.request.content
         Task { @MainActor in
-            NinebotNotificationRouter.shared.route(userInfo: response.notification.request.content.userInfo)
+            var userInfo = content.userInfo
+            if !content.categoryIdentifier.isEmpty {
+                userInfo["category"] = content.categoryIdentifier
+            }
+            NinebotNotificationRouter.shared.route(userInfo: userInfo)
             if response.actionIdentifier == "NINEBOT_STOP_FIND" {
                 NotificationCenter.default.post(name: .ninebotStopFindingVehicle, object: nil)
             }

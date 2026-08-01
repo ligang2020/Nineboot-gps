@@ -27,7 +27,7 @@ enum NinebotPushError: LocalizedError {
 }
 
 /// Registers the device for APNs and turns both server-delivered and locally
-/// detected vehicle alarms into actionable system notifications.
+/// detected vehicle events into actionable system notifications.
 final class NinebotPushManager: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     static let shared = NinebotPushManager()
 
@@ -97,7 +97,7 @@ final class NinebotPushManager: NSObject, UIApplicationDelegate, UNUserNotificat
         completionHandler()
     }
 
-    /// Converts a silent vehicle-alarm APNs payload to a visible local alert.
+    /// Converts a silent NinePlus APNs payload to a visible local alert.
     /// Visible APNs alerts are intentionally left to the system so they are not
     /// delivered twice.
     func application(
@@ -105,7 +105,7 @@ final class NinebotPushManager: NSObject, UIApplicationDelegate, UNUserNotificat
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        guard Self.isVehicleAlarmPayload(userInfo) else {
+        guard Self.isNinebotNotificationPayload(userInfo) else {
             completionHandler(.noData)
             return
         }
@@ -115,18 +115,8 @@ final class NinebotPushManager: NSObject, UIApplicationDelegate, UNUserNotificat
             return
         }
 
-        let vehicleName = Self.payloadText(for: ["vehicle_name", "vehicleName", "name", "sn"], in: userInfo)
-        let event = Self.payloadText(for: ["alarm_type", "alert_type", "event", "type", "message"], in: userInfo)
-        let title = "\(vehicleName?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? "车辆") 报警"
-        let body = event?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? "检测到车辆安全异常，请及时确认车辆状态。"
-        let identifier = Self.payloadText(for: ["alarm_id", "event_id", "id"], in: userInfo)
-            ?? "remote.\(vehicleName ?? "vehicle").\(event ?? "alarm")"
-
-        scheduleVehicleAlarmNotification(
-            title: title,
-            body: body,
-            identifier: "ninebot.remote.alarm.\(identifier)"
-        ) {
+        Task { @MainActor in
+            NinebotNotificationManager.shared.handleRemotePayload(userInfo)
             completionHandler(.newData)
         }
     }
@@ -338,6 +328,30 @@ final class NinebotPushManager: NSObject, UIApplicationDelegate, UNUserNotificat
                 return true
             }
         }
+        return false
+    }
+
+    private static func isNinebotNotificationPayload(_ userInfo: [AnyHashable: Any]) -> Bool {
+        if isVehicleAlarmPayload(userInfo) {
+            return true
+        }
+
+        let categoryText = payloadText(for: ["category", "event", "type", "kind"], in: userInfo)
+        if NinebotNotificationCategory.remoteCategory(from: categoryText) != nil {
+            return true
+        }
+
+        for value in userInfo.values {
+            if let dictionary = value as? [AnyHashable: Any],
+               isNinebotNotificationPayload(dictionary) {
+                return true
+            }
+            if let dictionary = value as? [String: Any],
+               isNinebotNotificationPayload(Dictionary(uniqueKeysWithValues: dictionary.map { (AnyHashable($0.key), $0.value) })) {
+                return true
+            }
+        }
+
         return false
     }
 

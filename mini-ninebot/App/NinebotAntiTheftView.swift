@@ -100,7 +100,7 @@ struct NinebotAntiTheftView: View {
                             Text(String(format: "%.5f, %.5f", fence.center.latitude, fence.center.longitude))
                                 .font(.footnote.monospacedDigit())
                         }
-                        Text("双指缩放地图可调整安全区域。车辆进入或离开该区域时会通知你。")
+                        Text("双指缩放地图可调整安全区域。App 打开时本地判断；平台服务配置 APNs 后，App 不打开也能收到进出区域通知。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                         Button(role: .destructive) {
@@ -176,7 +176,8 @@ struct NinebotAntiTheftView: View {
                     geofenceManager.setFence(
                         vehicleSN: vehicleSN,
                         center: location,
-                        radiusMeters: radiusMeters
+                        radiusMeters: radiusMeters,
+                        vehicleName: vehicleName
                     )
                 }
             }
@@ -318,7 +319,7 @@ private struct NinebotGeofenceEditorSheet: View {
                         .font(.subheadline.weight(.semibold))
                     Text("当前半径：\(Self.radiusText(draftRadiusMeters)) · 可设置 50 米至 20 公里")
                         .font(.footnote.weight(.semibold))
-                    Text("车辆进入或离开此区域时，App 会发送通知。")
+                    Text("车辆进入或离开此区域时，App 会同步围栏；平台服务配置 APNs 后可后台通知。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

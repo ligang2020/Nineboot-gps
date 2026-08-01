@@ -135,9 +135,11 @@ final class NinebotGeofenceManager: NSObject, ObservableObject, CLLocationManage
         }
     }
 
-    func setFence(vehicleSN: String, center: NinebotVehicleLocation, radiusMeters: CLLocationDistance) {
-        fences[vehicleSN] = NinebotGeofence(vehicleSN: vehicleSN, center: center, radiusMeters: radiusMeters)
+    func setFence(vehicleSN: String, center: NinebotVehicleLocation, radiusMeters: CLLocationDistance, vehicleName: String? = nil) {
+        let fence = NinebotGeofence(vehicleSN: vehicleSN, center: center, radiusMeters: radiusMeters)
+        fences[vehicleSN] = fence
         persist()
+        syncRemoteFence(fence, vehicleName: vehicleName)
     }
 
     func setEnabled(_ enabled: Bool, vehicleSN: String) {
@@ -147,11 +149,13 @@ final class NinebotGeofenceManager: NSObject, ObservableObject, CLLocationManage
         fence.updatedAt = .now
         fences[vehicleSN] = fence
         persist()
+        syncRemoteFence(fence, vehicleName: nil)
     }
 
     func removeFence(vehicleSN: String) {
         fences.removeValue(forKey: vehicleSN)
         persist()
+        deleteRemoteFence(vehicleSN: vehicleSN)
     }
 
     func ingestVehicleLocation(_ location: NinebotVehicleLocation, vehicleSN: String, vehicleName: String) {
@@ -195,5 +199,27 @@ final class NinebotGeofenceManager: NSObject, ObservableObject, CLLocationManage
     private func persist() {
         guard let data = try? JSONEncoder().encode(fences) else { return }
         defaults.set(data, forKey: storageKey)
+    }
+
+    private func syncRemoteFence(_ fence: NinebotGeofence, vehicleName: String?) {
+        Task {
+            try? await NinebotPushManager.shared.requestAuthorizationAndRegister()
+            guard let configuration = NinebotSharedStore().loadConfiguration(), configuration.isUsable else { return }
+            try? await NinebotProxyClient(configuration: configuration).syncGeofence(
+                sn: fence.vehicleSN,
+                centerLatitude: fence.center.latitude,
+                centerLongitude: fence.center.longitude,
+                radiusMeters: fence.radiusMeters,
+                isEnabled: fence.isEnabled,
+                vehicleName: vehicleName
+            )
+        }
+    }
+
+    private func deleteRemoteFence(vehicleSN: String) {
+        Task {
+            guard let configuration = NinebotSharedStore().loadConfiguration(), configuration.isUsable else { return }
+            try? await NinebotProxyClient(configuration: configuration).deleteGeofence(sn: vehicleSN)
+        }
     }
 }

@@ -46,6 +46,13 @@ This project is intended for personal builds. The bundled GitHub Action produces
 
 > **Server integration:** for remote alarms while the app is not running, NinePlus Platform must send an APNs push with `category: "NINEBOT_VEHICLE_ALARM"` or an alarm-style `event` / `type` value (for example `vehicle_alarm`), plus either a normal `aps.alert` or `content-available: 1`. The app-side APNs registration and notification handling are included here; the platform server remains responsible for detecting and sending remote events.
 
+### Background geofence and charging notifications
+
+- App-side geofence edits are synchronized to NinePlus Platform through `POST /vehicles/{sn}/geofence`; deleting a fence calls `DELETE /vehicles/{sn}/geofence`.
+- When the app is not open, geofence and charging notifications require the backend monitor plus APNs credentials on the server. The backend checks vehicle state periodically and sends APNs for charging started, charging disconnected, charging full, geofence entered, and geofence exited.
+- Supported remote categories are `NINEBOT_CHARGING_STARTED`, `NINEBOT_CHARGING_INTERRUPTED`, `NINEBOT_CHARGING_FULL`, `NINEBOT_GEOFENCE_ENTERED`, and `NINEBOT_GEOFENCE_EXITED`. Alias values such as `charging_started`, `charging_disconnected`, and `geofence_exited` are normalized by the app.
+- Required APNs environment variables on the platform are `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_BUNDLE_ID`, `APNS_AUTH_KEY` or `APNS_AUTH_KEY_PATH`, and `APNS_ENVIRONMENT`. The monitor interval can be tuned with `NINEPLUS_MONITOR_INTERVAL`; the default is 60 seconds.
+
 ### Refresh behaviour and iOS limitations
 
 While the app is in the foreground it uses a lightweight vehicle-status refresh:
@@ -92,7 +99,7 @@ The workflow at `.github/workflows/build-ipa.yml` runs for pushes to `main` / `m
 2. Packages the versioned `NinePlus-LiveRide-v<version>-unsigned.ipa`.
 3. Verifies the compiled App Icon, main app bundle, and Widget extension before packaging.
 4. Uploads the IPA and a SHA-256 checksum as a 30-day workflow artifact.
-5. When the matching version tag is pushed (for example source version `1.2.56` with tag `v1.2.56`), creates or updates that GitHub Release and attaches both files. A manual run publishes the current source version by default.
+5. When the matching version tag is pushed (for example source version `1.2.57` with tag `v1.2.57`), creates or updates that GitHub Release and attaches both files. A manual run publishes the current source version by default.
 
 Download the artifact from the GitHub Actions run, or open the GitHub Release for a version tag. Because it is unsigned, it still needs to be signed using your own permitted installation method before an iPhone can install it.
 

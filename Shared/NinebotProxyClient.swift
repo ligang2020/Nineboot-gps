@@ -328,6 +328,37 @@ struct NinebotProxyClient {
         )
     }
 
+    func syncGeofence(
+        sn: String,
+        centerLatitude: Double,
+        centerLongitude: Double,
+        radiusMeters: Double,
+        isEnabled: Bool,
+        vehicleName: String?
+    ) async throws {
+        var body = [
+            "center_latitude": String(centerLatitude),
+            "center_longitude": String(centerLongitude),
+            "radius_meters": String(radiusMeters),
+            "is_enabled": isEnabled ? "true" : "false"
+        ]
+        if let vehicleName = vehicleName?.trimmingCharacters(in: .whitespacesAndNewlines), !vehicleName.isEmpty {
+            body["vehicle_name"] = vehicleName
+        }
+        _ = try await request(
+            method: "POST",
+            path: ["vehicles", sn, "geofence"],
+            body: body
+        )
+    }
+
+    func deleteGeofence(sn: String) async throws {
+        _ = try await request(
+            method: "DELETE",
+            path: ["vehicles", sn, "geofence"]
+        )
+    }
+
     private func assertTrustedCredentialEndpoint() throws {
         let token = configuration.bearerToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard token.isEmpty else { return }
