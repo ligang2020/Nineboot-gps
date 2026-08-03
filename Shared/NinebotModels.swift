@@ -1215,20 +1215,15 @@ struct NinebotVehicleState: Codable, Equatable {
     }
 
     /// Distance displayed while charging. Some firmware resets the direct
-    /// distance-since-charge field to 0 as soon as charging starts; in that
-    /// state the latest completed ride is the value the official app shows.
+    /// distance-since-charge field to 0 as soon as charging starts. Do not
+    /// fall back to the latest completed ride here: the charging screen needs
+    /// the accumulated distance since the last charge ended, which is resolved
+    /// from local history and ride records in the dashboard panel.
     var resolvedDistanceSinceLastCharge: Double? {
         if let distanceSinceLastCharge,
            distanceSinceLastCharge.isFinite,
            distanceSinceLastCharge > 0 {
             return distanceSinceLastCharge
-        }
-
-        if (isCharging == true || isFullyCharged),
-           let lastMileage,
-           lastMileage.isFinite,
-           lastMileage > 0 {
-            return lastMileage
         }
 
         if let distanceSinceLastCharge,

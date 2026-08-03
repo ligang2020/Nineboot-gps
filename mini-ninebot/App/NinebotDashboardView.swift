@@ -5733,14 +5733,54 @@ private struct ChargingSinceLastChargePanel: View {
 
     private var distance: Double? {
         if let resolved = state.resolvedDistanceSinceLastCharge { return resolved }
-        guard let current = state.totalMileage else { return nil }
-        let lastChargeMileage = history
-            .filter { $0.isCharging == true && $0.totalMileage != nil }
-            .sorted { $0.date > $1.date }
-            .first?
-            .totalMileage
-        guard let lastChargeMileage, current >= lastChargeMileage else { return nil }
-        return current - lastChargeMileage
+        guard state.isCharging == true || state.isFullyCharged else { return nil }
+        let sortedHistory = history.sorted { $0.date < $1.date }
+        guard let chargeEnd = lastChargeEnd(in: sortedHistory) else { return nil }
+
+        if let chargeEndMileage = chargeEnd.totalMileage,
+           let currentMileage = state.totalMileage,
+           currentMileage >= chargeEndMileage {
+            return currentMileage - chargeEndMileage
+        }
+
+        let currentChargeStart = currentChargeStartDate(in: sortedHistory) ?? state.updatedAt
+        let rideMileage = state.rides.reduce(0.0) { total, ride in
+            let rideDate = ride.endedAt ?? ride.startedAt
+            guard let rideDate,
+                  rideDate >= chargeEnd.date,
+                  rideDate <= currentChargeStart,
+                  let mileage = ride.mileage,
+                  mileage.isFinite,
+                  mileage > 0 else {
+                return total
+            }
+            return total + mileage
+        }
+        return rideMileage > 0 ? rideMileage : nil
+    }
+
+    private func lastChargeEnd(in history: [NinebotVehicleHistoryPoint]) -> NinebotVehicleHistoryPoint? {
+        var result: NinebotVehicleHistoryPoint?
+        var previous: NinebotVehicleHistoryPoint?
+        for point in history {
+            if previous?.isCharging == true, point.isCharging != true {
+                result = point
+            }
+            previous = point
+        }
+        return result
+    }
+
+    private func currentChargeStartDate(in history: [NinebotVehicleHistoryPoint]) -> Date? {
+        var result: Date?
+        var previous: NinebotVehicleHistoryPoint?
+        for point in history {
+            if point.isCharging == true, previous?.isCharging != true {
+                result = point.date
+            }
+            previous = point
+        }
+        return result
     }
 
     var body: some View {
