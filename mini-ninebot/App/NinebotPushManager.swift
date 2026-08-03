@@ -471,11 +471,38 @@ final class NinebotPushManager: NSObject, UIApplicationDelegate, UNUserNotificat
     }
 
     private static var apnsEnvironment: String {
+        if let environment = embeddedProvisioningAPNSEnvironment {
+            return environment
+        }
+
         #if DEBUG
         return "development"
         #else
         return "production"
         #endif
+    }
+
+    private static var embeddedProvisioningAPNSEnvironment: String? {
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url),
+              let profile = String(data: data, encoding: .isoLatin1) ?? String(data: data, encoding: .utf8),
+              let plistStart = profile.range(of: "<plist"),
+              let plistEnd = profile.range(of: "</plist>")
+        else {
+            return nil
+        }
+
+        let plistText = String(profile[plistStart.lowerBound..<plistEnd.upperBound])
+        guard let plistData = plistText.data(using: .utf8),
+              let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any],
+              let entitlements = plist["Entitlements"] as? [String: Any],
+              let environment = entitlements["aps-environment"] as? String,
+              environment == "development" || environment == "production"
+        else {
+            return nil
+        }
+
+        return environment
     }
 }
 
